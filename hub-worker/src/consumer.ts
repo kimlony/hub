@@ -30,6 +30,7 @@ const kafka = new Kafka({
 
 const topic = process.env.KAFKA_TOPIC ?? "hub.jobs";
 const consumerGroup = process.env.KAFKA_GROUP_ID ?? "hub-worker-group";
+const workerInstanceId = `${process.env.WORKER_ROLE ?? "worker"}:${process.pid}`;
 const consumer: Consumer = kafka.consumer({ groupId: consumerGroup });
 
 const registry = new HandlerRegistry();
@@ -89,6 +90,7 @@ export async function processJobMessage(
       requestId,
       jobType,
       source,
+      workerInstanceId,
       channelCd: getChannelCd(jobMessage),
       mallKey: getMallKey(jobMessage)
     }, "Job processing started");
@@ -103,7 +105,8 @@ export async function processJobMessage(
       channelCd: getChannelCd(jobMessage),
       mallKey: getMallKey(jobMessage),
       detail: {
-        source
+        source,
+        workerInstanceId
       }
     });
 
