@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.bizbee.hub.auth.UserMapper">
+
+    <select id="findByUsername" resultType="com.bizbee.hub.auth.HubUser">
+        SELECT id, username, password
+        FROM users
+        WHERE username = #{username}
+    </select>
+
+    <select id="findMallKeysByUserId" resultType="string">
+        SELECT mall_key
+        FROM user_malls
+        WHERE user_id = #{userId}
+          AND use_yn = 'Y'
+        ORDER BY mall_key
+    </select>
+
+</mapper>

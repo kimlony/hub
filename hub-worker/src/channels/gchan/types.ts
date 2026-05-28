@@ -1,0 +1,24 @@
+export type GchanOrder = {
+  [key: string]: unknown;
+  recipientId: number;
+  giftSendId: number;
+  itemId: number;
+  orderCode: string;
+  recipientName: string;
+  recipientPhone: string;
+  receivedStatus: string;
+  address1: string;
+  address2: string;
+  productName: string;
+  combinationName: string;
+  quantity: number;
+  totalPrice: number;
+  giftSupplyPrice: number;
+  paidAt: string;
+  paymentStatus: string;
+  sellerSeq: number;
+  sellerName: string;
+  senderFullName: string;
+  trackingNumber: string;
+  deliveryStatus: string;
+};

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bizbee.hub.job.HubJobMapper">
+
+    <resultMap id="hubJobResultMap" type="com.bizbee.hub.job.HubJob">
+        <result property="requestId"    column="request_id"/>
+        <result property="requestKey"   column="request_key"/>
+        <result property="channelCd"    column="channel_cd"/>
+        <result property="status"       column="status"       javaType="com.bizbee.hub.job.HubJobStatus"/>
+        <result property="payload"      column="payload"/>
+        <result property="retryCount"   column="retry_count"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="completedAt"  column="completed_at"/>
+        <result property="createdAt"    column="created_at"/>
+        <result property="updatedAt"    column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="hubJobLogResultMap" type="com.bizbee.hub.job.HubJobLogItem">
+        <constructor>
+            <idArg     column="id"              javaType="java.lang.Long"/>
+            <arg       column="request_id"      javaType="java.lang.String"/>
+            <arg       column="event_type"      javaType="java.lang.String"/>
+            <arg       column="level"           javaType="java.lang.String"/>
+            <arg       column="message"         javaType="java.lang.String"/>
+            <arg       column="channel_cd"      javaType="java.lang.String"/>
+            <arg       column="mall_key"        javaType="java.lang.String"/>
+            <arg       column="retry_count"     javaType="java.lang.Integer"/>
+            <arg       column="max_retry_count" javaType="java.lang.Integer"/>
+            <arg       column="error_message"   javaType="java.lang.String"/>
+            <arg       column="detail"          javaType="java.lang.String"/>
+            <arg       column="created_at"      javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insertJob">
+        INSERT INTO hub_job (
+            request_id, request_key, channel_cd, status, payload,
+            retry_count, error_message, completed_at, created_at, updated_at,
+            job_type, source_erp
+        ) VALUES (
+            #{requestId}, #{requestKey}, #{channelCd}, #{status},
+            CAST(#{payload} AS json),
+            #{retryCount}, #{errorMessage}, #{completedAt}, NOW(), NOW(),
+            'ORDER_COLLECT', 'HUB'
+        )
+    </insert>
+
+    <select id="selectByRequestId" resultMap="hubJobResultMap">
+        SELECT * FROM hub_job WHERE request_id = #{requestId}
+    </select>
+
+    <select id="selectByRequestKey" resultMap="hubJobResultMap">
+        SELECT * FROM hub_job WHERE request_key = #{requestKey}
+    </select>
+
+    <select id="selectByStatus" resultMap="hubJobResultMap">
+        SELECT * FROM hub_job WHERE status = #{status}
+    </select>
+
+    <select id="selectJobLogs" resultMap="hubJobLogResultMap">
+        SELECT
+            id,
+            request_id,
+            event_type,
+            level,
+            message,
+            channel_cd,
+            mall_key,
+            retry_count,
+            max_retry_count,
+            error_message,
+            detail::text AS detail,
+            created_at
+        FROM hub_job_log
+        WHERE request_id = #{requestId}
+        ORDER BY created_at ASC, id ASC
+    </select>
+
+    <select id="selectJobList" resultMap="hubJobResultMap">
+        SELECT * FROM hub_job
+        <where>
+            <if test="status != null and status != ''">AND status = #{status}</if>
+            <if test="channelCd != null and channelCd != ''">AND channel_cd = #{channelCd}</if>
+        </where>
+        ORDER BY created_at DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="selectJobListCount" resultType="int">
+        SELECT COUNT(*) FROM hub_job
+        <where>
+            <if test="status != null and status != ''">AND status = #{status}</if>
+            <if test="channelCd != null and channelCd != ''">AND channel_cd = #{channelCd}</if>
+        </where>
+    </select>
+
+    <update id="updateStatus">
+        UPDATE hub_job
+        SET status = #{status}, error_message = #{errorMessage}, updated_at = NOW()
+        WHERE request_id = #{requestId}
+    </update>
+
+    <update id="updateStatusToReset">
+        UPDATE hub_job
+        SET status = 'QUEUED', retry_count = 0, error_message = NULL, completed_at = NULL, updated_at = NOW()
+        WHERE request_key = #{requestKey}
+    </update>
+
+</mapper>

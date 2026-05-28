@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.bizbee.hub.channel.ChannelMapper">
+
+    <select id="findAllHubChannels" resultType="com.bizbee.hub.channel.HubChannel">
+        SELECT mall_key, mall_name, sort_order
+        FROM hub_channels
+        ORDER BY sort_order, mall_key
+    </select>
+
+    <select id="existsHubChannel" resultType="boolean">
+        SELECT COUNT(1) > 0
+        FROM hub_channels
+        WHERE mall_key = #{mallKey}
+    </select>
+
+    <select id="findAllByUserId" resultType="com.bizbee.hub.channel.ChannelRow">
+        SELECT user_id, mall_key, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
+        FROM user_malls
+        WHERE user_id = #{userId}
+        ORDER BY mall_key
+    </select>
+
+    <select id="findByUserIdAndMallKey" resultType="com.bizbee.hub.channel.ChannelRow">
+        SELECT user_id, mall_key, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
+        FROM user_malls
+        WHERE user_id = #{userId}
+          AND mall_key = #{mallKey}
+    </select>
+
+    <select id="findActiveByUserIdAndMallKey" resultType="com.bizbee.hub.channel.ChannelRow">
+        SELECT user_id, mall_key, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
+        FROM user_malls
+        WHERE user_id = #{userId}
+          AND mall_key = #{mallKey}
+          AND use_yn = 'Y'
+    </select>
+
+    <insert id="insert" parameterType="com.bizbee.hub.channel.ChannelRow">
+        INSERT INTO user_malls (user_id, mall_key, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id)
+        VALUES (#{userId}, #{mallKey}, #{key}, #{key2}, #{authKey}, #{mallId}, #{mallPw}, #{useYn}, #{vendorId})
+    </insert>
+
+    <update id="update" parameterType="com.bizbee.hub.channel.ChannelRow">
+        UPDATE user_malls
+        SET key       = #{key},
+            key2      = #{key2},
+            auth_key  = #{authKey},
+            mall_id   = #{mallId},
+            mall_pw   = #{mallPw},
+            vendor_id = #{vendorId}
+        WHERE user_id = #{userId}
+          AND mall_key = #{mallKey}
+    </update>
+
+    <delete id="delete">
+        DELETE FROM user_malls
+        WHERE user_id = #{userId}
+          AND mall_key = #{mallKey}
+    </delete>
+
+    <update id="updateUseYn">
+        UPDATE user_malls
+        SET use_yn = #{useYn}
+        WHERE user_id = #{userId}
+          AND mall_key = #{mallKey}
+    </update>
+
+</mapper>

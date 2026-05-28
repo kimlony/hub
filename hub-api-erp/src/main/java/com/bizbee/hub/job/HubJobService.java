@@ -1,0 +1,14 @@
+package com.bizbee.hub.job;
+
+public interface HubJobService {
+
+    HubJobBatchResponse createBatchJobs(String username, HubJobBatchRequest request);
+
+    HubJobDetailResponse getJob(String requestId);
+
+    HubJobListResponse getJobs(String status, String channelCd, int page, int size);
+
+    HubJobLogResponse getJobLogs(String requestId);
+
+    void retryJob(String requestId);
+}

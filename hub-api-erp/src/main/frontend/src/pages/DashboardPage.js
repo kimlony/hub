@@ -1,0 +1,28 @@
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+import { useState } from 'react';
+import Layout from '../components/Layout';
+import StatusBadge from '../components/StatusBadge';
+import CollectRequestModal from '../components/CollectRequestModal';
+const recentJobs = [
+    { id: 'a1b2c3d4', channel: '11ST', period: '05/26~05/26', status: 'SUCCESS', time: '2분 전' },
+    { id: 'e5f6a7b8', channel: 'GCHAN', period: '05/26~05/26', status: 'PROCESSING', time: '5분 전' },
+    { id: 'c9d0e1f2', channel: 'COUPANG', period: '05/25~05/26', status: 'FAILED', time: '8분 전' },
+    { id: 'g3h4i5j6', channel: 'NSS', period: '05/26~05/26', status: 'QUEUED', time: '11분 전' },
+    { id: 'k7l8m9n0', channel: '11ST', period: '05/25~05/25', status: 'SUCCESS', time: '15분 전' },
+];
+const channels = [
+    { label: '11번가', gradient: 'from-[#e8192c] to-[#ff6b6b]', initial: '11', count: 48, pct: 75 },
+    { label: '선물찬스', gradient: 'from-[#ff6f00] to-[#ffa040]', initial: 'G', count: 32, pct: 50 },
+    { label: '쿠팡', gradient: 'from-[#ee2b2b] to-[#ff6060]', initial: 'C', count: 27, pct: 42 },
+    { label: '네이버 스마트스토어', gradient: 'from-[#03c75a] to-[#3ddc97]', initial: 'N', count: 21, pct: 33 },
+];
+const stats = [
+    { label: '오늘 총 수집 요청', value: '128', sub: '↑ 12 어제 대비', gradient: 'from-[#3182F6] to-[#5BABF9]' },
+    { label: '성공', value: '119', sub: '성공률 93%', gradient: 'from-[#00C073] to-[#3DDC97]' },
+    { label: '실패', value: '9', sub: '재시도 대기 3건', gradient: 'from-[#FF6B6B] to-[#FF9A9A]' },
+    { label: '처리 중', value: '5', sub: 'QUEUED 2 · PROC 3', gradient: 'from-amber-400 to-yellow-300' },
+];
+export default function DashboardPage() {
+    const [modalOpen, setModalOpen] = useState(false);
+    return (_jsxs(_Fragment, { children: [modalOpen && _jsx(CollectRequestModal, { onClose: () => setModalOpen(false) }), _jsxs(Layout, { title: "\uB300\uC2DC\uBCF4\uB4DC", actions: _jsxs(_Fragment, { children: [_jsx("button", { className: "px-4 py-2 text-[13px] font-semibold rounded-xl bg-[#F2F4F6] text-[#4E5968] hover:bg-slate-200 transition-colors", children: "\uC0C8\uB85C\uACE0\uCE68" }), _jsx("button", { onClick: () => setModalOpen(true), className: "px-4 py-2 text-[13px] font-bold rounded-xl bg-[#3182F6] text-white hover:bg-blue-600 transition-colors", children: "+ \uC218\uC9D1 \uC694\uCCAD" })] }), children: [_jsx("div", { className: "grid grid-cols-4 gap-4 mb-5", children: stats.map((s) => (_jsxs("div", { className: `bg-gradient-to-br ${s.gradient} rounded-2xl p-5 text-white`, children: [_jsx("p", { className: "text-[12px] font-semibold opacity-85 mb-2", children: s.label }), _jsx("p", { className: "text-[28px] font-extrabold leading-none", children: s.value }), _jsx("p", { className: "text-[11px] opacity-80 mt-1.5", children: s.sub })] }, s.label))) }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsxs("div", { className: "bg-white rounded-2xl shadow-sm overflow-hidden", children: [_jsxs("div", { className: "flex items-center justify-between px-5 py-4 border-b border-slate-50", children: [_jsx("h3", { className: "text-[14px] font-extrabold text-[#191F28]", children: "\uCD5C\uADFC \uC791\uC5C5" }), _jsx("span", { className: "text-[12px] text-[#3182F6] font-semibold cursor-pointer hover:underline", children: "\uC804\uCCB4 \uBCF4\uAE30 \u2192" })] }), _jsxs("table", { className: "w-full", children: [_jsx("thead", { children: _jsxs("tr", { className: "bg-[#FAFAFA]", children: [_jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "\uCC44\uB110" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "\uC0C1\uD0DC" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "\uC2DC\uAC04" })] }) }), _jsx("tbody", { children: recentJobs.map((j) => (_jsxs("tr", { className: "border-t border-slate-50 hover:bg-slate-50 transition-colors", children: [_jsx("td", { className: "px-5 py-2.5 text-[13px] font-bold text-[#191F28]", children: j.channel }), _jsx("td", { className: "px-5 py-2.5", children: _jsx(StatusBadge, { status: j.status }) }), _jsx("td", { className: "px-5 py-2.5 text-[12px] text-[#8B95A1]", children: j.time })] }, j.id))) })] })] }), _jsxs("div", { className: "bg-white rounded-2xl shadow-sm overflow-hidden", children: [_jsx("div", { className: "px-5 py-4 border-b border-slate-50", children: _jsx("h3", { className: "text-[14px] font-extrabold text-[#191F28]", children: "\uCC44\uB110\uBCC4 \uC218\uC9D1 \uD604\uD669" }) }), _jsx("div", { className: "divide-y divide-slate-50", children: channels.map((ch) => (_jsxs("div", { className: "flex items-center gap-3 px-5 py-3", children: [_jsx("div", { className: `w-9 h-9 bg-gradient-to-br ${ch.gradient} rounded-xl flex items-center justify-content-center items-center justify-center text-white text-[12px] font-extrabold flex-shrink-0`, children: ch.initial }), _jsxs("div", { className: "flex-1 min-w-0", children: [_jsxs("div", { className: "flex justify-between mb-1.5", children: [_jsx("span", { className: "text-[13px] font-bold text-[#191F28] truncate", children: ch.label }), _jsxs("span", { className: "text-[13px] font-bold text-[#191F28] ml-2 flex-shrink-0", children: [ch.count, "\uAC74"] })] }), _jsx("div", { className: "h-1.5 bg-[#F2F4F6] rounded-full", children: _jsx("div", { className: "h-full rounded-full bg-gradient-to-r from-[#3182F6] to-[#5BABF9]", style: { width: `${ch.pct}%` } }) })] })] }, ch.label))) })] })] })] })] }));
+}

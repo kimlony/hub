@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: hub-postgres
+    environment:
+      POSTGRES_DB: hub_db
+      POSTGRES_USER: hub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    ports:
+      - "5432:5432"
+    volumes:
+      - hub_postgres_data:/var/lib/postgresql/data
+
+  kafka:
+    image: apache/kafka:3.7.2
+    container_name: hub-kafka
+    ports:
+      - "9092:9092"
+
+volumes:
+  hub_postgres_data:

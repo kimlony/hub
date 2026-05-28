@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/hub_db
+    username: hub
+    password: change-me
+  kafka:
+    bootstrap-servers: localhost:9092
+
+hub:
+  security:
+    enabled: true
+    header-name: X-Hub-Api-Key
+    api-key: change-me-local-api-key
+  jwt:
+    secret: change-me-jwt-secret-local-256bits
+    expiry-ms: 86400000
+  aes:
+    # Must be exactly 32 bytes.
+    secret: change-me-32-byte-secret-local!!

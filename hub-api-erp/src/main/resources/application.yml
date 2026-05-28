@@ -1,0 +1,40 @@
+server:
+  port: ${SERVER_PORT:3000}
+
+spring:
+  jackson:
+    time-zone: Asia/Seoul
+    serialization:
+      write-dates-as-timestamps: false
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/hub_db}
+    username: ${POSTGRES_USER:hub}
+    password: ${POSTGRES_PASSWORD}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.bizbee.hub
+  configuration:
+    map-underscore-to-camel-case: true
+
+hub:
+  kafka:
+    topics:
+      jobs: ${HUB_JOBS_TOPIC:hub.jobs}
+    jobs-topic:
+      partitions: ${HUB_JOBS_TOPIC_PARTITIONS:4}
+      replicas: ${HUB_JOBS_TOPIC_REPLICAS:1}
+  security:
+    enabled: ${HUB_SECURITY_ENABLED:true}
+    header-name: ${HUB_API_KEY_HEADER:X-Hub-Api-Key}
+    api-key: ${HUB_API_KEY}
+  jwt:
+    secret: ${HUB_JWT_SECRET}
+    expiry-ms: ${HUB_JWT_EXPIRY_MS:86400000}
+  aes:
+    secret: ${HUB_AES_SECRET}
