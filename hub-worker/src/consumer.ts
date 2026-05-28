@@ -12,6 +12,7 @@ import {
 } from "./db/postgres.js";
 import { CoupangOrderHandler } from "./channels/coupang/CoupangOrderHandler.js";
 import { GchanOrderHandler } from "./channels/gchan/GchanOrderHandler.js";
+import { GodoOrderHandler } from "./channels/godo/GodoOrderHandler.js";
 import { ElevenStOrderHandler } from "./channels/elevenst/ElevenStOrderHandler.js";
 import { NfaOrderHandler } from "./channels/nfa/NfaOrderHandler.js";
 import { HandlerRegistry } from "./handlers/HandlerRegistry.js";
@@ -36,6 +37,7 @@ const consumer: Consumer = kafka.consumer({ groupId: consumerGroup });
 const registry = new HandlerRegistry();
 registry.register("ORDER_COLLECT", new ElevenStOrderHandler(), "11ST");
 registry.register("ORDER_COLLECT", new GchanOrderHandler(), "GCHAN");
+registry.register("ORDER_COLLECT", new GodoOrderHandler(), "GODO");
 registry.register("ORDER_COLLECT", new CoupangOrderHandler(), "COUPANG");
 registry.register("ORDER_COLLECT", new NfaOrderHandler(), "NSS");
 
