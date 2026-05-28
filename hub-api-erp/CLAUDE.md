@@ -14,7 +14,7 @@
 ```
 [React UI] ←→ [Hub API :3000] ←→ [Kafka] ←→ [Hub Worker (Node.js)]
                      ↓
-               [PostgreSQL]   [Oracle RDS]
+               [PostgreSQL]
 ```
 
 ### 개발 환경
@@ -36,7 +36,7 @@ Spring Boot (:3000) serves static/ (React build 결과물 포함)
 | Backend | Java 17, Spring Boot 3.3.5 |
 | Frontend | React 18, TypeScript, Vite |
 | DB (허브) | PostgreSQL 16 |
-| DB (ERP) | Oracle RDS |
+| DB | PostgreSQL |
 | ORM | MyBatis (mapper + mapper.xml 구조) |
 | 메시지 큐 | Apache Kafka 3.7 |
 | 인프라 | Docker Compose |

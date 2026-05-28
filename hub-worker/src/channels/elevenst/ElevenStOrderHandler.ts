@@ -2,7 +2,6 @@ import { saveJobLog, saveJobResult } from "../../db/postgres.js";
 import type { IJobHandler, JobHandlerMessage } from "../../handlers/IJobHandler.js";
 import { logger } from "../../logger.js";
 import { ElevenStApiClient } from "./ElevenStApiClient.js";
-// import { ElevenStOracleSaver } from "./ElevenStOracleSaver.js";
 
 type ElevenStPayload = {
   channelCd: string;
@@ -51,8 +50,6 @@ export class ElevenStOrderHandler implements IJobHandler {
         toDt: payload.toDt
       }
     });
-
-    // await ElevenStOracleSaver.saveAll(orders, payload);
 
     await saveJobResult(message, {
       channelCd:  payload.channelCd,

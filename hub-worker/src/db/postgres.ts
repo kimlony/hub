@@ -54,7 +54,6 @@ export async function ensurePostgresSchema(): Promise<void> {
       job_type VARCHAR(100) NOT NULL,
       source_erp VARCHAR(100) NOT NULL,
       result_payload JSONB NOT NULL,
-      oracle_saved_yn CHAR(1) NOT NULL DEFAULT '0',
       saved_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
@@ -67,10 +66,6 @@ export async function ensurePostgresSchema(): Promise<void> {
     ON hub_job_result (request_key)
   `);
   // 기존 테이블에 컬럼이 없을 경우 안전하게 추가
-  await pool.query(`
-    ALTER TABLE hub_job_result
-    ADD COLUMN IF NOT EXISTS oracle_saved_yn CHAR(1) NOT NULL DEFAULT '0'
-  `);
   await pool.query(`
     ALTER TABLE hub_job_result
     ADD COLUMN IF NOT EXISTS request_key VARCHAR(200)
@@ -126,10 +121,9 @@ export async function saveJobResult(
         job_type,
         source_erp,
         result_payload,
-        oracle_saved_yn,
         saved_at
       )
-      SELECT $1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::jsonb, '0', NOW()
+      SELECT $1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::jsonb, NOW()
       WHERE EXISTS (
         SELECT 1
         FROM hub_job

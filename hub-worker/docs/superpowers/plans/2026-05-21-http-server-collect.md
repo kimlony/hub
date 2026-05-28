@@ -4,7 +4,7 @@
 
 **Goal:** hub-worker를 Kafka consumer에서 Express HTTP 서버로 전환하여 DBHub의 POST /collect 요청을 받아 몰 API를 호출하고 결과를 응답으로 반환한다.
 
-**Architecture:** DBHub가 `POST /collect`로 요청 → Worker가 채널 API 호출 → 결과를 JSON 응답으로 반환 → DBHub가 Oracle 저장 및 status 업데이트. Kafka consumer 코드는 유지하되 index.ts에서 실행하지 않는다. 기존 채널 파일(elevenst, gchan, coupang, nfa)은 수정하지 않는다.
+**Architecture:** Worker가 채널 API를 호출하고 결과를 PostgreSQL `hub_job_result`에 저장한다. Oracle 저장은 제거되었다.
 
 **Tech Stack:** Node.js, TypeScript (ESM), Express, axios, 기존 채널별 ApiClient 재사용
 

@@ -62,8 +62,6 @@ export class CoupangOrderHandler implements IJobHandler {
       }
     });
 
-    // await CoupangOracleSaver.saveAll(orders, payload);
-
     await saveJobResult(message, {
       channelCd:  payload.channelCd,
       frDt:       payload.frDt,

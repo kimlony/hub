@@ -2,7 +2,6 @@ import { saveJobLog, saveJobResult } from "../../db/postgres.js";
 import type { IJobHandler, JobHandlerMessage } from "../../handlers/IJobHandler.js";
 import { logger } from "../../logger.js";
 import { GchanApiClient } from "./GchanApiClient.js";
-// import { GchanOracleSaver } from "./GchanOracleSaver.js";
 
 type GchanPayload = {
   channelCd: string;
@@ -55,8 +54,6 @@ export class GchanOrderHandler implements IJobHandler {
         toDt: payload.toDt
       }
     });
-
-    // await GchanOracleSaver.saveAll(orders, payload);
 
     await saveJobResult(message, {
       channelCd:  payload.channelCd,

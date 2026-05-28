@@ -59,8 +59,6 @@ export class NfaOrderHandler implements IJobHandler {
       }
     });
 
-    // await NfaOracleSaver.saveAll(rawOrders, payload);
-
     await saveJobResult(message, {
       channelCd:  payload.channelCd,
       frDt:       payload.frDt,
