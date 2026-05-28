@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuthenticatedFetch } from '../hooks/useAuthenticatedFetch'
 
 interface ChannelInfo {
   mallKey:    string
@@ -31,21 +31,19 @@ interface Props {
 }
 
 export default function ChannelManagementModal({ onClose }: Props) {
-  const { token } = useAuth()
+  const authenticatedFetch = useAuthenticatedFetch()
   const [channels,  setChannels]  = useState<ChannelInfo[]>([])
   const [loading,   setLoading]   = useState(true)
   const [expanded,  setExpanded]  = useState<string | null>(null)
   const [form,      setForm]      = useState<FormState>(EMPTY_FORM)
   const [saving,    setSaving]    = useState(false)
 
-  const authHeader = { Authorization: `Bearer ${token}` }
-
   useEffect(() => {
-    fetch('/api/channels', { headers: authHeader })
+    authenticatedFetch('/api/channels')
       .then(r => r.json())
       .then(setChannels)
       .finally(() => setLoading(false))
-  }, [token])
+  }, [authenticatedFetch])
 
   function openForm(mallKey: string) {
     setExpanded(mallKey)
@@ -58,16 +56,16 @@ export default function ChannelManagementModal({ onClose }: Props) {
   }
 
   async function reload() {
-    const data = await fetch('/api/channels', { headers: authHeader }).then(r => r.json())
+    const data = await authenticatedFetch('/api/channels').then(r => r.json())
     setChannels(data)
   }
 
   async function handleSave(ch: ChannelInfo) {
     setSaving(true)
     const method = ch.registered ? 'PUT' : 'POST'
-    await fetch(`/api/channels/${ch.mallKey}`, {
+    await authenticatedFetch(`/api/channels/${ch.mallKey}`, {
       method,
-      headers: { ...authHeader, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form),
     })
     await reload()
@@ -77,12 +75,12 @@ export default function ChannelManagementModal({ onClose }: Props) {
 
   async function handleDelete(mallKey: string) {
     if (!confirm(`${mallKey} 채널을 삭제하시겠습니까?`)) return
-    await fetch(`/api/channels/${mallKey}`, { method: 'DELETE', headers: authHeader })
+    await authenticatedFetch(`/api/channels/${mallKey}`, { method: 'DELETE' })
     await reload()
   }
 
   async function handleToggle(mallKey: string) {
-    await fetch(`/api/channels/${mallKey}/active`, { method: 'PATCH', headers: authHeader })
+    await authenticatedFetch(`/api/channels/${mallKey}/active`, { method: 'PATCH' })
     await reload()
   }
 

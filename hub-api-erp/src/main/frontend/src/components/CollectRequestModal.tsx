@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuthenticatedFetch } from '../hooks/useAuthenticatedFetch'
 
 interface ChannelInfo {
   mallKey:    string
@@ -14,7 +14,7 @@ interface Props {
 }
 
 export default function CollectRequestModal({ onClose }: Props) {
-  const { token } = useAuth()
+  const authenticatedFetch = useAuthenticatedFetch()
   const today     = new Date().toISOString().slice(0, 10)
 
   const [startDate,  setStartDate]  = useState(today)
@@ -31,11 +31,11 @@ export default function CollectRequestModal({ onClose }: Props) {
   const someChecked  = selected.size > 0 && !allChecked
 
   useEffect(() => {
-    fetch('/api/channels', { headers: { Authorization: `Bearer ${token}` } })
+    authenticatedFetch('/api/channels')
       .then(r => r.json())
       .then((data: ChannelInfo[]) => setChannels(data))
       .finally(() => setLoading(false))
-  }, [token])
+  }, [authenticatedFetch])
 
   useEffect(() => {
     if (allRef.current) allRef.current.indeterminate = someChecked
@@ -62,10 +62,9 @@ export default function CollectRequestModal({ onClose }: Props) {
     setSubmitting(true)
     setError(null)
     try {
-      const res = await fetch('/api/hub/jobs/batch', {
+      const res = await authenticatedFetch('/api/hub/jobs/batch', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

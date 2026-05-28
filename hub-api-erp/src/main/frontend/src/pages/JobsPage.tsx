@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import Layout from '../components/Layout'
 import StatusBadge from '../components/StatusBadge'
 import CollectRequestModal from '../components/CollectRequestModal'
-import { useAuth } from '../context/AuthContext'
+import { useAuthenticatedFetch } from '../hooks/useAuthenticatedFetch'
 
 type Job = {
   requestId: string
@@ -91,7 +91,7 @@ function formatDetail(detail: string | null): string {
 }
 
 export default function JobsPage() {
-  const { token } = useAuth()
+  const authenticatedFetch = useAuthenticatedFetch()
   const [statusFilter, setStatusFilter] = useState('')
   const [channelFilter, setChannelFilter] = useState('')
   const [page, setPage] = useState(1)
@@ -109,9 +109,7 @@ export default function JobsPage() {
         page: String(page),
         size: String(PAGE_SIZE),
       })
-      const res = await fetch(`/api/hub/jobs?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await authenticatedFetch(`/api/hub/jobs?${params}`)
       if (!res.ok) throw new Error('작업 목록 조회 실패')
       setData(await res.json() as JobsResponse)
     } catch (e) {
@@ -119,7 +117,7 @@ export default function JobsPage() {
     } finally {
       setLoading(false)
     }
-  }, [token, statusFilter, channelFilter, page])
+  }, [authenticatedFetch, statusFilter, channelFilter, page])
 
   useEffect(() => {
     void fetchJobs()
@@ -137,9 +135,8 @@ export default function JobsPage() {
 
   const handleRetry = async (requestId: string) => {
     try {
-      const res = await fetch(`/api/hub/jobs/${requestId}/retry`, {
+      const res = await authenticatedFetch(`/api/hub/jobs/${requestId}/retry`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error('재시도 요청 실패')
       await fetchJobs()
@@ -166,7 +163,6 @@ export default function JobsPage() {
       {logRequestId && (
         <JobLogModal
           requestId={logRequestId}
-          token={token}
           onClose={() => setLogRequestId(null)}
         />
       )}
@@ -316,7 +312,8 @@ export default function JobsPage() {
   )
 }
 
-function JobLogModal({ requestId, token, onClose }: { requestId: string; token: string | null; onClose: () => void }) {
+function JobLogModal({ requestId, onClose }: { requestId: string; onClose: () => void }) {
+  const authenticatedFetch = useAuthenticatedFetch()
   const [logs, setLogs] = useState<JobLog[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -327,9 +324,7 @@ function JobLogModal({ requestId, token, onClose }: { requestId: string; token: 
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch(`/api/hub/jobs/${requestId}/logs`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await authenticatedFetch(`/api/hub/jobs/${requestId}/logs`)
         if (!res.ok) throw new Error('로그 조회 실패')
         const body = await res.json() as JobLogsResponse
         if (mounted) setLogs(body.logs)
@@ -341,7 +336,7 @@ function JobLogModal({ requestId, token, onClose }: { requestId: string; token: 
     }
     void fetchLogs()
     return () => { mounted = false }
-  }, [requestId, token])
+  }, [requestId, authenticatedFetch])
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
