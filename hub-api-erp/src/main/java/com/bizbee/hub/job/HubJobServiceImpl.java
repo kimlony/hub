@@ -79,7 +79,10 @@ public class HubJobServiceImpl implements HubJobService {
             requestId = existing.getRequestId();
             status    = existing.getStatus().name();
         } else {
-            hubJobMapper.updateStatusToReset(requestKey);
+            String latestPayload = serializePayload(mallKey, request, user);
+            existing.setPayload(latestPayload);
+            existing.setStatus(HubJobStatus.QUEUED);
+            hubJobMapper.updateStatusToReset(requestKey, latestPayload);
             publishEvent(existing);
             requestId = existing.getRequestId();
             status    = HubJobStatus.QUEUED.name();
@@ -176,8 +179,27 @@ public class HubJobServiceImpl implements HubJobService {
         if (job.getStatus() != HubJobStatus.FAILED) {
             throw new IllegalStateException("FAILED 상태인 작업만 재시도할 수 있습니다.");
         }
-        hubJobMapper.updateStatusToReset(job.getRequestKey());
+        String latestPayload = rebuildPayloadForRetry(job);
+        job.setPayload(latestPayload);
+        job.setStatus(HubJobStatus.QUEUED);
+        hubJobMapper.updateStatusToReset(job.getRequestKey(), latestPayload);
         publishEvent(job);
+    }
+
+    private String rebuildPayloadForRetry(HubJob job) {
+        String[] parts = job.getRequestKey() != null ? job.getRequestKey().split("_") : new String[0];
+        if (parts.length < 4) {
+            throw new IllegalStateException("Invalid requestKey for retry: " + job.getRequestKey());
+        }
+
+        String mallKey = parts[0];
+        String frDt = parts[1];
+        String toDt = parts[2];
+        String username = parts[3];
+        HubUser user = userMapper.findByUsername(username)
+                .orElseThrow(() -> new AuthException("?ъ슜?먮? 李얠쓣 ???놁뒿?덈떎."));
+
+        return serializePayload(mallKey, new HubJobBatchRequest(frDt, toDt, List.of(mallKey)), user);
     }
 
     private HubJobListItem toListItem(HubJob job) {

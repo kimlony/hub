@@ -102,7 +102,12 @@
 
     <update id="updateStatusToReset">
         UPDATE hub_job
-        SET status = 'QUEUED', retry_count = 0, error_message = NULL, completed_at = NULL, updated_at = NOW()
+        SET status = 'QUEUED',
+            payload = CAST(#{payload} AS json),
+            retry_count = 0,
+            error_message = NULL,
+            completed_at = NULL,
+            updated_at = NOW()
         WHERE request_key = #{requestKey}
     </update>
 

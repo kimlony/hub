@@ -35,5 +35,8 @@ public interface HubJobMapper {
             @Param("errorMessage") String errorMessage
     );
 
-    void updateStatusToReset(String requestKey);
+    void updateStatusToReset(
+            @Param("requestKey") String requestKey,
+            @Param("payload") String payload
+    );
 }
