@@ -3,4 +3,4 @@ dist
 .env
 npm-debug.log*
 worker-codex.log
-{
+[{]

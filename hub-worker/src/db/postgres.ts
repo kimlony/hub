@@ -129,11 +129,11 @@ export async function saveJobResult(
         oracle_saved_yn,
         saved_at
       )
-      SELECT $1, $2, $3, $4, $5::jsonb, '0', NOW()
+      SELECT $1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::jsonb, '0', NOW()
       WHERE EXISTS (
         SELECT 1
         FROM hub_job
-        WHERE request_id = $1
+        WHERE request_id = $1::varchar
           AND status = 'PROCESSING'
       )
       ON CONFLICT (request_id) DO NOTHING
