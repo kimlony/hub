@@ -21,3 +21,8 @@ worker-codex.log
 hub-api-erp/src/main/resources/application-local.yml
 hub-api-erp/src/main/resources/application-*.local.yml
 hub-api-erp/srctestjavacombizbeehubHashGenTest.java
+
+bizbee-hub-local-config/
+bizbee-hub-local-config.zip
+bizbee-hub-local-config-*/
+bizbee-hub-local-config-*.zip
