@@ -10,6 +10,8 @@ spring:
     url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/hub_db}
     username: ${POSTGRES_USER:hub}
     password: ${POSTGRES_PASSWORD}
+    hikari:
+      connection-init-sql: SET TIME ZONE 'Asia/Seoul'
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:

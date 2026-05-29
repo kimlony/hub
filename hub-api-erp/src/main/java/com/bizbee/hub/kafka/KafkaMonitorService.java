@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.stereotype.Service;
 
@@ -36,6 +38,7 @@ public class KafkaMonitorService {
     private static final long ADMIN_TIMEOUT_SECONDS = 5;
 
     private final KafkaAdmin kafkaAdmin;
+    private final JdbcTemplate jdbcTemplate;
 
     @Value("${hub.kafka.topics.jobs}")
     private String jobsTopic;
@@ -70,6 +73,89 @@ public class KafkaMonitorService {
                     LocalDateTime.now()
             );
         }
+    }
+
+    public KafkaJobDistributionResponse getJobDistribution(int minutes) {
+        int safeMinutes = Math.max(1, Math.min(minutes, 24 * 60));
+        return new KafkaJobDistributionResponse(
+                safeMinutes,
+                fetchJobDistributionSummary(safeMinutes),
+                fetchRecentKafkaJobs(safeMinutes),
+                LocalDateTime.now()
+        );
+    }
+
+    private List<KafkaJobDistributionSummary> fetchJobDistributionSummary(int minutes) {
+        return jdbcTemplate.query(
+                """
+                        SELECT
+                            NULLIF(detail #>> '{kafka,partition}', '')::int AS partition_no,
+                            COUNT(*)::bigint AS job_count,
+                            STRING_AGG(DISTINCT COALESCE(detail ->> 'workerInstanceId', ''), ',') AS worker_instance_ids,
+                            STRING_AGG(DISTINCT COALESCE(detail ->> 'kafkaClientId', ''), ',') AS kafka_client_ids,
+                            STRING_AGG(DISTINCT COALESCE(channel_cd, ''), ',') AS channels
+                        FROM hub_job_log
+                        WHERE event_type = 'JOB_RECEIVED_FROM_KAFKA'
+                          AND created_at >= NOW() - (? * INTERVAL '1 minute')
+                          AND detail #>> '{kafka,partition}' IS NOT NULL
+                        GROUP BY partition_no
+                        ORDER BY partition_no
+                        """,
+                (rs, rowNum) -> new KafkaJobDistributionSummary(
+                        rs.getInt("partition_no"),
+                        rs.getLong("job_count"),
+                        splitCsv(rs.getString("worker_instance_ids")),
+                        splitCsv(rs.getString("kafka_client_ids")),
+                        splitCsv(rs.getString("channels"))
+                ),
+                minutes
+        );
+    }
+
+    private List<KafkaJobDistributionItem> fetchRecentKafkaJobs(int minutes) {
+        return jdbcTemplate.query(
+                """
+                        SELECT
+                            request_id,
+                            channel_cd,
+                            NULLIF(detail #>> '{kafka,partition}', '')::int AS partition_no,
+                            detail #>> '{kafka,offset}' AS offset_no,
+                            detail #>> '{kafka,messageKey}' AS message_key,
+                            detail #>> '{kafka,kafkaMessageId}' AS kafka_message_id,
+                            detail ->> 'workerInstanceId' AS worker_instance_id,
+                            detail ->> 'kafkaClientId' AS kafka_client_id,
+                            to_char(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS created_at
+                        FROM hub_job_log
+                        WHERE event_type = 'JOB_RECEIVED_FROM_KAFKA'
+                          AND created_at >= NOW() - (? * INTERVAL '1 minute')
+                          AND detail #>> '{kafka,partition}' IS NOT NULL
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT 50
+                        """,
+                (rs, rowNum) -> new KafkaJobDistributionItem(
+                        rs.getString("request_id"),
+                        rs.getString("channel_cd"),
+                        rs.getInt("partition_no"),
+                        rs.getString("offset_no"),
+                        rs.getString("message_key"),
+                        rs.getString("kafka_message_id"),
+                        rs.getString("worker_instance_id"),
+                        rs.getString("kafka_client_id"),
+                        rs.getString("created_at")
+                ),
+                minutes
+        );
+    }
+
+    private List<String> splitCsv(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .distinct()
+                .toList();
     }
 
     private Properties adminProperties() {

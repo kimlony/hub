@@ -4,6 +4,12 @@
 
 <mapper namespace="com.bizbee.hub.auth.UserMapper">
 
+    <select id="findById" resultType="com.bizbee.hub.auth.HubUser">
+        SELECT id, username, password
+        FROM users
+        WHERE id = #{id}
+    </select>
+
     <select id="findByUsername" resultType="com.bizbee.hub.auth.HubUser">
         SELECT id, username, password
         FROM users

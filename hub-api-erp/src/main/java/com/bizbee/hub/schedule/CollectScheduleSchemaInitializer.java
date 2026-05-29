@@ -39,5 +39,32 @@ public class CollectScheduleSchemaInitializer {
                 CREATE INDEX IF NOT EXISTS idx_hub_collect_schedule_due
                 ON hub_collect_schedule (enabled_yn, running_yn, next_run_at)
                 """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS hub_collect_schedule_run_log (
+                    id BIGSERIAL PRIMARY KEY,
+                    schedule_id BIGINT REFERENCES hub_collect_schedule(id) ON DELETE SET NULL,
+                    user_id BIGINT NOT NULL REFERENCES users(id),
+                    schedule_name VARCHAR(100) NOT NULL,
+                    status VARCHAR(20) NOT NULL,
+                    mall_keys JSONB NOT NULL,
+                    date_range_type VARCHAR(30) NOT NULL,
+                    fr_dt VARCHAR(8) NOT NULL,
+                    to_dt VARCHAR(8) NOT NULL,
+                    job_count INT NOT NULL DEFAULT 0,
+                    request_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    error_message TEXT,
+                    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    finished_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE INDEX IF NOT EXISTS idx_hub_collect_schedule_run_log_user
+                ON hub_collect_schedule_run_log (user_id, created_at DESC)
+                """);
+        jdbcTemplate.execute("""
+                CREATE INDEX IF NOT EXISTS idx_hub_collect_schedule_run_log_schedule
+                ON hub_collect_schedule_run_log (schedule_id, created_at DESC)
+                """);
     }
 }

@@ -107,7 +107,7 @@
             max_retry_count,
             error_message,
             detail::text AS detail,
-            to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at
+            to_char(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS created_at
         FROM hub_job_log
         WHERE request_id = #{requestId}
         ORDER BY created_at ASC, id ASC
@@ -119,7 +119,7 @@
             <if test="status != null and status != ''">AND status = #{status}</if>
             <if test="channelCd != null and channelCd != ''">AND channel_cd = #{channelCd}</if>
         </where>
-        ORDER BY created_at DESC
+        ORDER BY updated_at DESC, created_at DESC
         LIMIT #{size} OFFSET #{offset}
     </select>
 
@@ -160,8 +160,8 @@
             status,
             retry_count,
             error_message,
-            to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at,
-            to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') AS updated_at
+            to_char(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+            to_char(updated_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS updated_at
         FROM hub_job
         ORDER BY created_at DESC
         LIMIT #{limit}

@@ -29,6 +29,29 @@
         ORDER BY s.enabled_yn DESC, s.run_time ASC, s.id DESC
     </select>
 
+    <select id="findRunLogsByUserId" resultType="com.bizbee.hub.schedule.CollectScheduleRunLogRow">
+        SELECT
+            id,
+            schedule_id,
+            user_id,
+            schedule_name,
+            status,
+            mall_keys::text AS mall_keys_json,
+            date_range_type,
+            fr_dt,
+            to_dt,
+            job_count,
+            request_ids::text AS request_ids_json,
+            error_message,
+            to_char(started_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS started_at,
+            to_char(finished_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS finished_at,
+            to_char(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS created_at
+        FROM hub_collect_schedule_run_log
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+        LIMIT #{limit}
+    </select>
+
     <select id="findByUserIdAndId" resultType="com.bizbee.hub.schedule.CollectScheduleRow">
         SELECT <include refid="scheduleColumns" />
         FROM hub_collect_schedule s
@@ -43,6 +66,32 @@
         ) VALUES (
             #{userId}, #{scheduleName}, CAST(#{mallKeysJson} AS jsonb), #{dateRangeType},
             #{runTime}, #{enabledYn}, #{nextRunAtValue}
+        )
+    </insert>
+
+    <insert id="insertRunLog" parameterType="com.bizbee.hub.schedule.CollectScheduleRunLogRow" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO hub_collect_schedule_run_log (
+            schedule_id,
+            user_id,
+            schedule_name,
+            status,
+            mall_keys,
+            date_range_type,
+            fr_dt,
+            to_dt,
+            job_count,
+            request_ids
+        ) VALUES (
+            #{scheduleId},
+            #{userId},
+            #{scheduleName},
+            #{status},
+            CAST(#{mallKeysJson} AS jsonb),
+            #{dateRangeType},
+            #{frDt},
+            #{toDt},
+            #{jobCount},
+            CAST(#{requestIdsJson} AS jsonb)
         )
     </insert>
 
@@ -131,6 +180,24 @@
             next_run_at = #{nextRunAt},
             last_error_message = #{errorMessage},
             updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="markRunLogSuccess">
+        UPDATE hub_collect_schedule_run_log
+        SET status = 'SUCCESS',
+            job_count = #{jobCount},
+            request_ids = CAST(#{requestIdsJson} AS jsonb),
+            finished_at = NOW(),
+            error_message = NULL
+        WHERE id = #{id}
+    </update>
+
+    <update id="markRunLogFailed">
+        UPDATE hub_collect_schedule_run_log
+        SET status = 'FAILED',
+            finished_at = NOW(),
+            error_message = #{errorMessage}
         WHERE id = #{id}
     </update>
 

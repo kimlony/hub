@@ -9,8 +9,11 @@ import java.util.List;
 @Mapper
 public interface CollectScheduleMapper {
     List<CollectScheduleRow> findByUserId(@Param("userId") Long userId);
+    List<CollectScheduleRunLogRow> findRunLogsByUserId(@Param("userId") Long userId,
+                                                       @Param("limit") int limit);
     CollectScheduleRow findByUserIdAndId(@Param("userId") Long userId, @Param("id") Long id);
     void insert(CollectScheduleRow row);
+    void insertRunLog(CollectScheduleRunLogRow row);
     int update(CollectScheduleRow row);
     int updateEnabled(@Param("userId") Long userId,
                       @Param("id") Long id,
@@ -23,4 +26,9 @@ public interface CollectScheduleMapper {
     void markRunFailed(@Param("id") Long id,
                        @Param("nextRunAt") LocalDateTime nextRunAt,
                        @Param("errorMessage") String errorMessage);
+    void markRunLogSuccess(@Param("id") Long id,
+                           @Param("jobCount") int jobCount,
+                           @Param("requestIdsJson") String requestIdsJson);
+    void markRunLogFailed(@Param("id") Long id,
+                          @Param("errorMessage") String errorMessage);
 }

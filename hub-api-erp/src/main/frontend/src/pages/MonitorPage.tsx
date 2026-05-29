@@ -76,6 +76,33 @@ type WorkerStatusResponse = {
   generatedAt: string
 }
 
+type KafkaJobDistributionSummary = {
+  partition: number
+  jobCount: number
+  workerInstanceIds: string[]
+  kafkaClientIds: string[]
+  channels: string[]
+}
+
+type KafkaJobDistributionItem = {
+  requestId: string
+  channelCd: string
+  partition: number
+  offset: string
+  messageKey: string
+  kafkaMessageId: string
+  workerInstanceId: string
+  kafkaClientId: string
+  createdAt: string
+}
+
+type KafkaJobDistributionResponse = {
+  minutes: number
+  summary: KafkaJobDistributionSummary[]
+  recentJobs: KafkaJobDistributionItem[]
+  generatedAt: string
+}
+
 type StatCard = {
   label: string
   value: string
@@ -85,6 +112,7 @@ type StatCard = {
 export default function MonitorPage() {
   const [data, setData] = useState<KafkaMonitorResponse | null>(null)
   const [workerData, setWorkerData] = useState<WorkerStatusResponse | null>(null)
+  const [distributionData, setDistributionData] = useState<KafkaJobDistributionResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const authenticatedFetch = useAuthenticatedFetch()
@@ -103,6 +131,12 @@ export default function MonitorPage() {
         throw new Error(`Worker status API failed: ${workerRes.status}`)
       }
       setWorkerData(await workerRes.json() as WorkerStatusResponse)
+
+      const distributionRes = await authenticatedFetch('/api/hub/kafka/job-distribution?minutes=60')
+      if (!distributionRes.ok) {
+        throw new Error(`Kafka job distribution API failed: ${distributionRes.status}`)
+      }
+      setDistributionData(await distributionRes.json() as KafkaJobDistributionResponse)
     } catch (err) {
       if ((err as Error).message !== 'Authentication required') {
         setError('모니터링 데이터를 불러오지 못했습니다.')
@@ -147,6 +181,10 @@ export default function MonitorPage() {
   const partitions = useMemo(
     () => data?.topics.flatMap((topic) => topic.partitionDetails) ?? [],
     [data]
+  )
+  const maxDistributionCount = Math.max(
+    ...(distributionData?.summary.map((item) => item.jobCount) ?? [0]),
+    1
   )
 
   return (
@@ -303,6 +341,88 @@ export default function MonitorPage() {
         </table>
       </div>
 
+      <div className="mt-4 grid grid-cols-[420px_1fr] gap-4">
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-50">
+            <h3 className="text-[14px] font-extrabold text-[#191F28]">Kafka Job 분포</h3>
+            <span className="text-[12px] text-[#8B95A1]">최근 {distributionData?.minutes ?? 60}분</span>
+          </div>
+          <div className="divide-y divide-slate-50">
+            {distributionData?.summary.length ? distributionData.summary.map((item) => {
+              const pct = Math.max(4, Math.round((item.jobCount / maxDistributionCount) * 100))
+              return (
+                <div key={item.partition} className="px-5 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[13px] font-extrabold text-[#191F28]">Partition {item.partition}</p>
+                      <p className="mt-1 max-w-[280px] truncate text-[11px] text-[#8B95A1]">
+                        {joinList(item.kafkaClientIds) || joinList(item.workerInstanceIds) || 'worker 없음'}
+                      </p>
+                    </div>
+                    <span className="text-[18px] font-extrabold text-[#191F28]">{formatNumber(item.jobCount)}</span>
+                  </div>
+                  <div className="mt-3 h-2 rounded-full bg-[#F2F4F6]">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-[#3182F6] to-[#5BABF9]"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <p className="mt-2 text-[11px] text-[#8B95A1]">{joinList(item.channels) || '-'}</p>
+                </div>
+              )
+            }) : (
+              <div className="px-5 py-10 text-center text-[13px] text-[#8B95A1]">
+                최근 Kafka 수신 로그가 없습니다.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-50">
+            <h3 className="text-[14px] font-extrabold text-[#191F28]">최근 Kafka Job 추적</h3>
+          </div>
+          <table className="w-full">
+            <thead>
+              <tr className="bg-[#FAFAFA]">
+                <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Job</th>
+                <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Channel</th>
+                <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Partition</th>
+                <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Offset</th>
+                <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Worker</th>
+                <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {distributionData?.recentJobs.length ? distributionData.recentJobs.map((job) => (
+                <tr key={`${job.requestId}-${job.kafkaMessageId}`} className="border-t border-slate-50 hover:bg-slate-50">
+                  <td className="px-5 py-3">
+                    <p className="font-mono text-[12px] font-semibold text-[#191F28]">{job.requestId.slice(0, 8)}...</p>
+                    <p className="mt-1 max-w-[220px] truncate text-[11px] text-[#8B95A1]" title={job.messageKey}>{job.messageKey}</p>
+                  </td>
+                  <td className="px-5 py-3 text-[13px] font-bold text-[#4E5968]">{job.channelCd}</td>
+                  <td className="px-5 py-3 text-[13px] font-bold text-[#191F28]">{job.partition}</td>
+                  <td className="px-5 py-3 text-[13px] text-[#4E5968]">{job.offset}</td>
+                  <td className="px-5 py-3">
+                    <p className="max-w-[220px] truncate font-mono text-[12px] font-semibold text-[#4E5968]" title={job.kafkaClientId}>
+                      {job.kafkaClientId || job.workerInstanceId}
+                    </p>
+                    <p className="mt-1 text-[11px] text-[#8B95A1]">{job.workerInstanceId}</p>
+                  </td>
+                  <td className="px-5 py-3 text-[12px] text-[#8B95A1]">{job.createdAt}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={6} className="px-5 py-10 text-center text-[13px] text-[#8B95A1]">
+                    최근 Kafka Job 추적 데이터가 없습니다.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div className="mt-4 bg-white rounded-lg shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-50">
           <h3 className="text-[14px] font-extrabold text-[#191F28]">Worker 상태</h3>
@@ -379,4 +499,8 @@ function formatDateTime(value: string): string {
     return '-'
   }
   return value.replace('T', ' ').slice(0, 19)
+}
+
+function joinList(values: string[]): string {
+  return values.filter(Boolean).join(', ')
 }

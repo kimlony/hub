@@ -5,6 +5,7 @@ import com.bizbee.hub.auth.HubUser;
 import com.bizbee.hub.auth.UserMapper;
 import com.bizbee.hub.channel.ChannelMapper;
 import com.bizbee.hub.channel.ChannelNotFoundException;
+import com.bizbee.hub.job.HubJobBatchResponse;
 import com.bizbee.hub.job.HubJobBatchRequest;
 import com.bizbee.hub.job.HubJobService;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -42,6 +43,9 @@ public class CollectScheduleServiceImpl implements CollectScheduleService {
         return new CollectScheduleListResponse(
                 collectScheduleMapper.findByUserId(user.getId()).stream()
                         .map(this::toResponse)
+                        .toList(),
+                collectScheduleMapper.findRunLogsByUserId(user.getId(), 20).stream()
+                        .map(this::toRunLogResponse)
                         .toList()
         );
     }
@@ -119,16 +123,38 @@ public class CollectScheduleServiceImpl implements CollectScheduleService {
     private void runSchedule(CollectScheduleRow schedule) {
         LocalTime runTime = parseRunTime(schedule);
         LocalDateTime nextRunAt = nextDailyRun(LocalDateTime.now(), runTime);
+        HubJobBatchRequest request = toJobRequest(schedule);
+        CollectScheduleRunLogRow runLog = buildRunLog(schedule, request);
+        collectScheduleMapper.insertRunLog(runLog);
         try {
-            HubJobBatchRequest request = toJobRequest(schedule);
-            hubJobService.createBatchJobs(schedule.getUsername(), request);
+            HubJobBatchResponse response = hubJobService.createScheduledBatchJobs(schedule.getUsername(), runLog.getId(), request);
+            List<String> requestIds = response.jobs().stream()
+                    .map(HubJobBatchResponse.JobResult::requestId)
+                    .toList();
+            collectScheduleMapper.markRunLogSuccess(runLog.getId(), requestIds.size(), toJson(requestIds));
             collectScheduleMapper.markRunSuccess(schedule.getId(), nextRunAt);
             log.info("collect schedule executed: id={}, user={}, malls={}",
                     schedule.getId(), schedule.getUsername(), schedule.getMallKeysJson());
         } catch (Exception e) {
+            collectScheduleMapper.markRunLogFailed(runLog.getId(), e.getMessage());
             collectScheduleMapper.markRunFailed(schedule.getId(), nextRunAt, e.getMessage());
             log.warn("collect schedule failed: id={}, user={}", schedule.getId(), schedule.getUsername(), e);
         }
+    }
+
+    private CollectScheduleRunLogRow buildRunLog(CollectScheduleRow schedule, HubJobBatchRequest request) {
+        CollectScheduleRunLogRow row = new CollectScheduleRunLogRow();
+        row.setScheduleId(schedule.getId());
+        row.setUserId(schedule.getUserId());
+        row.setScheduleName(schedule.getScheduleName());
+        row.setStatus("RUNNING");
+        row.setMallKeysJson(toJson(request.mallKeys()));
+        row.setDateRangeType(schedule.getDateRangeType());
+        row.setFrDt(request.frDt());
+        row.setToDt(request.toDt());
+        row.setJobCount(0);
+        row.setRequestIdsJson("[]");
+        return row;
     }
 
     private HubJobBatchRequest toJobRequest(CollectScheduleRow schedule) {
@@ -229,6 +255,25 @@ public class CollectScheduleServiceImpl implements CollectScheduleService {
                 row.getLastErrorMessage(),
                 row.getCreatedAt(),
                 row.getUpdatedAt()
+        );
+    }
+
+    private CollectScheduleRunLogResponse toRunLogResponse(CollectScheduleRunLogRow row) {
+        return new CollectScheduleRunLogResponse(
+                row.getId(),
+                row.getScheduleId(),
+                row.getScheduleName(),
+                row.getStatus(),
+                fromJson(row.getMallKeysJson()),
+                row.getDateRangeType(),
+                row.getFrDt(),
+                row.getToDt(),
+                row.getJobCount(),
+                fromJson(row.getRequestIdsJson()),
+                row.getErrorMessage(),
+                row.getStartedAt(),
+                row.getFinishedAt(),
+                row.getCreatedAt()
         );
     }
 

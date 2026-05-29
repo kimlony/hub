@@ -42,6 +42,7 @@ const pool = new Pool({
   database: process.env.POSTGRES_DATABASE ?? "hub_db",
   user: process.env.POSTGRES_USER ?? "hub",
   password: requiredEnv("POSTGRES_PASSWORD"),
+  options: "-c timezone=Asia/Seoul",
   max: 10
 });
 

@@ -43,6 +43,27 @@ type DashboardResponse = {
   generatedAt: string
 }
 
+type ChannelNotice = {
+  id: number
+  channelCd: string
+  severity: string
+  status: string
+  title: string
+  message: string
+  reason: string | null
+  failureCount: number
+  firstDetectedAt: string
+  lastDetectedAt: string
+  resolvedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+type NoticeResponse = {
+  notices: ChannelNotice[]
+  generatedAt: string
+}
+
 type StatCard = {
   label: string
   value: string
@@ -61,6 +82,7 @@ const channelMeta: Record<string, { label: string; initial: string; gradient: st
 export default function DashboardPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [data, setData] = useState<DashboardResponse | null>(null)
+  const [notices, setNotices] = useState<ChannelNotice[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const authenticatedFetch = useAuthenticatedFetch()
@@ -68,11 +90,18 @@ export default function DashboardPage() {
   const fetchDashboard = useCallback(async () => {
     setError('')
     try {
-      const res = await authenticatedFetch('/api/hub/jobs/dashboard')
+      const [res, noticeRes] = await Promise.all([
+        authenticatedFetch('/api/hub/jobs/dashboard'),
+        authenticatedFetch('/api/hub/notices/active'),
+      ])
       if (!res.ok) {
         throw new Error(`Dashboard API failed: ${res.status}`)
       }
       setData(await res.json() as DashboardResponse)
+      if (noticeRes.ok) {
+        const noticeBody = await noticeRes.json() as NoticeResponse
+        setNotices(noticeBody.notices)
+      }
     } catch (err) {
       if ((err as Error).message !== 'Authentication required') {
         setError('대시보드 데이터를 불러오지 못했습니다.')
@@ -148,6 +177,27 @@ export default function DashboardPage() {
         {error && (
           <div className="mb-4 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-[13px] font-semibold text-red-600">
             {error}
+          </div>
+        )}
+
+        {notices.length > 0 && (
+          <div className="mb-4 space-y-2">
+            {notices.map((notice) => (
+              <div key={notice.id} className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[13px] font-extrabold text-amber-800">{notice.title}</p>
+                    <p className="mt-1 text-[13px] font-medium text-amber-700">{notice.message}</p>
+                    {notice.reason && (
+                      <p className="mt-1 text-[11px] text-amber-600 line-clamp-1">{notice.reason}</p>
+                    )}
+                  </div>
+                  <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-amber-700">
+                    {notice.failureCount} failures
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

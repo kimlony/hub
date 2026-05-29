@@ -24,8 +24,26 @@ type CollectSchedule = {
   updatedAt: string | null
 }
 
+type CollectScheduleRunLog = {
+  id: number
+  scheduleId: number | null
+  scheduleName: string
+  status: string
+  mallKeys: string[]
+  dateRangeType: string
+  frDt: string
+  toDt: string
+  jobCount: number
+  requestIds: string[]
+  errorMessage: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string | null
+}
+
 type ScheduleListResponse = {
   schedules: CollectSchedule[]
+  runLogs: CollectScheduleRunLog[]
 }
 
 type FormState = {
@@ -59,6 +77,7 @@ export default function SchedulePage() {
   const authenticatedFetch = useAuthenticatedFetch()
   const [channels, setChannels] = useState<ChannelInfo[]>([])
   const [schedules, setSchedules] = useState<CollectSchedule[]>([])
+  const [runLogs, setRunLogs] = useState<CollectScheduleRunLog[]>([])
   const [form, setForm] = useState<FormState>(DEFAULT_FORM)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -83,6 +102,7 @@ export default function SchedulePage() {
       setChannels(await channelRes.json() as ChannelInfo[])
       const body = await scheduleRes.json() as ScheduleListResponse
       setSchedules(body.schedules)
+      setRunLogs(body.runLogs ?? [])
     } catch (e) {
       setError(e instanceof Error ? e.message : '데이터 조회 중 오류가 발생했습니다.')
     } finally {
@@ -356,6 +376,76 @@ export default function SchedulePage() {
           </table>
         </section>
       </div>
+
+      <section className="mt-6 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h2 className="text-[16px] font-extrabold text-[#191F28]">최근 배치 실행 이력</h2>
+        </div>
+        <table className="w-full">
+          <thead>
+            <tr className="bg-[#FAFAFA] border-b border-slate-100">
+              <th className="px-5 py-3 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">작업명</th>
+              <th className="px-5 py-3 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">상태</th>
+              <th className="px-5 py-3 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">채널</th>
+              <th className="px-5 py-3 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">기간</th>
+              <th className="px-5 py-3 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Job</th>
+              <th className="px-5 py-3 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">시각</th>
+            </tr>
+          </thead>
+          <tbody>
+            {runLogs.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-5 py-10 text-center text-[13px] text-[#8B95A1]">
+                  아직 실행 이력이 없습니다.
+                </td>
+              </tr>
+            ) : (
+              runLogs.map((log) => (
+                <tr key={log.id} className="border-t border-slate-50 hover:bg-slate-50">
+                  <td className="px-5 py-3">
+                    <p className="text-[13px] font-bold text-[#191F28]">{log.scheduleName}</p>
+                    {log.errorMessage && (
+                      <p className="mt-1 max-w-[260px] truncate text-[11px] text-red-500" title={log.errorMessage}>
+                        {log.errorMessage}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold ${
+                      log.status === 'SUCCESS'
+                        ? 'bg-[#E8FAF0] text-[#00A661]'
+                        : log.status === 'FAILED'
+                          ? 'bg-red-50 text-red-600'
+                          : 'bg-blue-50 text-[#3182F6]'
+                    }`}>
+                      {log.status}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {log.mallKeys.map((mallKey) => (
+                        <span key={mallKey} className="px-2 py-0.5 rounded-lg bg-slate-100 text-[11px] font-bold text-[#4E5968]">
+                          {mallKey}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 text-[12px] text-[#4E5968]">{formatJobDate(log.frDt)} ~ {formatJobDate(log.toDt)}</td>
+                  <td className="px-5 py-3 text-[13px] font-bold text-[#4E5968]">{log.jobCount}</td>
+                  <td className="px-5 py-3 text-[12px] text-[#8B95A1]">{formatText(log.finishedAt ?? log.startedAt)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </section>
     </Layout>
   )
+}
+
+function formatJobDate(value: string): string {
+  if (/^\d{8}$/.test(value)) {
+    return `${value.slice(4, 6)}/${value.slice(6, 8)}`
+  }
+  return value || '-'
 }
