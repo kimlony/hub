@@ -5,6 +5,7 @@ import LoginPage     from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import JobsPage      from './pages/JobsPage'
 import MonitorPage   from './pages/MonitorPage'
+import SchedulePage  from './pages/SchedulePage'
 
 export default function App() {
   return (
@@ -17,6 +18,9 @@ export default function App() {
           } />
           <Route path="/jobs" element={
             <ProtectedRoute><JobsPage /></ProtectedRoute>
+          } />
+          <Route path="/schedules" element={
+            <ProtectedRoute><SchedulePage /></ProtectedRoute>
           } />
           <Route path="/monitor" element={
             <ProtectedRoute><MonitorPage /></ProtectedRoute>

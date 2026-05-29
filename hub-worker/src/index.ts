@@ -2,27 +2,38 @@ import "dotenv/config";
 import { startServer } from "./server.js";
 import { startConsumer } from "./consumer.js";
 import { startRecovery } from "./recovery.js";
+import { ensurePostgresSchema } from "./db/postgres.js";
+import {
+  createWorkerHeartbeat,
+  startWorkerHeartbeat,
+  stopWorkerHeartbeat
+} from "./heartbeat.js";
 import { logger } from "./logger.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const WORKER_ROLE = process.env.WORKER_ROLE ?? "all";
+const heartbeat = createWorkerHeartbeat(WORKER_ROLE);
 
-function shutdown(signal: string): void {
+async function shutdown(signal: string): Promise<void> {
   logger.info({
     event: "WORKER_SHUTDOWN_SIGNAL",
     signal
   }, "Shutdown signal received");
+  await stopWorkerHeartbeat(heartbeat);
   process.exit(0);
 }
 
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => { void shutdown("SIGINT"); });
+process.on("SIGTERM", () => { void shutdown("SIGTERM"); });
 
 logger.info({
   event: "WORKER_BOOT",
   role: WORKER_ROLE,
   port: PORT
 }, "Worker booting");
+
+await ensurePostgresSchema();
+startWorkerHeartbeat(heartbeat);
 
 if (WORKER_ROLE === "all" || WORKER_ROLE === "http") {
   startServer(PORT);

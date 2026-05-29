@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.bizbee.hub.schedule.CollectScheduleMapper">
+
+    <sql id="scheduleColumns">
+        s.id,
+        s.user_id,
+        u.username,
+        s.schedule_name,
+        s.mall_keys::text AS mall_keys_json,
+        s.date_range_type,
+        s.run_time::text AS run_time_text,
+        s.enabled_yn,
+        s.running_yn,
+        to_char(s.last_run_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS last_run_at,
+        to_char(s.next_run_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS next_run_at,
+        s.last_error_message,
+        to_char(s.created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+        to_char(s.updated_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS updated_at
+    </sql>
+
+    <select id="findByUserId" resultType="com.bizbee.hub.schedule.CollectScheduleRow">
+        SELECT <include refid="scheduleColumns" />
+        FROM hub_collect_schedule s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.user_id = #{userId}
+        ORDER BY s.enabled_yn DESC, s.run_time ASC, s.id DESC
+    </select>
+
+    <select id="findByUserIdAndId" resultType="com.bizbee.hub.schedule.CollectScheduleRow">
+        SELECT <include refid="scheduleColumns" />
+        FROM hub_collect_schedule s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.user_id = #{userId}
+          AND s.id = #{id}
+    </select>
+
+    <insert id="insert" parameterType="com.bizbee.hub.schedule.CollectScheduleRow" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO hub_collect_schedule (
+            user_id, schedule_name, mall_keys, date_range_type, run_time, enabled_yn, next_run_at
+        ) VALUES (
+            #{userId}, #{scheduleName}, CAST(#{mallKeysJson} AS jsonb), #{dateRangeType},
+            #{runTime}, #{enabledYn}, #{nextRunAtValue}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.bizbee.hub.schedule.CollectScheduleRow">
+        UPDATE hub_collect_schedule
+        SET schedule_name = #{scheduleName},
+            mall_keys = CAST(#{mallKeysJson} AS jsonb),
+            date_range_type = #{dateRangeType},
+            run_time = #{runTime},
+            enabled_yn = #{enabledYn},
+            running_yn = 'N',
+            next_run_at = #{nextRunAtValue},
+            last_error_message = NULL,
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+          AND id = #{id}
+    </update>
+
+    <update id="updateEnabled">
+        UPDATE hub_collect_schedule
+        SET enabled_yn = #{enabledYn},
+            running_yn = 'N',
+            next_run_at = #{nextRunAt},
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+          AND id = #{id}
+    </update>
+
+    <delete id="delete">
+        DELETE FROM hub_collect_schedule
+        WHERE user_id = #{userId}
+          AND id = #{id}
+    </delete>
+
+    <select id="claimDueSchedules" resultType="com.bizbee.hub.schedule.CollectScheduleRow">
+        WITH picked AS (
+            SELECT id
+            FROM hub_collect_schedule
+            WHERE enabled_yn = 'Y'
+              AND (running_yn = 'N' OR updated_at &lt; NOW() - INTERVAL '30 minutes')
+              AND next_run_at &lt;= NOW()
+            ORDER BY next_run_at ASC
+            FOR UPDATE SKIP LOCKED
+            LIMIT #{limit}
+        ),
+        updated AS (
+            UPDATE hub_collect_schedule s
+            SET running_yn = 'Y',
+                updated_at = NOW()
+            FROM picked
+            WHERE s.id = picked.id
+            RETURNING s.*
+        )
+        SELECT
+            u.id AS user_id,
+            u.username,
+            updated.id,
+            updated.schedule_name,
+            updated.mall_keys::text AS mall_keys_json,
+            updated.date_range_type,
+            updated.run_time::text AS run_time_text,
+            updated.enabled_yn,
+            updated.running_yn,
+            to_char(updated.last_run_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS last_run_at,
+            to_char(updated.next_run_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS next_run_at,
+            updated.last_error_message,
+            to_char(updated.created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+            to_char(updated.updated_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS updated_at
+        FROM updated
+        JOIN users u ON u.id = updated.user_id
+    </select>
+
+    <update id="markRunSuccess">
+        UPDATE hub_collect_schedule
+        SET running_yn = 'N',
+            last_run_at = NOW(),
+            next_run_at = #{nextRunAt},
+            last_error_message = NULL,
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="markRunFailed">
+        UPDATE hub_collect_schedule
+        SET running_yn = 'N',
+            next_run_at = #{nextRunAt},
+            last_error_message = #{errorMessage},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+</mapper>

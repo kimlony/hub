@@ -13,10 +13,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.ConsumerGroupDescription;
 import org.apache.kafka.clients.admin.DescribeClusterResult;
+import org.apache.kafka.clients.admin.DescribeConsumerGroupsResult;
 import org.apache.kafka.clients.admin.DescribeTopicsResult;
 import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsResult;
 import org.apache.kafka.clients.admin.ListOffsetsResult;
+import org.apache.kafka.clients.admin.MemberDescription;
 import org.apache.kafka.clients.admin.OffsetSpec;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -97,18 +100,36 @@ public class KafkaMonitorService {
                 .get(ADMIN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         Map<TopicPartition, Long> committedOffsets = fetchCommittedOffsets(adminClient);
         Map<TopicPartition, Long> latestOffsets = fetchLatestOffsets(adminClient, descriptions.values());
+        Map<TopicPartition, MemberDescription> partitionMembers = fetchPartitionMembers(adminClient);
 
         List<KafkaTopicInfo> topics = new ArrayList<>();
         for (TopicDescription description : descriptions.values()) {
             long topicLag = 0L;
             int replicaCount = 0;
+            List<KafkaPartitionInfo> partitionDetails = new ArrayList<>();
 
             for (var partition : description.partitions()) {
                 TopicPartition topicPartition = new TopicPartition(description.name(), partition.partition());
                 long latestOffset = latestOffsets.getOrDefault(topicPartition, 0L);
                 long committedOffset = committedOffsets.getOrDefault(topicPartition, 0L);
-                topicLag += Math.max(0L, latestOffset - committedOffset);
+                long lag = Math.max(0L, latestOffset - committedOffset);
+                MemberDescription member = partitionMembers.get(topicPartition);
+
+                topicLag += lag;
                 replicaCount = Math.max(replicaCount, partition.replicas().size());
+                partitionDetails.add(new KafkaPartitionInfo(
+                        description.name(),
+                        partition.partition(),
+                        partition.leader().id(),
+                        partition.replicas().stream().map(Node::id).toList(),
+                        latestOffset,
+                        committedOffset,
+                        lag,
+                        member != null ? member.consumerId() : null,
+                        member != null ? member.clientId() : null,
+                        member != null ? member.host() : null,
+                        lag > 0 ? "WARN" : "HEALTHY"
+                ));
             }
 
             topics.add(new KafkaTopicInfo(
@@ -116,7 +137,10 @@ public class KafkaMonitorService {
                     description.partitions().size(),
                     replicaCount,
                     topicLag,
-                    topicLag > 0 ? "WARN" : "HEALTHY"
+                    topicLag > 0 ? "WARN" : "HEALTHY",
+                    partitionDetails.stream()
+                            .sorted(Comparator.comparingInt(KafkaPartitionInfo::partition))
+                            .toList()
             ));
         }
 
@@ -152,5 +176,24 @@ public class KafkaMonitorService {
         Map<TopicPartition, Long> result = new HashMap<>();
         offsets.forEach((partition, info) -> result.put(partition, info.offset()));
         return result;
+    }
+
+    private Map<TopicPartition, MemberDescription> fetchPartitionMembers(AdminClient adminClient) {
+        try {
+            DescribeConsumerGroupsResult result = adminClient.describeConsumerGroups(List.of(consumerGroup));
+            ConsumerGroupDescription group = result.describedGroups()
+                    .get(consumerGroup)
+                    .get(ADMIN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+            Map<TopicPartition, MemberDescription> membersByPartition = new HashMap<>();
+            for (MemberDescription member : group.members()) {
+                for (TopicPartition partition : member.assignment().topicPartitions()) {
+                    membersByPartition.put(partition, member);
+                }
+            }
+            return membersByPartition;
+        } catch (Exception exception) {
+            return Map.of();
+        }
     }
 }

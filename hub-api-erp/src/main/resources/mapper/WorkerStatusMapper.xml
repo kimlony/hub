@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bizbee.hub.worker.WorkerStatusMapper">
+
+    <resultMap id="workerStatusResultMap" type="com.bizbee.hub.worker.WorkerStatusItem">
+        <constructor>
+            <arg column="worker_id"                  javaType="java.lang.String"/>
+            <arg column="role"                       javaType="java.lang.String"/>
+            <arg column="pid"                        javaType="java.lang.Integer"/>
+            <arg column="hostname"                   javaType="java.lang.String"/>
+            <arg column="computed_status"            javaType="java.lang.String"/>
+            <arg column="started_at"                 javaType="java.lang.String"/>
+            <arg column="last_seen_at"               javaType="java.lang.String"/>
+            <arg column="heartbeat_interval_seconds" javaType="java.lang.Integer"/>
+            <arg column="seconds_since_seen"         javaType="java.lang.Long"/>
+            <arg column="metadata"                   javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectWorkerStatuses" resultMap="workerStatusResultMap">
+        SELECT
+            worker_id,
+            role,
+            pid,
+            hostname,
+            CASE
+                WHEN status = 'STOPPED' THEN 'STOPPED'
+                WHEN last_seen_at &lt; NOW() - ((heartbeat_interval_seconds * 3 + 10) * INTERVAL '1 second') THEN 'STALE'
+                ELSE 'ONLINE'
+            END AS computed_status,
+            to_char(started_at, 'YYYY-MM-DD HH24:MI:SS') AS started_at,
+            to_char(last_seen_at, 'YYYY-MM-DD HH24:MI:SS') AS last_seen_at,
+            heartbeat_interval_seconds,
+            EXTRACT(EPOCH FROM (NOW() - last_seen_at))::bigint AS seconds_since_seen,
+            metadata::text AS metadata
+        FROM hub_worker_heartbeat
+        WHERE status != 'STOPPED'
+          AND last_seen_at >= NOW() - INTERVAL '2 minutes'
+        ORDER BY
+            CASE role
+                WHEN 'consumer' THEN 1
+                WHEN 'recovery' THEN 2
+                WHEN 'http' THEN 3
+                ELSE 4
+            END,
+            worker_id
+    </select>
+
+</mapper>

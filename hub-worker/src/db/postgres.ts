@@ -70,6 +70,76 @@ export async function ensurePostgresSchema(): Promise<void> {
     ALTER TABLE hub_job_result
     ADD COLUMN IF NOT EXISTS request_key VARCHAR(200)
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_worker_heartbeat (
+      worker_id VARCHAR(100) PRIMARY KEY,
+      role VARCHAR(30) NOT NULL,
+      pid INT NOT NULL,
+      hostname VARCHAR(120) NOT NULL,
+      status VARCHAR(20) NOT NULL,
+      started_at TIMESTAMPTZ NOT NULL,
+      last_seen_at TIMESTAMPTZ NOT NULL,
+      heartbeat_interval_seconds INT NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_hub_worker_heartbeat_role
+    ON hub_worker_heartbeat (role, last_seen_at)
+  `);
+  await pool.query(`
+    DELETE FROM hub_worker_heartbeat
+    WHERE status <> 'ONLINE'
+       OR last_seen_at < NOW() - INTERVAL '2 minutes'
+  `);
+}
+
+export async function saveWorkerHeartbeat(input: {
+  workerId: string;
+  role: string;
+  pid: number;
+  hostname: string;
+  status: "ONLINE" | "STOPPED";
+  startedAt: Date;
+  heartbeatIntervalSeconds: number;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  await pool.query(
+    `
+      INSERT INTO hub_worker_heartbeat (
+        worker_id,
+        role,
+        pid,
+        hostname,
+        status,
+        started_at,
+        last_seen_at,
+        heartbeat_interval_seconds,
+        metadata
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, NOW(), $7, $8::jsonb
+      )
+      ON CONFLICT (worker_id)
+      DO UPDATE
+      SET role = EXCLUDED.role,
+          pid = EXCLUDED.pid,
+          hostname = EXCLUDED.hostname,
+          status = EXCLUDED.status,
+          last_seen_at = NOW(),
+          heartbeat_interval_seconds = EXCLUDED.heartbeat_interval_seconds,
+          metadata = EXCLUDED.metadata
+    `,
+    [
+      input.workerId,
+      input.role,
+      input.pid,
+      input.hostname,
+      input.status,
+      input.startedAt,
+      input.heartbeatIntervalSeconds,
+      JSON.stringify(input.metadata ?? {})
+    ]
+  );
 }
 
 export async function tryMarkProcessing(requestId: string): Promise<boolean> {

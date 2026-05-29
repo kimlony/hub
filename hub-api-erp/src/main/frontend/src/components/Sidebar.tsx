@@ -6,18 +6,19 @@ type NavSection = { section: string; items: NavItem[] }
 const nav: NavSection[] = [
   {
     section: '메인',
-    items: [{ label: '대시보드', to: '/', icon: '🏠' }],
+    items: [{ label: '대시보드', to: '/', icon: 'D' }],
   },
   {
     section: '주문수집',
     items: [
-      { label: '작업 목록', to: '/jobs', icon: '📋', badge: 3 },
+      { label: '작업 목록', to: '/jobs', icon: 'J' },
+      { label: '배치 작업', to: '/schedules', icon: 'S' },
     ],
   },
   {
     section: '모니터링',
     items: [
-      { label: 'Kafka 현황', to: '/monitor', icon: '⚡' },
+      { label: 'Kafka 현황', to: '/monitor', icon: 'K' },
     ],
   },
 ]
@@ -25,7 +26,6 @@ const nav: NavSection[] = [
 export default function Sidebar() {
   return (
     <aside className="w-56 flex flex-col flex-shrink-0 bg-white border-r border-slate-100 h-screen">
-      {/* Logo */}
       <div className="px-5 py-6">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-[#3182F6] rounded-xl flex items-center justify-center text-white font-extrabold text-sm">
@@ -38,7 +38,6 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 px-3 overflow-y-auto">
         {nav.map(({ section, items }) => (
           <div key={section} className="mb-5">
@@ -57,7 +56,9 @@ export default function Sidebar() {
                     : 'text-[#8B95A1] hover:bg-slate-50 hover:text-[#191F28] font-medium')
                 }
               >
-                <span className="text-base w-5 text-center">{icon}</span>
+                <span className="text-[11px] w-5 h-5 rounded-md bg-slate-100 flex items-center justify-center font-extrabold">
+                  {icon}
+                </span>
                 <span className="flex-1">{label}</span>
                 {badge !== undefined && (
                   <span className="bg-[#FF6B6B] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
@@ -70,10 +71,9 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Footer */}
       <div className="px-5 py-4 border-t border-slate-100">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#3182F6] to-indigo-400 flex items-center justify-center text-white text-sm font-bold">
+          <div className="w-8 h-8 rounded-full bg-[#191F28] flex items-center justify-center text-white text-sm font-bold">
             K
           </div>
           <div>

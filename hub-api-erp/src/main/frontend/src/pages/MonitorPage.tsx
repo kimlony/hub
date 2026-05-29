@@ -9,12 +9,27 @@ type KafkaMonitorStats = {
   totalLag: number
 }
 
+type KafkaPartition = {
+  topic: string
+  partition: number
+  leader: number
+  replicas: number[]
+  latestOffset: number
+  committedOffset: number
+  lag: number
+  consumerId: string | null
+  clientId: string | null
+  host: string | null
+  status: string
+}
+
 type KafkaTopic = {
   name: string
   partitions: number
   replicas: number
   lag: number
   status: string
+  partitionDetails: KafkaPartition[]
 }
 
 type KafkaBroker = {
@@ -35,6 +50,32 @@ type KafkaMonitorResponse = {
   generatedAt: string
 }
 
+type WorkerStatusStats = {
+  totalCount: number
+  onlineCount: number
+  staleCount: number
+  stoppedCount: number
+}
+
+type WorkerStatusItem = {
+  workerId: string
+  role: string
+  pid: number
+  hostname: string
+  status: string
+  startedAt: string
+  lastSeenAt: string
+  heartbeatIntervalSeconds: number
+  secondsSinceSeen: number
+  metadata: string
+}
+
+type WorkerStatusResponse = {
+  stats: WorkerStatusStats
+  workers: WorkerStatusItem[]
+  generatedAt: string
+}
+
 type StatCard = {
   label: string
   value: string
@@ -43,6 +84,7 @@ type StatCard = {
 
 export default function MonitorPage() {
   const [data, setData] = useState<KafkaMonitorResponse | null>(null)
+  const [workerData, setWorkerData] = useState<WorkerStatusResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const authenticatedFetch = useAuthenticatedFetch()
@@ -55,9 +97,15 @@ export default function MonitorPage() {
         throw new Error(`Kafka monitor API failed: ${res.status}`)
       }
       setData(await res.json() as KafkaMonitorResponse)
+
+      const workerRes = await authenticatedFetch('/api/hub/workers/status')
+      if (!workerRes.ok) {
+        throw new Error(`Worker status API failed: ${workerRes.status}`)
+      }
+      setWorkerData(await workerRes.json() as WorkerStatusResponse)
     } catch (err) {
       if ((err as Error).message !== 'Authentication required') {
-        setError('Kafka 현황을 불러오지 못했습니다.')
+        setError('모니터링 데이터를 불러오지 못했습니다.')
       }
     } finally {
       setLoading(false)
@@ -89,7 +137,17 @@ export default function MonitorPage() {
       value: formatNumber(data?.stats.totalLag ?? 0),
       gradient: 'from-amber-400 to-yellow-300',
     },
-  ], [data])
+    {
+      label: 'Worker Online',
+      value: `${formatNumber(workerData?.stats.onlineCount ?? 0)} / ${formatNumber(workerData?.stats.totalCount ?? 0)}`,
+      gradient: 'from-[#64748B] to-[#94A3B8]',
+    },
+  ], [data, workerData])
+
+  const partitions = useMemo(
+    () => data?.topics.flatMap((topic) => topic.partitionDetails) ?? [],
+    [data]
+  )
 
   return (
     <Layout
@@ -119,7 +177,7 @@ export default function MonitorPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-5">
+      <div className="grid grid-cols-4 gap-4 mb-5">
         {stats.map((s) => (
           <div key={s.label} className={`bg-gradient-to-br ${s.gradient} rounded-lg p-5 text-white`}>
             <p className="text-[12px] font-semibold opacity-85 mb-2">{s.label}</p>
@@ -128,7 +186,7 @@ export default function MonitorPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4 mb-4">
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-50">
             <h3 className="text-[14px] font-extrabold text-[#191F28]">토픽</h3>
@@ -195,6 +253,99 @@ export default function MonitorPage() {
           </table>
         </div>
       </div>
+
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-50">
+          <h3 className="text-[14px] font-extrabold text-[#191F28]">파티션 상세</h3>
+        </div>
+        <table className="w-full">
+          <thead>
+            <tr className="bg-[#FAFAFA]">
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Topic</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Partition</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Leader</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Latest</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Committed</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Lag</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Consumer</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">상태</th>
+            </tr>
+          </thead>
+          <tbody>
+            {partitions.length ? partitions.map((partition) => (
+              <tr key={`${partition.topic}-${partition.partition}`} className="border-t border-slate-50">
+                <td className="px-5 py-3 font-mono text-[12px] font-semibold text-[#191F28]">{partition.topic}</td>
+                <td className="px-5 py-3 text-[13px] text-[#4E5968]">{partition.partition}</td>
+                <td className="px-5 py-3 text-[13px] text-[#4E5968]">{partition.leader}</td>
+                <td className="px-5 py-3 text-[13px] text-[#4E5968]">{formatNumber(partition.latestOffset)}</td>
+                <td className="px-5 py-3 text-[13px] text-[#4E5968]">{formatNumber(partition.committedOffset)}</td>
+                <td className="px-5 py-3 text-[13px] font-bold text-[#191F28]">{formatNumber(partition.lag)}</td>
+                <td className="px-5 py-3 text-[12px] text-[#4E5968]">
+                  {partition.consumerId ? (
+                    <div className="max-w-[280px]">
+                      <p className="truncate font-mono font-semibold">{partition.clientId ?? partition.consumerId}</p>
+                      <p className="truncate text-[#8B95A1]">{partition.host ?? '-'}</p>
+                    </div>
+                  ) : (
+                    <span className="text-[#8B95A1]">unassigned</span>
+                  )}
+                </td>
+                <td className="px-5 py-3"><StatusPill status={partition.status} /></td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={8} className="px-5 py-8 text-center text-[13px] text-[#8B95A1]">
+                  {loading ? '불러오는 중입니다.' : '파티션 상세 정보가 없습니다.'}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-4 bg-white rounded-lg shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-50">
+          <h3 className="text-[14px] font-extrabold text-[#191F28]">Worker 상태</h3>
+          <div className="text-[12px] text-[#8B95A1]">
+            Online {formatNumber(workerData?.stats.onlineCount ?? 0)} · Stale {formatNumber(workerData?.stats.staleCount ?? 0)} · Stopped {formatNumber(workerData?.stats.stoppedCount ?? 0)}
+          </div>
+        </div>
+        <table className="w-full">
+          <thead>
+            <tr className="bg-[#FAFAFA]">
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Worker</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Role</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">PID</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Host</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Last Seen</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Interval</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">상태</th>
+            </tr>
+          </thead>
+          <tbody>
+            {workerData?.workers.length ? workerData.workers.map((worker) => (
+              <tr key={worker.workerId} className="border-t border-slate-50">
+                <td className="px-5 py-3 font-mono text-[12px] font-semibold text-[#191F28]">{worker.workerId}</td>
+                <td className="px-5 py-3 text-[13px] text-[#4E5968]">{worker.role}</td>
+                <td className="px-5 py-3 text-[13px] text-[#4E5968]">{worker.pid}</td>
+                <td className="px-5 py-3 text-[13px] text-[#4E5968]">{worker.hostname}</td>
+                <td className="px-5 py-3 text-[12px] text-[#4E5968]">
+                  <div>{worker.lastSeenAt}</div>
+                  <div className="text-[#8B95A1]">{formatNumber(worker.secondsSinceSeen)}초 전</div>
+                </td>
+                <td className="px-5 py-3 text-[13px] text-[#4E5968]">{worker.heartbeatIntervalSeconds}s</td>
+                <td className="px-5 py-3"><StatusPill status={worker.status} /></td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={7} className="px-5 py-8 text-center text-[13px] text-[#8B95A1]">
+                  {loading ? '불러오는 중입니다.' : 'Worker heartbeat 데이터가 없습니다.'}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </Layout>
   )
 }
@@ -205,6 +356,8 @@ function StatusPill({ status }: { status: string }) {
     ? 'text-[#00C073] bg-[#E8FAF0]'
     : normalized === 'WARN'
       ? 'text-amber-600 bg-amber-50'
+      : normalized === 'STALE'
+        ? 'text-amber-700 bg-amber-50'
       : normalized === 'LOADING'
         ? 'text-[#3182F6] bg-blue-50'
         : 'text-red-600 bg-red-50'

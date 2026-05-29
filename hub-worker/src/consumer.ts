@@ -21,17 +21,18 @@ import { getErrorMessage, logger } from "./logger.js";
 
 export type HubJobMessage = JobHandlerMessage;
 
+const topic = process.env.KAFKA_TOPIC ?? "hub.jobs";
+const consumerGroup = process.env.KAFKA_GROUP_ID ?? "hub-worker-group";
+const workerInstanceId = `${process.env.WORKER_ROLE ?? "worker"}:${process.pid}`;
+const kafkaClientId = `${process.env.KAFKA_CLIENT_ID ?? "hub-worker"}-${process.env.WORKER_ROLE ?? "worker"}-${process.pid}`;
 const kafka = new Kafka({
-  clientId: process.env.KAFKA_CLIENT_ID ?? "hub-worker",
+  clientId: kafkaClientId,
   brokers: (process.env.KAFKA_BROKERS ?? "localhost:9092")
     .split(",")
     .map((broker) => broker.trim())
     .filter(Boolean)
 });
 
-const topic = process.env.KAFKA_TOPIC ?? "hub.jobs";
-const consumerGroup = process.env.KAFKA_GROUP_ID ?? "hub-worker-group";
-const workerInstanceId = `${process.env.WORKER_ROLE ?? "worker"}:${process.pid}`;
 const consumer: Consumer = kafka.consumer({ groupId: consumerGroup });
 
 const registry = new HandlerRegistry();
@@ -48,7 +49,9 @@ export async function startConsumer(): Promise<void> {
   logger.info({
     event: "KAFKA_CONSUMER_STARTED",
     topic,
-    consumerGroup
+    consumerGroup,
+    kafkaClientId,
+    workerInstanceId
   }, "Kafka consumer started");
 
   await consumer.run({
@@ -63,6 +66,7 @@ export async function stopConsumer(): Promise<void> {
 async function handleKafkaMessage({ topic, partition, message }: EachMessagePayload): Promise<void> {
   const rawMessage = message.value?.toString("utf8") ?? "";
   const kafkaMessageId = `${topic}-${partition}-${message.offset}`;
+  const messageKey = message.key?.toString("utf8") ?? null;
   let jobMessage: HubJobMessage;
 
   try {
@@ -76,13 +80,30 @@ async function handleKafkaMessage({ topic, partition, message }: EachMessagePayl
     return;
   }
 
-  await processJobMessage(jobMessage, "consumer");
+  await processJobMessage(jobMessage, "consumer", {
+    kafka: {
+      topic,
+      partition,
+      offset: message.offset,
+      messageKey,
+      kafkaMessageId
+    }
+  });
 }
 
 export async function processJobMessage(
   jobMessage: HubJobMessage,
   source: "consumer" | "recovery" = "consumer",
-  options: { alreadyClaimed?: boolean } = {}
+  options: {
+    alreadyClaimed?: boolean;
+    kafka?: {
+      topic: string;
+      partition: number;
+      offset: string;
+      messageKey: string | null;
+      kafkaMessageId: string;
+    };
+  } = {}
 ): Promise<void> {
   const { requestId, jobType } = jobMessage;
 
@@ -93,6 +114,8 @@ export async function processJobMessage(
       jobType,
       source,
       workerInstanceId,
+      kafkaClientId,
+      kafka: options.kafka,
       channelCd: getChannelCd(jobMessage),
       mallKey: getMallKey(jobMessage)
     }, "Job processing started");
@@ -108,7 +131,9 @@ export async function processJobMessage(
       mallKey: getMallKey(jobMessage),
       detail: {
         source,
-        workerInstanceId
+        workerInstanceId,
+        kafkaClientId,
+        kafka: options.kafka
       }
     });
 
@@ -133,7 +158,10 @@ export async function processJobMessage(
         mallKey: getMallKey(jobMessage),
         detail: {
           source,
-          reason: "status_not_queued"
+          reason: "status_not_queued",
+          workerInstanceId,
+          kafkaClientId,
+          kafka: options.kafka
         }
       });
       return;
