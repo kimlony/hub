@@ -1,16 +1,73 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout';
-const topics = [
-    { name: 'hub.jobs', partitions: 3, replicas: 1, lag: 2, status: 'HEALTHY' },
-];
-const brokers = [
-    { id: 1, host: 'localhost:9092', status: 'ONLINE' },
-];
-const stats = [
-    { label: '토픽 수', value: '1', gradient: 'from-[#3182F6] to-[#5BABF9]' },
-    { label: '총 메시지', value: '1,284', gradient: 'from-[#00C073] to-[#3DDC97]' },
-    { label: 'Consumer Lag', value: '2', gradient: 'from-amber-400 to-yellow-300' },
-];
+import { useAuthenticatedFetch } from '../hooks/useAuthenticatedFetch';
 export default function MonitorPage() {
-    return (_jsxs(Layout, { title: "Kafka \uD604\uD669", children: [_jsx("div", { className: "grid grid-cols-3 gap-4 mb-5", children: stats.map((s) => (_jsxs("div", { className: `bg-gradient-to-br ${s.gradient} rounded-2xl p-5 text-white`, children: [_jsx("p", { className: "text-[12px] font-semibold opacity-85 mb-2", children: s.label }), _jsx("p", { className: "text-[28px] font-extrabold leading-none", children: s.value })] }, s.label))) }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsxs("div", { className: "bg-white rounded-2xl shadow-sm overflow-hidden", children: [_jsx("div", { className: "px-5 py-4 border-b border-slate-50", children: _jsx("h3", { className: "text-[14px] font-extrabold text-[#191F28]", children: "\uD1A0\uD53D" }) }), _jsxs("table", { className: "w-full", children: [_jsx("thead", { children: _jsxs("tr", { className: "bg-[#FAFAFA]", children: [_jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "\uD1A0\uD53D\uBA85" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "\uD30C\uD2F0\uC158" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "Lag" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "\uC0C1\uD0DC" })] }) }), _jsx("tbody", { children: topics.map((t) => (_jsxs("tr", { className: "border-t border-slate-50", children: [_jsx("td", { className: "px-5 py-3 font-mono text-[13px] font-semibold text-[#191F28]", children: t.name }), _jsx("td", { className: "px-5 py-3 text-[13px] text-[#4E5968]", children: t.partitions }), _jsx("td", { className: "px-5 py-3 text-[13px] text-[#4E5968]", children: t.lag }), _jsx("td", { className: "px-5 py-3", children: _jsxs("span", { className: "inline-flex items-center gap-1.5 text-[12px] font-bold text-[#00C073]", children: [_jsx("span", { className: "w-2 h-2 rounded-full bg-[#00C073] inline-block" }), t.status] }) })] }, t.name))) })] })] }), _jsxs("div", { className: "bg-white rounded-2xl shadow-sm overflow-hidden", children: [_jsx("div", { className: "px-5 py-4 border-b border-slate-50", children: _jsx("h3", { className: "text-[14px] font-extrabold text-[#191F28]", children: "\uBE0C\uB85C\uCEE4" }) }), _jsxs("table", { className: "w-full", children: [_jsx("thead", { children: _jsxs("tr", { className: "bg-[#FAFAFA]", children: [_jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "ID" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "Host" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "\uC0C1\uD0DC" })] }) }), _jsx("tbody", { children: brokers.map((b) => (_jsxs("tr", { className: "border-t border-slate-50", children: [_jsx("td", { className: "px-5 py-3 text-[13px] text-[#4E5968]", children: b.id }), _jsx("td", { className: "px-5 py-3 font-mono text-[13px] font-semibold text-[#191F28]", children: b.host }), _jsx("td", { className: "px-5 py-3", children: _jsxs("span", { className: "inline-flex items-center gap-1.5 text-[12px] font-bold text-[#00C073]", children: [_jsx("span", { className: "w-2 h-2 rounded-full bg-[#00C073] inline-block" }), b.status] }) })] }, b.id))) })] })] })] })] }));
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const authenticatedFetch = useAuthenticatedFetch();
+    const fetchMonitor = useCallback(async () => {
+        setError('');
+        try {
+            const res = await authenticatedFetch('/api/hub/kafka/monitor');
+            if (!res.ok) {
+                throw new Error(`Kafka monitor API failed: ${res.status}`);
+            }
+            setData(await res.json());
+        }
+        catch (err) {
+            if (err.message !== 'Authentication required') {
+                setError('Kafka 현황을 불러오지 못했습니다.');
+            }
+        }
+        finally {
+            setLoading(false);
+        }
+    }, [authenticatedFetch]);
+    useEffect(() => {
+        void fetchMonitor();
+    }, [fetchMonitor]);
+    useEffect(() => {
+        const id = setInterval(() => { void fetchMonitor(); }, 10000);
+        return () => clearInterval(id);
+    }, [fetchMonitor]);
+    const stats = useMemo(() => [
+        {
+            label: '토픽',
+            value: formatNumber(data?.stats.topicCount ?? 0),
+            gradient: 'from-[#3182F6] to-[#5BABF9]',
+        },
+        {
+            label: '브로커',
+            value: formatNumber(data?.stats.brokerCount ?? 0),
+            gradient: 'from-[#00C073] to-[#3DDC97]',
+        },
+        {
+            label: 'Consumer Lag',
+            value: formatNumber(data?.stats.totalLag ?? 0),
+            gradient: 'from-amber-400 to-yellow-300',
+        },
+    ], [data]);
+    return (_jsxs(Layout, { title: "Kafka \uD604\uD669", actions: _jsx("button", { onClick: () => { setLoading(true); void fetchMonitor(); }, className: "px-4 py-2 text-[13px] font-semibold rounded-xl bg-[#F2F4F6] text-[#4E5968] hover:bg-slate-200 transition-colors", children: "\uC0C8\uB85C\uACE0\uCE68" }), children: [(error || data?.status === 'ERROR') && (_jsx("div", { className: "mb-4 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-[13px] font-semibold text-red-600", children: error || data?.errorMessage || 'Kafka 상태를 확인하지 못했습니다.' })), _jsxs("div", { className: "mb-4 flex items-center justify-between", children: [_jsxs("div", { className: "text-[12px] text-[#8B95A1]", children: ["Consumer Group: ", _jsx("span", { className: "font-mono font-semibold text-[#4E5968]", children: data?.consumerGroup ?? '-' })] }), _jsxs("div", { className: "flex items-center gap-2 text-[12px] text-[#8B95A1]", children: [_jsx(StatusPill, { status: data?.status ?? (loading ? 'LOADING' : 'UNKNOWN') }), _jsx("span", { children: data?.generatedAt ? formatDateTime(data.generatedAt) : '-' })] })] }), _jsx("div", { className: "grid grid-cols-3 gap-4 mb-5", children: stats.map((s) => (_jsxs("div", { className: `bg-gradient-to-br ${s.gradient} rounded-lg p-5 text-white`, children: [_jsx("p", { className: "text-[12px] font-semibold opacity-85 mb-2", children: s.label }), _jsx("p", { className: "text-[28px] font-extrabold leading-none", children: loading && !data ? '-' : s.value })] }, s.label))) }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsxs("div", { className: "bg-white rounded-lg shadow-sm overflow-hidden", children: [_jsx("div", { className: "px-5 py-4 border-b border-slate-50", children: _jsx("h3", { className: "text-[14px] font-extrabold text-[#191F28]", children: "\uD1A0\uD53D" }) }), _jsxs("table", { className: "w-full", children: [_jsx("thead", { children: _jsxs("tr", { className: "bg-[#FAFAFA]", children: [_jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "\uD1A0\uD53D\uBA85" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "\uD30C\uD2F0\uC158" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "\uBCF5\uC81C" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "Lag" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "\uC0C1\uD0DC" })] }) }), _jsx("tbody", { children: data?.topics.length ? data.topics.map((topic) => (_jsxs("tr", { className: "border-t border-slate-50", children: [_jsx("td", { className: "px-5 py-3 font-mono text-[13px] font-semibold text-[#191F28]", children: topic.name }), _jsx("td", { className: "px-5 py-3 text-[13px] text-[#4E5968]", children: topic.partitions }), _jsx("td", { className: "px-5 py-3 text-[13px] text-[#4E5968]", children: topic.replicas }), _jsx("td", { className: "px-5 py-3 text-[13px] text-[#4E5968]", children: formatNumber(topic.lag) }), _jsx("td", { className: "px-5 py-3", children: _jsx(StatusPill, { status: topic.status }) })] }, topic.name))) : (_jsx("tr", { children: _jsx("td", { colSpan: 5, className: "px-5 py-8 text-center text-[13px] text-[#8B95A1]", children: loading ? '불러오는 중입니다.' : '토픽 정보가 없습니다.' }) })) })] })] }), _jsxs("div", { className: "bg-white rounded-lg shadow-sm overflow-hidden", children: [_jsx("div", { className: "px-5 py-4 border-b border-slate-50", children: _jsx("h3", { className: "text-[14px] font-extrabold text-[#191F28]", children: "\uBE0C\uB85C\uCEE4" }) }), _jsxs("table", { className: "w-full", children: [_jsx("thead", { children: _jsxs("tr", { className: "bg-[#FAFAFA]", children: [_jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "ID" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "Host" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "Rack" }), _jsx("th", { className: "px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide", children: "\uC0C1\uD0DC" })] }) }), _jsx("tbody", { children: data?.brokers.length ? data.brokers.map((broker) => (_jsxs("tr", { className: "border-t border-slate-50", children: [_jsx("td", { className: "px-5 py-3 text-[13px] text-[#4E5968]", children: broker.id }), _jsxs("td", { className: "px-5 py-3 font-mono text-[13px] font-semibold text-[#191F28]", children: [broker.host, ":", broker.port] }), _jsx("td", { className: "px-5 py-3 text-[13px] text-[#4E5968]", children: broker.rack ?? '-' }), _jsx("td", { className: "px-5 py-3", children: _jsx(StatusPill, { status: broker.status }) })] }, broker.id))) : (_jsx("tr", { children: _jsx("td", { colSpan: 4, className: "px-5 py-8 text-center text-[13px] text-[#8B95A1]", children: loading ? '불러오는 중입니다.' : '브로커 정보가 없습니다.' }) })) })] })] })] })] }));
+}
+function StatusPill({ status }) {
+    const normalized = status.toUpperCase();
+    const color = normalized === 'HEALTHY' || normalized === 'ONLINE'
+        ? 'text-[#00C073] bg-[#E8FAF0]'
+        : normalized === 'WARN'
+            ? 'text-amber-600 bg-amber-50'
+            : normalized === 'LOADING'
+                ? 'text-[#3182F6] bg-blue-50'
+                : 'text-red-600 bg-red-50';
+    return (_jsxs("span", { className: `inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${color}`, children: [_jsx("span", { className: "w-2 h-2 rounded-full bg-current inline-block" }), status] }));
+}
+function formatNumber(value) {
+    return new Intl.NumberFormat('ko-KR').format(value);
+}
+function formatDateTime(value) {
+    if (!value) {
+        return '-';
+    }
+    return value.replace('T', ' ').slice(0, 19);
 }

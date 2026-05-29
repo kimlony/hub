@@ -29,6 +29,12 @@ public interface HubJobMapper {
             @Param("channelCd") String channelCd
     );
 
+    DashboardStats selectDashboardStats();
+
+    List<DashboardRecentJob> selectDashboardRecentJobs(@Param("limit") int limit);
+
+    List<DashboardChannelStat> selectDashboardChannelStats();
+
     void updateStatus(
             @Param("requestId") String requestId,
             @Param("status") String status,

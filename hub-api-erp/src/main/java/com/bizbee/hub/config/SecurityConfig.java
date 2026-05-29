@@ -37,6 +37,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/me/**").authenticated()
                 .requestMatchers("/api/channels/**").authenticated()
                 .requestMatchers("/api/hub/jobs/**").authenticated()
+                .requestMatchers("/api/hub/kafka/**").authenticated()
                 .anyRequest().permitAll()
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

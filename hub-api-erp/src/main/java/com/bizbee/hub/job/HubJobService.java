@@ -8,6 +8,8 @@ public interface HubJobService {
 
     HubJobListResponse getJobs(String status, String channelCd, int page, int size);
 
+    HubDashboardResponse getDashboard();
+
     HubJobLogResponse getJobLogs(String requestId);
 
     void retryJob(String requestId);

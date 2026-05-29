@@ -28,7 +28,44 @@
             <arg       column="max_retry_count" javaType="java.lang.Integer"/>
             <arg       column="error_message"   javaType="java.lang.String"/>
             <arg       column="detail"          javaType="java.lang.String"/>
-            <arg       column="created_at"      javaType="java.time.LocalDateTime"/>
+            <arg       column="created_at"      javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="dashboardStatsResultMap" type="com.bizbee.hub.job.DashboardStats">
+        <constructor>
+            <arg column="today_total"        javaType="java.lang.Long"/>
+            <arg column="today_success"      javaType="java.lang.Long"/>
+            <arg column="today_failed"       javaType="java.lang.Long"/>
+            <arg column="queued"             javaType="java.lang.Long"/>
+            <arg column="processing"         javaType="java.lang.Long"/>
+            <arg column="retry_waiting"      javaType="java.lang.Long"/>
+            <arg column="today_success_rate" javaType="java.lang.Double"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="dashboardRecentJobResultMap" type="com.bizbee.hub.job.DashboardRecentJob">
+        <constructor>
+            <arg column="request_id"    javaType="java.lang.String"/>
+            <arg column="channel_cd"    javaType="java.lang.String"/>
+            <arg column="fr_dt"         javaType="java.lang.String"/>
+            <arg column="to_dt"         javaType="java.lang.String"/>
+            <arg column="status"        javaType="java.lang.String"/>
+            <arg column="retry_count"   javaType="java.lang.Integer"/>
+            <arg column="error_message" javaType="java.lang.String"/>
+            <arg column="created_at"    javaType="java.lang.String"/>
+            <arg column="updated_at"    javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="dashboardChannelStatResultMap" type="com.bizbee.hub.job.DashboardChannelStat">
+        <constructor>
+            <arg column="channel_cd"       javaType="java.lang.String"/>
+            <arg column="total_count"      javaType="java.lang.Long"/>
+            <arg column="success_count"    javaType="java.lang.Long"/>
+            <arg column="failed_count"     javaType="java.lang.Long"/>
+            <arg column="processing_count" javaType="java.lang.Long"/>
+            <arg column="queued_count"     javaType="java.lang.Long"/>
         </constructor>
     </resultMap>
 
@@ -70,7 +107,7 @@
             max_retry_count,
             error_message,
             detail::text AS detail,
-            created_at
+            to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at
         FROM hub_job_log
         WHERE request_id = #{requestId}
         ORDER BY created_at ASC, id ASC
@@ -92,6 +129,55 @@
             <if test="status != null and status != ''">AND status = #{status}</if>
             <if test="channelCd != null and channelCd != ''">AND channel_cd = #{channelCd}</if>
         </where>
+    </select>
+
+    <select id="selectDashboardStats" resultMap="dashboardStatsResultMap">
+        SELECT
+            COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) AS today_total,
+            COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE AND status = 'SUCCESS') AS today_success,
+            COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE AND status = 'FAILED') AS today_failed,
+            COUNT(*) FILTER (WHERE status = 'QUEUED') AS queued,
+            COUNT(*) FILTER (WHERE status = 'PROCESSING') AS processing,
+            COUNT(*) FILTER (WHERE status = 'QUEUED' AND retry_count > 0) AS retry_waiting,
+            COALESCE(
+                ROUND(
+                    COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE AND status = 'SUCCESS')::numeric
+                    * 100
+                    / NULLIF(COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE), 0),
+                    1
+                ),
+                0
+            )::float8 AS today_success_rate
+        FROM hub_job
+    </select>
+
+    <select id="selectDashboardRecentJobs" resultMap="dashboardRecentJobResultMap">
+        SELECT
+            request_id,
+            channel_cd,
+            COALESCE(payload ->> 'frDt', split_part(request_key, '_', 2), '') AS fr_dt,
+            COALESCE(payload ->> 'toDt', split_part(request_key, '_', 3), '') AS to_dt,
+            status,
+            retry_count,
+            error_message,
+            to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+            to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') AS updated_at
+        FROM hub_job
+        ORDER BY created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectDashboardChannelStats" resultMap="dashboardChannelStatResultMap">
+        SELECT
+            channel_cd,
+            COUNT(*) AS total_count,
+            COUNT(*) FILTER (WHERE status = 'SUCCESS') AS success_count,
+            COUNT(*) FILTER (WHERE status = 'FAILED') AS failed_count,
+            COUNT(*) FILTER (WHERE status = 'PROCESSING') AS processing_count,
+            COUNT(*) FILTER (WHERE status = 'QUEUED') AS queued_count
+        FROM hub_job
+        GROUP BY channel_cd
+        ORDER BY total_count DESC, channel_cd ASC
     </select>
 
     <update id="updateStatus">

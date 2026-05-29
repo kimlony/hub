@@ -37,6 +37,11 @@ public class HubJobController {
         return ResponseEntity.ok(hubJobService.getJobs(status, channelCd, page, size));
     }
 
+    @GetMapping("/dashboard")
+    public ResponseEntity<HubDashboardResponse> getDashboard() {
+        return ResponseEntity.ok(hubJobService.getDashboard());
+    }
+
     @GetMapping("/{requestId}")
     public ResponseEntity<HubJobDetailResponse> getJob(@PathVariable String requestId) {
         return ResponseEntity.ok(hubJobService.getJob(requestId));

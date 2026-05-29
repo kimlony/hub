@@ -19,9 +19,11 @@ public class WebConfig implements WebMvcConfigurer {
                 .addPathPatterns("/api/hub/jobs", "/api/hub/jobs/**")
                 .excludePathPatterns(
                         "/error",
-                        "/api/hub/jobs",           // GET 목록
-                        "/api/hub/jobs/batch",     // POST 수집 요청
-                        "/api/hub/jobs/*/retry"    // POST 재시도
+                        "/api/hub/jobs",
+                        "/api/hub/jobs/dashboard",
+                        "/api/hub/jobs/batch",
+                        "/api/hub/jobs/*/logs",
+                        "/api/hub/jobs/*/retry"
                 );
     }
 }

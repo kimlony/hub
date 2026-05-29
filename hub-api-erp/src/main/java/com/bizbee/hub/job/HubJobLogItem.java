@@ -1,7 +1,5 @@
 package com.bizbee.hub.job;
 
-import java.time.LocalDateTime;
-
 public record HubJobLogItem(
         Long id,
         String requestId,
@@ -14,6 +12,6 @@ public record HubJobLogItem(
         Integer maxRetryCount,
         String errorMessage,
         String detail,
-        LocalDateTime createdAt
+        String createdAt
 ) {
 }

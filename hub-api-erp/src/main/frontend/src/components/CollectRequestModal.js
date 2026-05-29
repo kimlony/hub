@@ -1,9 +1,9 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuthenticatedFetch } from '../hooks/useAuthenticatedFetch';
 export default function CollectRequestModal({ onClose }) {
-    const { token } = useAuth();
+    const authenticatedFetch = useAuthenticatedFetch();
     const today = new Date().toISOString().slice(0, 10);
     const [startDate, setStartDate] = useState(today);
     const [endDate, setEndDate] = useState(today);
@@ -17,11 +17,11 @@ export default function CollectRequestModal({ onClose }) {
     const allChecked = activeMalls.length > 0 && selected.size === activeMalls.length;
     const someChecked = selected.size > 0 && !allChecked;
     useEffect(() => {
-        fetch('/api/channels', { headers: { Authorization: `Bearer ${token}` } })
+        authenticatedFetch('/api/channels')
             .then(r => r.json())
             .then((data) => setChannels(data))
             .finally(() => setLoading(false));
-    }, [token]);
+    }, [authenticatedFetch]);
     useEffect(() => {
         if (allRef.current)
             allRef.current.indeterminate = someChecked;
@@ -45,10 +45,9 @@ export default function CollectRequestModal({ onClose }) {
         setSubmitting(true);
         setError(null);
         try {
-            const res = await fetch('/api/hub/jobs/batch', {
+            const res = await authenticatedFetch('/api/hub/jobs/batch', {
                 method: 'POST',
                 headers: {
-                    Authorization: `Bearer ${token}`,
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({

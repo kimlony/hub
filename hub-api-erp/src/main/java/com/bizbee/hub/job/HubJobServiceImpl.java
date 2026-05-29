@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -158,6 +159,17 @@ public class HubJobServiceImpl implements HubJobService {
                 .collect(Collectors.toList());
 
         return new HubJobListResponse(items, total, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public HubDashboardResponse getDashboard() {
+        return new HubDashboardResponse(
+                hubJobMapper.selectDashboardStats(),
+                hubJobMapper.selectDashboardRecentJobs(8),
+                hubJobMapper.selectDashboardChannelStats(),
+                LocalDateTime.now()
+        );
     }
 
     @Transactional(readOnly = true)
