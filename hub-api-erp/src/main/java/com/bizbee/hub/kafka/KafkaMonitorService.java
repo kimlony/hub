@@ -1,6 +1,11 @@
 package com.bizbee.hub.kafka;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -10,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -23,9 +29,14 @@ import org.apache.kafka.clients.admin.ListOffsetsResult;
 import org.apache.kafka.clients.admin.MemberDescription;
 import org.apache.kafka.clients.admin.OffsetSpec;
 import org.apache.kafka.clients.admin.TopicDescription;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaAdmin;
@@ -36,12 +47,19 @@ import org.springframework.stereotype.Service;
 public class KafkaMonitorService {
 
     private static final long ADMIN_TIMEOUT_SECONDS = 5;
+    private static final int MAX_DLQ_LIMIT = 100;
+    private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final KafkaAdmin kafkaAdmin;
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
     @Value("${hub.kafka.topics.jobs}")
     private String jobsTopic;
+
+    @Value("${hub.kafka.topics.dlq:hub.jobs.dlq}")
+    private String dlqTopic;
 
     @Value("${hub.kafka.consumer-group:hub-worker-group}")
     private String consumerGroup;
@@ -49,7 +67,7 @@ public class KafkaMonitorService {
     public KafkaMonitorResponse getMonitor() {
         try (AdminClient adminClient = AdminClient.create(adminProperties())) {
             List<KafkaBrokerInfo> brokers = fetchBrokers(adminClient);
-            List<KafkaTopicInfo> topics = fetchTopics(adminClient, List.of(jobsTopic));
+            List<KafkaTopicInfo> topics = fetchTopics(adminClient, monitorTopicNames());
             long totalLag = topics.stream().mapToLong(KafkaTopicInfo::lag).sum();
             int partitionCount = topics.stream().mapToInt(KafkaTopicInfo::partitions).sum();
 
@@ -75,14 +93,91 @@ public class KafkaMonitorService {
         }
     }
 
-    public KafkaJobDistributionResponse getJobDistribution(int minutes) {
+    public KafkaJobDistributionResponse getJobDistribution(int minutes, int page, int size) {
         int safeMinutes = Math.max(1, Math.min(minutes, 24 * 60));
+        int safePage = Math.max(1, page);
+        int safeSize = Math.max(1, Math.min(size, 50));
         return new KafkaJobDistributionResponse(
                 safeMinutes,
                 fetchJobDistributionSummary(safeMinutes),
-                fetchRecentKafkaJobs(safeMinutes),
+                fetchRecentKafkaJobs(safeMinutes, safePage, safeSize),
+                safePage,
+                safeSize,
+                countRecentKafkaJobs(safeMinutes),
                 LocalDateTime.now()
         );
+    }
+
+    public KafkaDlqMessageResponse getDlqMessages(int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, MAX_DLQ_LIMIT));
+        if (dlqTopic == null || dlqTopic.isBlank()) {
+            return new KafkaDlqMessageResponse(
+                    dlqTopic,
+                    0,
+                    List.of(),
+                    "ERROR",
+                    "DLQ topic is not configured",
+                    LocalDateTime.now()
+            );
+        }
+
+        try (AdminClient adminClient = AdminClient.create(adminProperties());
+             KafkaConsumer<String, String> consumer = new KafkaConsumer<>(dlqConsumerProperties())) {
+            TopicDescription description = adminClient.describeTopics(List.of(dlqTopic))
+                    .allTopicNames()
+                    .get(ADMIN_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .get(dlqTopic);
+            List<TopicPartition> partitions = description.partitions().stream()
+                    .map(partition -> new TopicPartition(dlqTopic, partition.partition()))
+                    .toList();
+
+            if (partitions.isEmpty()) {
+                return new KafkaDlqMessageResponse(dlqTopic, 0, List.of(), "HEALTHY", null, LocalDateTime.now());
+            }
+
+            Map<TopicPartition, Long> latestOffsets = fetchLatestOffsets(adminClient, List.of(description));
+            consumer.assign(partitions);
+            for (TopicPartition partition : partitions) {
+                long latestOffset = latestOffsets.getOrDefault(partition, 0L);
+                consumer.seek(partition, Math.max(0L, latestOffset - safeLimit));
+            }
+
+            List<KafkaDlqMessageItem> messages = new ArrayList<>();
+            long deadline = System.currentTimeMillis() + 2_000L;
+            while (System.currentTimeMillis() < deadline && messages.size() < safeLimit * partitions.size()) {
+                ConsumerRecords<String, String> records = consumer.poll(java.time.Duration.ofMillis(250));
+                if (records.isEmpty()) {
+                    break;
+                }
+                for (ConsumerRecord<String, String> record : records) {
+                    messages.add(toDlqMessageItem(record));
+                }
+            }
+
+            List<KafkaDlqMessageItem> recentMessages = messages.stream()
+                    .sorted(Comparator.comparing(KafkaDlqMessageItem::createdAt).reversed()
+                            .thenComparing(Comparator.comparingLong(KafkaDlqMessageItem::offset).reversed()))
+                    .limit(safeLimit)
+                    .toList();
+
+            return new KafkaDlqMessageResponse(
+                    dlqTopic,
+                    recentMessages.size(),
+                    recentMessages,
+                    recentMessages.isEmpty() ? "HEALTHY" : "WARN",
+                    null,
+                    LocalDateTime.now()
+            );
+        } catch (Exception exception) {
+            return new KafkaDlqMessageResponse(
+                    dlqTopic,
+                    0,
+                    List.of(),
+                    "ERROR",
+                    exception.getMessage(),
+                    LocalDateTime.now()
+            );
+        }
     }
 
     private List<KafkaJobDistributionSummary> fetchJobDistributionSummary(int minutes) {
@@ -112,7 +207,8 @@ public class KafkaMonitorService {
         );
     }
 
-    private List<KafkaJobDistributionItem> fetchRecentKafkaJobs(int minutes) {
+    private List<KafkaJobDistributionItem> fetchRecentKafkaJobs(int minutes, int page, int size) {
+        int offset = (page - 1) * size;
         return jdbcTemplate.query(
                 """
                         SELECT
@@ -130,7 +226,7 @@ public class KafkaMonitorService {
                           AND created_at >= NOW() - (? * INTERVAL '1 minute')
                           AND detail #>> '{kafka,partition}' IS NOT NULL
                         ORDER BY created_at DESC, id DESC
-                        LIMIT 50
+                        LIMIT ? OFFSET ?
                         """,
                 (rs, rowNum) -> new KafkaJobDistributionItem(
                         rs.getString("request_id"),
@@ -143,8 +239,25 @@ public class KafkaMonitorService {
                         rs.getString("kafka_client_id"),
                         rs.getString("created_at")
                 ),
+                minutes,
+                size,
+                offset
+        );
+    }
+
+    private long countRecentKafkaJobs(int minutes) {
+        Long count = jdbcTemplate.queryForObject(
+                """
+                        SELECT COUNT(*)::bigint
+                        FROM hub_job_log
+                        WHERE event_type = 'JOB_RECEIVED_FROM_KAFKA'
+                          AND created_at >= NOW() - (? * INTERVAL '1 minute')
+                          AND detail #>> '{kafka,partition}' IS NOT NULL
+                        """,
+                Long.class,
                 minutes
         );
+        return count == null ? 0L : count;
     }
 
     private List<String> splitCsv(String value) {
@@ -162,6 +275,23 @@ public class KafkaMonitorService {
         Properties properties = new Properties();
         properties.putAll(kafkaAdmin.getConfigurationProperties());
         return properties;
+    }
+
+    private Properties dlqConsumerProperties() {
+        Properties properties = adminProperties();
+        properties.put(ConsumerConfig.GROUP_ID_CONFIG, "hub-dlq-viewer-" + UUID.randomUUID());
+        properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+        properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        return properties;
+    }
+
+    private List<String> monitorTopicNames() {
+        return List.of(jobsTopic, dlqTopic).stream()
+                .filter(topic -> topic != null && !topic.isBlank())
+                .distinct()
+                .toList();
     }
 
     private List<KafkaBrokerInfo> fetchBrokers(AdminClient adminClient) throws Exception {
@@ -281,5 +411,51 @@ public class KafkaMonitorService {
         } catch (Exception exception) {
             return Map.of();
         }
+    }
+
+    private KafkaDlqMessageItem toDlqMessageItem(ConsumerRecord<String, String> record) {
+        JsonNode root = parseJson(record.value());
+        JsonNode job = root.path("job");
+        JsonNode payload = job.path("payload");
+
+        return new KafkaDlqMessageItem(
+                record.key(),
+                record.partition(),
+                record.offset(),
+                formatEpochMillis(record.timestamp()),
+                text(root, "failedAt"),
+                text(root, "source"),
+                text(root, "errorMessage"),
+                intValue(root, "retryCount"),
+                intValue(root, "maxRetryCount"),
+                text(job, "requestId"),
+                text(job, "jobType"),
+                text(job, "requestKey"),
+                text(payload, "channelCd"),
+                payload.isMissingNode() || payload.isNull() ? "" : payload.toString(),
+                record.value()
+        );
+    }
+
+    private JsonNode parseJson(String value) {
+        try {
+            return objectMapper.readTree(value);
+        } catch (Exception exception) {
+            return objectMapper.createObjectNode();
+        }
+    }
+
+    private String text(JsonNode node, String fieldName) {
+        JsonNode value = node.path(fieldName);
+        return value.isMissingNode() || value.isNull() ? "" : value.asText();
+    }
+
+    private int intValue(JsonNode node, String fieldName) {
+        JsonNode value = node.path(fieldName);
+        return value.isNumber() ? value.asInt() : 0;
+    }
+
+    private String formatEpochMillis(long epochMillis) {
+        return DATE_TIME_FORMATTER.format(Instant.ofEpochMilli(epochMillis).atZone(SEOUL_ZONE));
     }
 }

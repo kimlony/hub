@@ -7,6 +7,9 @@ public record KafkaJobDistributionResponse(
         Integer minutes,
         List<KafkaJobDistributionSummary> summary,
         List<KafkaJobDistributionItem> recentJobs,
+        Integer recentPage,
+        Integer recentSize,
+        Long recentTotal,
         LocalDateTime generatedAt
 ) {
 }

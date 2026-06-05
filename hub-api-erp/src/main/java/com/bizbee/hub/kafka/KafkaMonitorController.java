@@ -21,8 +21,17 @@ public class KafkaMonitorController {
 
     @GetMapping("/job-distribution")
     public ResponseEntity<KafkaJobDistributionResponse> getJobDistribution(
-            @RequestParam(defaultValue = "60") int minutes
+            @RequestParam(defaultValue = "60") int minutes,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size
     ) {
-        return ResponseEntity.ok(kafkaMonitorService.getJobDistribution(minutes));
+        return ResponseEntity.ok(kafkaMonitorService.getJobDistribution(minutes, page, size));
+    }
+
+    @GetMapping("/dlq")
+    public ResponseEntity<KafkaDlqMessageResponse> getDlqMessages(
+            @RequestParam(defaultValue = "20") int limit
+    ) {
+        return ResponseEntity.ok(kafkaMonitorService.getDlqMessages(limit));
     }
 }

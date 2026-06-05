@@ -4,6 +4,7 @@ import { startServer } from "./server.js";
 import { startConsumer, stopConsumer } from "./consumer.js";
 import { startRecovery, stopRecovery } from "./recovery.js";
 import { closePostgresPool, ensurePostgresSchema } from "./db/postgres.js";
+import { closeDlqProducer } from "./dlq.js";
 import {
   createWorkerHeartbeat,
   startWorkerHeartbeat,
@@ -92,6 +93,7 @@ async function doShutdown(signal: string): Promise<number> {
     }
 
     await stopWorkerHeartbeat(heartbeat);
+    await closeDlqProducer();
     await closePostgresPool();
 
     logger.info({

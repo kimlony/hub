@@ -24,6 +24,7 @@ export type RetryDecision = {
   status: "RETRY" | "FAILED" | "SKIPPED";
   retryCount: number;
   maxRetryCount: number;
+  nextRetryAt?: Date;
 };
 
 export type SaveJobResultStatus = "INSERTED" | "SKIPPED";
@@ -42,6 +43,8 @@ export type NewsItemInput = {
 };
 
 const MAX_RETRY_COUNT = 3;
+const DEFAULT_RETRY_BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000];
+const RETRY_BACKOFF_MS = parseRetryBackoffMs();
 const AES_SECRET = requiredEnv("HUB_AES_SECRET");
 const LOCK_TTL_MINUTES = Number(process.env.JOB_LOCK_TTL_MINUTES ?? 30);
 const WORKER_ID = getWorkerId();
@@ -81,6 +84,19 @@ export async function ensurePostgresSchema(): Promise<void> {
 }
 
 async function ensurePostgresSchemaUnlocked(): Promise<void> {
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF to_regclass('public.hub_job') IS NOT NULL THEN
+        ALTER TABLE hub_job
+        ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ;
+
+        CREATE INDEX IF NOT EXISTS idx_hub_job_next_retry_at
+        ON hub_job (status, next_retry_at)
+        WHERE status = 'QUEUED';
+      END IF;
+    END $$;
+  `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS hub_job_result (
       id SERIAL PRIMARY KEY,
@@ -183,6 +199,7 @@ export async function tryMarkProcessing(requestId: string): Promise<boolean> {
       UPDATE hub_job
       SET status = 'PROCESSING',
           error_message = NULL,
+          next_retry_at = NULL,
           updated_at = NOW()
       WHERE request_id = $1
         AND status = 'QUEUED'
@@ -539,6 +556,7 @@ export async function deferJobForLockConflict(
       UPDATE hub_job
       SET status = 'QUEUED',
           error_message = $2,
+          next_retry_at = NULL,
           updated_at = NOW()
       WHERE request_id = $1
         AND status = 'PROCESSING'
@@ -600,12 +618,33 @@ function requiredEnv(name: string): string {
   return value;
 }
 
+function parseRetryBackoffMs(): number[] {
+  const raw = process.env.JOB_RETRY_BACKOFF_MS;
+  if (!raw) {
+    return DEFAULT_RETRY_BACKOFF_MS;
+  }
+
+  const parsed = raw
+    .split(",")
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .map((value) => Math.floor(value));
+
+  return parsed.length > 0 ? parsed : DEFAULT_RETRY_BACKOFF_MS;
+}
+
+function getBackoffMs(retryCount: number): number {
+  const index = Math.max(0, retryCount - 1);
+  return RETRY_BACKOFF_MS[Math.min(index, RETRY_BACKOFF_MS.length - 1)] ?? DEFAULT_RETRY_BACKOFF_MS[0];
+}
+
 export async function succeedJob(requestId: string): Promise<boolean> {
   const result = await pool.query(
     `
       UPDATE hub_job
       SET status = 'SUCCESS',
           error_message = NULL,
+          next_retry_at = NULL,
           completed_at = NOW(),
           updated_at = NOW()
       WHERE request_id = $1
@@ -655,6 +694,8 @@ export async function retryOrFailJob(
 
   if (retryCount < MAX_RETRY_COUNT) {
     const nextRetryCount = retryCount + 1;
+    const backoffMs = getBackoffMs(nextRetryCount);
+    const nextRetryAt = new Date(Date.now() + backoffMs);
 
     const result = await pool.query(
       `
@@ -662,11 +703,12 @@ export async function retryOrFailJob(
         SET status = 'QUEUED',
             retry_count = retry_count + 1,
             error_message = $2,
+            next_retry_at = $3,
             updated_at = NOW()
         WHERE request_id = $1
           AND status = 'PROCESSING'
       `,
-      [requestId, errorMessage]
+      [requestId, errorMessage, nextRetryAt]
     );
     const updated = result.rowCount === 1;
 
@@ -678,6 +720,8 @@ export async function retryOrFailJob(
         toStatus: "QUEUED",
         retryCount: nextRetryCount,
         maxRetryCount: MAX_RETRY_COUNT,
+        nextRetryAt,
+        backoffMs,
         errorMessage,
         rowCount: result.rowCount
       }, "Job retry update skipped");
@@ -693,6 +737,8 @@ export async function retryOrFailJob(
         detail: {
           fromStatus: "PROCESSING",
           toStatus: "QUEUED",
+          nextRetryAt: nextRetryAt.toISOString(),
+          backoffMs,
           rowCount: result.rowCount
         }
       });
@@ -711,6 +757,8 @@ export async function retryOrFailJob(
       toStatus: "QUEUED",
       retryCount: nextRetryCount,
       maxRetryCount: MAX_RETRY_COUNT,
+      nextRetryAt,
+      backoffMs,
       errorMessage
     }, "Job marked for retry");
 
@@ -724,14 +772,17 @@ export async function retryOrFailJob(
       errorMessage,
       detail: {
         fromStatus: "PROCESSING",
-        toStatus: "QUEUED"
+        toStatus: "QUEUED",
+        nextRetryAt: nextRetryAt.toISOString(),
+        backoffMs
       }
     });
 
     return {
       status: "RETRY",
       retryCount: nextRetryCount,
-      maxRetryCount: MAX_RETRY_COUNT
+      maxRetryCount: MAX_RETRY_COUNT,
+      nextRetryAt
     };
   }
 
@@ -740,6 +791,7 @@ export async function retryOrFailJob(
       UPDATE hub_job
       SET status = 'FAILED',
           error_message = $2,
+          next_retry_at = NULL,
           completed_at = NOW(),
           updated_at = NOW()
       WHERE request_id = $1
@@ -803,7 +855,10 @@ export async function claimStuckQueuedJobs(): Promise<HubJobRow[]> {
         SELECT request_id
         FROM hub_job
         WHERE status = 'QUEUED'
-          AND updated_at < NOW() - INTERVAL '10 minutes'
+          AND (
+            (retry_count = 0 AND updated_at < NOW() - INTERVAL '10 minutes')
+            OR (retry_count > 0 AND next_retry_at IS NOT NULL AND next_retry_at <= NOW())
+          )
         ORDER BY updated_at ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 50

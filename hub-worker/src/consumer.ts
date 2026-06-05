@@ -20,6 +20,7 @@ import { NfaOrderHandler } from "./channels/nfa/NfaOrderHandler.js";
 import { TestSleepHandler } from "./channels/test/TestSleepHandler.js";
 import { HandlerRegistry } from "./handlers/HandlerRegistry.js";
 import type { JobHandlerMessage } from "./handlers/IJobHandler.js";
+import { publishDlq } from "./dlq.js";
 import { getErrorMessage, logger } from "./logger.js";
 import { HubJobMessageSchema } from "./schemas.js";
 import { getKafkaClientId, getWorkerId } from "./workerIdentity.js";
@@ -356,6 +357,33 @@ export async function processJobMessage(
       errorMessage,
       detail: {
         source
+      }
+    });
+
+    const dlqPublished = await publishDlq({
+      jobMessage,
+      errorMessage,
+      retryCount: decision.retryCount,
+      maxRetryCount: decision.maxRetryCount,
+      source
+    });
+
+    await saveJobLog({
+      requestId,
+      eventType: dlqPublished ? "JOB_DLQ_PUBLISHED" : "JOB_DLQ_PUBLISH_FAILED",
+      level: dlqPublished ? "INFO" : "ERROR",
+      message: dlqPublished ? "Job published to DLQ" : "Job DLQ publish failed",
+      jobType,
+      sourceErp: jobMessage.sourceErp,
+      requestKey: jobMessage.requestKey,
+      channelCd: getChannelCd(jobMessage),
+      mallKey: getMallKey(jobMessage),
+      retryCount: decision.retryCount,
+      maxRetryCount: decision.maxRetryCount,
+      errorMessage,
+      detail: {
+        source,
+        dlqTopic: process.env.KAFKA_DLQ_TOPIC ?? "hub.jobs.dlq"
       }
     });
   }

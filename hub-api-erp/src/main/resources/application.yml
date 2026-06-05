@@ -28,6 +28,7 @@ hub:
   kafka:
     topics:
       jobs: ${HUB_JOBS_TOPIC:hub.jobs}
+      dlq: ${HUB_JOBS_DLQ_TOPIC:hub.jobs.dlq}
     jobs-topic:
       partitions: ${HUB_JOBS_TOPIC_PARTITIONS:4}
       replicas: ${HUB_JOBS_TOPIC_REPLICAS:1}

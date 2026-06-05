@@ -100,6 +100,36 @@ type KafkaJobDistributionResponse = {
   minutes: number
   summary: KafkaJobDistributionSummary[]
   recentJobs: KafkaJobDistributionItem[]
+  recentPage: number
+  recentSize: number
+  recentTotal: number
+  generatedAt: string
+}
+
+type KafkaDlqMessageItem = {
+  key: string | null
+  partition: number
+  offset: number
+  createdAt: string
+  failedAt: string
+  source: string
+  errorMessage: string
+  retryCount: number
+  maxRetryCount: number
+  requestId: string
+  jobType: string
+  requestKey: string
+  channelCd: string
+  payload: string
+  rawMessage: string
+}
+
+type KafkaDlqMessageResponse = {
+  topic: string
+  total: number
+  messages: KafkaDlqMessageItem[]
+  status: string
+  errorMessage: string | null
   generatedAt: string
 }
 
@@ -113,6 +143,8 @@ export default function MonitorPage() {
   const [data, setData] = useState<KafkaMonitorResponse | null>(null)
   const [workerData, setWorkerData] = useState<WorkerStatusResponse | null>(null)
   const [distributionData, setDistributionData] = useState<KafkaJobDistributionResponse | null>(null)
+  const [dlqData, setDlqData] = useState<KafkaDlqMessageResponse | null>(null)
+  const [recentJobPage, setRecentJobPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const authenticatedFetch = useAuthenticatedFetch()
@@ -132,11 +164,17 @@ export default function MonitorPage() {
       }
       setWorkerData(await workerRes.json() as WorkerStatusResponse)
 
-      const distributionRes = await authenticatedFetch('/api/hub/kafka/job-distribution?minutes=60')
+      const distributionRes = await authenticatedFetch(`/api/hub/kafka/job-distribution?minutes=60&page=${recentJobPage}&size=10`)
       if (!distributionRes.ok) {
         throw new Error(`Kafka job distribution API failed: ${distributionRes.status}`)
       }
       setDistributionData(await distributionRes.json() as KafkaJobDistributionResponse)
+
+      const dlqRes = await authenticatedFetch('/api/hub/kafka/dlq?limit=20')
+      if (!dlqRes.ok) {
+        throw new Error(`Kafka DLQ API failed: ${dlqRes.status}`)
+      }
+      setDlqData(await dlqRes.json() as KafkaDlqMessageResponse)
     } catch (err) {
       if ((err as Error).message !== 'Authentication required') {
         setError('모니터링 데이터를 불러오지 못했습니다.')
@@ -144,7 +182,7 @@ export default function MonitorPage() {
     } finally {
       setLoading(false)
     }
-  }, [authenticatedFetch])
+  }, [authenticatedFetch, recentJobPage])
 
   useEffect(() => {
     void fetchMonitor()
@@ -185,6 +223,10 @@ export default function MonitorPage() {
   const maxDistributionCount = Math.max(
     ...(distributionData?.summary.map((item) => item.jobCount) ?? [0]),
     1
+  )
+  const recentJobPageCount = Math.max(
+    1,
+    Math.ceil((distributionData?.recentTotal ?? 0) / (distributionData?.recentSize ?? 10))
   )
 
   return (
@@ -341,6 +383,77 @@ export default function MonitorPage() {
         </table>
       </div>
 
+      <div className="mt-4 bg-white rounded-lg shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-50">
+          <div>
+            <h3 className="text-[14px] font-extrabold text-[#191F28]">DLQ 실패 메시지</h3>
+            <p className="mt-1 text-[12px] text-[#8B95A1]">
+              {dlqData?.topic ?? 'hub.jobs.dlq'} · 최근 {formatNumber(dlqData?.total ?? 0)}건
+            </p>
+          </div>
+          <StatusPill status={dlqData?.status ?? (loading ? 'LOADING' : 'UNKNOWN')} />
+        </div>
+        {dlqData?.status === 'ERROR' && (
+          <div className="border-b border-red-100 bg-red-50 px-5 py-3 text-[12px] font-semibold text-red-600">
+            {dlqData.errorMessage || 'DLQ 메시지를 불러오지 못했습니다.'}
+          </div>
+        )}
+        <table className="w-full">
+          <thead>
+            <tr className="bg-[#FAFAFA]">
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Job</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Channel</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Error</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Retry</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Kafka</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Failed At</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dlqData?.messages.length ? dlqData.messages.map((message) => (
+              <tr key={`${message.partition}-${message.offset}`} className="border-t border-slate-50 hover:bg-slate-50">
+                <td className="px-5 py-3">
+                  <p className="font-mono text-[12px] font-semibold text-[#191F28]" title={message.requestId}>
+                    {message.requestId ? `${message.requestId.slice(0, 8)}...` : '-'}
+                  </p>
+                  <p className="mt-1 max-w-[240px] truncate text-[11px] text-[#8B95A1]" title={message.requestKey}>
+                    {message.jobType || '-'} · {message.requestKey || '-'}
+                  </p>
+                </td>
+                <td className="px-5 py-3 text-[13px] font-bold text-[#4E5968]">{message.channelCd || '-'}</td>
+                <td className="px-5 py-3">
+                  <p className="max-w-[520px] truncate text-[13px] font-semibold text-red-600" title={message.errorMessage}>
+                    {message.errorMessage || '-'}
+                  </p>
+                  <p className="mt-1 text-[11px] text-[#8B95A1]">{message.source || '-'}</p>
+                </td>
+                <td className="px-5 py-3 text-[13px] font-bold text-[#191F28]">
+                  {formatNumber(message.retryCount)} / {formatNumber(message.maxRetryCount)}
+                </td>
+                <td className="px-5 py-3">
+                  <p className="font-mono text-[12px] font-semibold text-[#4E5968]">
+                    P{message.partition} · O{message.offset}
+                  </p>
+                  <p className="mt-1 max-w-[180px] truncate text-[11px] text-[#8B95A1]" title={message.key ?? ''}>
+                    {message.key || '-'}
+                  </p>
+                </td>
+                <td className="px-5 py-3 text-[12px] text-[#8B95A1]">
+                  <div>{formatDateTime(message.failedAt || message.createdAt)}</div>
+                  <div className="mt-1">{message.createdAt}</div>
+                </td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={6} className="px-5 py-10 text-center text-[13px] text-[#8B95A1]">
+                  {loading ? '불러오는 중입니다.' : 'DLQ에 보관된 실패 메시지가 없습니다.'}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
       <div className="mt-4 grid grid-cols-[420px_1fr] gap-4">
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-50">
@@ -379,8 +492,31 @@ export default function MonitorPage() {
         </div>
 
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-50">
-            <h3 className="text-[14px] font-extrabold text-[#191F28]">최근 Kafka Job 추적</h3>
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-50">
+            <div>
+              <h3 className="text-[14px] font-extrabold text-[#191F28]">최근 Kafka Job 추적</h3>
+              <p className="mt-1 text-[12px] text-[#8B95A1]">
+                총 {formatNumber(distributionData?.recentTotal ?? 0)}건 · {formatNumber(distributionData?.recentPage ?? recentJobPage)} / {formatNumber(recentJobPageCount)} 페이지
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setRecentJobPage((page) => Math.max(1, page - 1))}
+                disabled={recentJobPage <= 1}
+                className="px-3 py-1.5 text-[12px] font-bold rounded-lg bg-[#F2F4F6] text-[#4E5968] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-200 transition-colors"
+              >
+                이전
+              </button>
+              <button
+                type="button"
+                onClick={() => setRecentJobPage((page) => Math.min(recentJobPageCount, page + 1))}
+                disabled={recentJobPage >= recentJobPageCount}
+                className="px-3 py-1.5 text-[12px] font-bold rounded-lg bg-[#F2F4F6] text-[#4E5968] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-200 transition-colors"
+              >
+                다음
+              </button>
+            </div>
           </div>
           <table className="w-full">
             <thead>
