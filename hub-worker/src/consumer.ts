@@ -267,7 +267,9 @@ export async function processJobMessage(
       channelCd: getChannelCd(handledMessage),
       mallKey: getMallKey(handledMessage),
       detail: {
-        source
+        source,
+        workerInstanceId,
+        kafkaClientId
       }
     });
   } catch (error) {
@@ -295,7 +297,9 @@ export async function processJobMessage(
         mallKey: getMallKey(jobMessage),
         errorMessage,
         detail: {
-          source
+          source,
+          workerInstanceId,
+          kafkaClientId
         }
       });
       return;
@@ -326,7 +330,9 @@ export async function processJobMessage(
         maxRetryCount: decision.maxRetryCount,
         errorMessage,
         detail: {
-          source
+          source,
+          workerInstanceId,
+          kafkaClientId
         }
       });
       return;
@@ -356,7 +362,9 @@ export async function processJobMessage(
       maxRetryCount: decision.maxRetryCount,
       errorMessage,
       detail: {
-        source
+        source,
+        workerInstanceId,
+        kafkaClientId
       }
     });
 
@@ -383,6 +391,8 @@ export async function processJobMessage(
       errorMessage,
       detail: {
         source,
+        workerInstanceId,
+        kafkaClientId,
         dlqTopic: process.env.KAFKA_DLQ_TOPIC ?? "hub.jobs.dlq"
       }
     });

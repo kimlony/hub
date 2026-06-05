@@ -11,6 +11,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +32,7 @@ public class HubJobServiceImpl implements HubJobService {
     private final ObjectMapper objectMapper;
     private final UserMapper userMapper;
     private final ChannelMapper channelMapper;
+    private final JdbcTemplate jdbcTemplate;
 
     @Override
     public HubJobBatchResponse createBatchJobs(String username, HubJobBatchRequest request) {
@@ -214,6 +216,25 @@ public class HubJobServiceImpl implements HubJobService {
                 hubJobMapper.selectDashboardStats(),
                 hubJobMapper.selectDashboardRecentJobs(8),
                 hubJobMapper.selectDashboardChannelStats(),
+                buildPerformanceResponse(60),
+                selectWorkerPerformance(60),
+                selectRecentLoadTestRuns(8),
+                LocalDateTime.now()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public JobPerformanceResponse getPerformance(int minutes) {
+        int safeMinutes = Math.max(1, Math.min(minutes, 24 * 60));
+        return buildPerformanceResponse(safeMinutes);
+    }
+
+    private JobPerformanceResponse buildPerformanceResponse(int safeMinutes) {
+        return new JobPerformanceResponse(
+                safeMinutes,
+                selectPerformanceSummary(safeMinutes),
+                selectPerformancePoints(safeMinutes),
                 LocalDateTime.now()
         );
     }
@@ -270,6 +291,235 @@ public class HubJobServiceImpl implements HubJobService {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("failed to parse payload for retry", e);
         }
+    }
+
+    private JobPerformanceSummary selectPerformanceSummary(int minutes) {
+        return jdbcTemplate.queryForObject(
+                """
+                        WITH target AS (
+                            SELECT
+                                status,
+                                created_at,
+                                CASE
+                                    WHEN completed_at IS NOT NULL THEN completed_at
+                                    WHEN status IN ('SUCCESS', 'FAILED') THEN updated_at
+                                    ELSE NULL
+                                END AS finished_at,
+                                EXTRACT(EPOCH FROM (
+                                    CASE
+                                        WHEN completed_at IS NOT NULL THEN completed_at
+                                        WHEN status IN ('SUCCESS', 'FAILED') THEN updated_at
+                                        ELSE NULL
+                                    END - created_at
+                                )) * 1000 AS duration_ms
+                            FROM hub_job
+                            WHERE created_at >= NOW() - (? * INTERVAL '1 minute')
+                        )
+                        SELECT
+                            COUNT(*)::bigint AS total_jobs,
+                            COUNT(*) FILTER (WHERE finished_at IS NOT NULL)::bigint AS completed_jobs,
+                            COUNT(*) FILTER (WHERE status = 'SUCCESS')::bigint AS success_jobs,
+                            COUNT(*) FILTER (WHERE status = 'FAILED')::bigint AS failed_jobs,
+                            COALESCE(AVG(duration_ms) FILTER (WHERE finished_at IS NOT NULL), 0)::float8 AS avg_duration_ms,
+                            COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE finished_at IS NOT NULL), 0)::float8 AS p50_duration_ms,
+                            COALESCE(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE finished_at IS NOT NULL), 0)::float8 AS p95_duration_ms,
+                            COALESCE(MAX(duration_ms) FILTER (WHERE finished_at IS NOT NULL), 0)::float8 AS max_duration_ms
+                        FROM target
+                        """,
+                (rs, rowNum) -> new JobPerformanceSummary(
+                        rs.getLong("total_jobs"),
+                        rs.getLong("completed_jobs"),
+                        rs.getLong("success_jobs"),
+                        rs.getLong("failed_jobs"),
+                        roundDouble(rs.getDouble("avg_duration_ms")),
+                        roundDouble(rs.getDouble("p50_duration_ms")),
+                        roundDouble(rs.getDouble("p95_duration_ms")),
+                        roundDouble(rs.getDouble("max_duration_ms")),
+                        roundDouble(rs.getLong("completed_jobs") / (double) minutes)
+                ),
+                minutes
+        );
+    }
+
+    private List<JobPerformancePoint> selectPerformancePoints(int minutes) {
+        int bucketMinutes = minutes <= 60 ? 5 : 15;
+        return jdbcTemplate.query(
+                """
+                        WITH target AS (
+                            SELECT
+                                status,
+                                CASE
+                                    WHEN completed_at IS NOT NULL THEN completed_at
+                                    WHEN status IN ('SUCCESS', 'FAILED') THEN updated_at
+                                    ELSE NULL
+                                END AS finished_at,
+                                EXTRACT(EPOCH FROM (
+                                    CASE
+                                        WHEN completed_at IS NOT NULL THEN completed_at
+                                        WHEN status IN ('SUCCESS', 'FAILED') THEN updated_at
+                                        ELSE NULL
+                                    END - created_at
+                                )) * 1000 AS duration_ms,
+                                date_trunc('hour', created_at AT TIME ZONE 'Asia/Seoul')
+                                    + FLOOR(EXTRACT(MINUTE FROM created_at AT TIME ZONE 'Asia/Seoul') / ?) * (? * INTERVAL '1 minute')
+                                    AS bucket_at
+                            FROM hub_job
+                            WHERE created_at >= NOW() - (? * INTERVAL '1 minute')
+                        )
+                        SELECT
+                            to_char(bucket_at, 'HH24:MI') AS bucket,
+                            COUNT(*)::bigint AS total_jobs,
+                            COUNT(*) FILTER (WHERE finished_at IS NOT NULL)::bigint AS completed_jobs,
+                            COUNT(*) FILTER (WHERE status = 'SUCCESS')::bigint AS success_jobs,
+                            COUNT(*) FILTER (WHERE status = 'FAILED')::bigint AS failed_jobs,
+                            COALESCE(AVG(duration_ms) FILTER (WHERE finished_at IS NOT NULL), 0)::float8 AS avg_duration_ms,
+                            COALESCE(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE finished_at IS NOT NULL), 0)::float8 AS p95_duration_ms
+                        FROM target
+                        GROUP BY bucket_at
+                        ORDER BY bucket_at ASC
+                        """,
+                (rs, rowNum) -> new JobPerformancePoint(
+                        rs.getString("bucket"),
+                        rs.getLong("total_jobs"),
+                        rs.getLong("completed_jobs"),
+                        rs.getLong("success_jobs"),
+                        rs.getLong("failed_jobs"),
+                        roundDouble(rs.getDouble("avg_duration_ms")),
+                        roundDouble(rs.getDouble("p95_duration_ms"))
+                ),
+                bucketMinutes,
+                bucketMinutes,
+                minutes
+        );
+    }
+
+    private List<LoadTestRunItem> selectRecentLoadTestRuns(int limit) {
+        Boolean tableExists = jdbcTemplate.queryForObject(
+                "SELECT to_regclass('public.hub_load_test_run') IS NOT NULL",
+                Boolean.class
+        );
+        if (!Boolean.TRUE.equals(tableExists)) {
+            return List.of();
+        }
+
+        return jdbcTemplate.query(
+                """
+                        SELECT
+                            id,
+                            run_id,
+                            mode,
+                            total_requested,
+                            total_jobs,
+                            completed_jobs,
+                            success_jobs,
+                            failed_jobs,
+                            elapsed_ms,
+                            throughput_per_minute,
+                            avg_duration_ms,
+                            p50_duration_ms,
+                            p95_duration_ms,
+                            max_duration_ms,
+                            to_char(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS created_at
+                        FROM hub_load_test_run
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT ?
+                        """,
+                (rs, rowNum) -> new LoadTestRunItem(
+                        rs.getLong("id"),
+                        rs.getString("run_id"),
+                        rs.getString("mode"),
+                        rs.getInt("total_requested"),
+                        rs.getInt("total_jobs"),
+                        rs.getInt("completed_jobs"),
+                        rs.getInt("success_jobs"),
+                        rs.getInt("failed_jobs"),
+                        rs.getLong("elapsed_ms"),
+                        roundDouble(rs.getDouble("throughput_per_minute")),
+                        roundDouble(rs.getDouble("avg_duration_ms")),
+                        roundDouble(rs.getDouble("p50_duration_ms")),
+                        roundDouble(rs.getDouble("p95_duration_ms")),
+                        roundDouble(rs.getDouble("max_duration_ms")),
+                        rs.getString("created_at")
+                ),
+                Math.max(1, Math.min(limit, 20))
+        );
+    }
+
+    private List<WorkerPerformanceItem> selectWorkerPerformance(int minutes) {
+        return jdbcTemplate.query(
+                """
+                        WITH completed AS (
+                            SELECT
+                                request_id,
+                                status,
+                                created_at,
+                                CASE
+                                    WHEN completed_at IS NOT NULL THEN completed_at
+                                    WHEN status IN ('SUCCESS', 'FAILED') THEN updated_at
+                                    ELSE NULL
+                                END AS finished_at,
+                                EXTRACT(EPOCH FROM (
+                                    CASE
+                                        WHEN completed_at IS NOT NULL THEN completed_at
+                                        WHEN status IN ('SUCCESS', 'FAILED') THEN updated_at
+                                        ELSE NULL
+                                    END - created_at
+                                )) * 1000 AS duration_ms
+                            FROM hub_job
+                            WHERE created_at >= NOW() - (? * INTERVAL '1 minute')
+                              AND status IN ('SUCCESS', 'FAILED')
+                        ),
+                        assigned AS (
+                            SELECT DISTINCT ON (request_id)
+                                request_id,
+                                NULLIF(detail ->> 'workerInstanceId', '') AS worker_instance_id,
+                                NULLIF(detail ->> 'kafkaClientId', '') AS kafka_client_id,
+                                NULLIF(detail ->> 'source', '') AS source
+                            FROM hub_job_log
+                            WHERE event_type IN ('JOB_RECEIVED_FROM_KAFKA', 'JOB_RECEIVED_FROM_RECOVERY')
+                              AND created_at >= NOW() - (? * INTERVAL '1 minute')
+                            ORDER BY request_id, created_at DESC, id DESC
+                        )
+                        SELECT
+                            COALESCE(assigned.worker_instance_id, 'unknown') AS worker_instance_id,
+                            COALESCE(assigned.kafka_client_id, '') AS kafka_client_id,
+                            COALESCE(assigned.source, 'unknown') AS source,
+                            COUNT(*)::bigint AS completed_jobs,
+                            COUNT(*) FILTER (WHERE completed.status = 'SUCCESS')::bigint AS success_jobs,
+                            COUNT(*) FILTER (WHERE completed.status = 'FAILED')::bigint AS failed_jobs,
+                            COALESCE(AVG(completed.duration_ms), 0)::float8 AS avg_duration_ms,
+                            COALESCE(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY completed.duration_ms), 0)::float8 AS p95_duration_ms,
+                            COALESCE(MAX(completed.duration_ms), 0)::float8 AS max_duration_ms,
+                            to_char(MAX(completed.finished_at) AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS last_completed_at
+                        FROM completed
+                        LEFT JOIN assigned ON assigned.request_id = completed.request_id
+                        WHERE completed.finished_at IS NOT NULL
+                        GROUP BY
+                            COALESCE(assigned.worker_instance_id, 'unknown'),
+                            COALESCE(assigned.kafka_client_id, ''),
+                            COALESCE(assigned.source, 'unknown')
+                        ORDER BY completed_jobs DESC, worker_instance_id ASC
+                        """,
+                (rs, rowNum) -> new WorkerPerformanceItem(
+                        rs.getString("worker_instance_id"),
+                        rs.getString("kafka_client_id"),
+                        rs.getString("source"),
+                        rs.getLong("completed_jobs"),
+                        rs.getLong("success_jobs"),
+                        rs.getLong("failed_jobs"),
+                        roundDouble(rs.getDouble("avg_duration_ms")),
+                        roundDouble(rs.getDouble("p95_duration_ms")),
+                        roundDouble(rs.getDouble("max_duration_ms")),
+                        roundDouble(rs.getLong("completed_jobs") / (double) minutes),
+                        rs.getString("last_completed_at")
+                ),
+                minutes,
+                minutes + 60
+        );
+    }
+
+    private Double roundDouble(double value) {
+        return Math.round(value * 10.0) / 10.0;
     }
 
     private HubJobListItem toListItem(HubJob job) {

@@ -16,6 +16,7 @@ logs/
 *.log
 npm-debug.log*
 worker-codex.log
+load-test-results/
 [{]
 
 hub-api-erp/src/main/resources/application-local.yml

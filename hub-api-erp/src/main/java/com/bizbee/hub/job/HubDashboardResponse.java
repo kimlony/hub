@@ -7,6 +7,9 @@ public record HubDashboardResponse(
         DashboardStats stats,
         List<DashboardRecentJob> recentJobs,
         List<DashboardChannelStat> channelStats,
+        JobPerformanceResponse performance,
+        List<WorkerPerformanceItem> workerPerformance,
+        List<LoadTestRunItem> loadTestRuns,
         LocalDateTime generatedAt
 ) {
 }

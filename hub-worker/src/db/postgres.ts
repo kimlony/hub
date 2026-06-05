@@ -670,7 +670,8 @@ export async function succeedJob(requestId: string): Promise<boolean> {
     detail: {
       fromStatus: "PROCESSING",
       toStatus: "SUCCESS",
-      rowCount: result.rowCount
+      rowCount: result.rowCount,
+      workerInstanceId: WORKER_ID
     }
   });
 
@@ -739,7 +740,8 @@ export async function retryOrFailJob(
           toStatus: "QUEUED",
           nextRetryAt: nextRetryAt.toISOString(),
           backoffMs,
-          rowCount: result.rowCount
+          rowCount: result.rowCount,
+          workerInstanceId: WORKER_ID
         }
       });
 
@@ -774,7 +776,8 @@ export async function retryOrFailJob(
         fromStatus: "PROCESSING",
         toStatus: "QUEUED",
         nextRetryAt: nextRetryAt.toISOString(),
-        backoffMs
+        backoffMs,
+        workerInstanceId: WORKER_ID
       }
     });
 
@@ -823,7 +826,8 @@ export async function retryOrFailJob(
     detail: {
       fromStatus: "PROCESSING",
       toStatus: "FAILED",
-      rowCount: result.rowCount
+      rowCount: result.rowCount,
+      workerInstanceId: WORKER_ID
     }
   });
 

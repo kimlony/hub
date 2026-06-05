@@ -42,6 +42,13 @@ public class HubJobController {
         return ResponseEntity.ok(hubJobService.getDashboard());
     }
 
+    @GetMapping("/performance")
+    public ResponseEntity<JobPerformanceResponse> getPerformance(
+            @RequestParam(defaultValue = "60") int minutes
+    ) {
+        return ResponseEntity.ok(hubJobService.getPerformance(minutes));
+    }
+
     @GetMapping("/{requestId}")
     public ResponseEntity<HubJobDetailResponse> getJob(@PathVariable String requestId) {
         return ResponseEntity.ok(hubJobService.getJob(requestId));

@@ -12,6 +12,8 @@ public interface HubJobService {
 
     HubDashboardResponse getDashboard();
 
+    JobPerformanceResponse getPerformance(int minutes);
+
     HubJobLogResponse getJobLogs(String requestId);
 
     void retryJob(String requestId);
