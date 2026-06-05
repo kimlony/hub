@@ -39,6 +39,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/hub/jobs/**").authenticated()
                 .requestMatchers("/api/hub/schedules/**").authenticated()
                 .requestMatchers("/api/hub/notices/**").authenticated()
+                .requestMatchers("/api/hub/news/**").authenticated()
                 .requestMatchers("/api/hub/kafka/**").authenticated()
                 .requestMatchers("/api/hub/workers/**").authenticated()
                 .anyRequest().permitAll()

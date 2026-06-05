@@ -5,6 +5,8 @@
     <resultMap id="hubJobResultMap" type="com.bizbee.hub.job.HubJob">
         <result property="requestId"    column="request_id"/>
         <result property="requestKey"   column="request_key"/>
+        <result property="jobType"      column="job_type"/>
+        <result property="sourceErp"    column="source_erp"/>
         <result property="channelCd"    column="channel_cd"/>
         <result property="status"       column="status"       javaType="com.bizbee.hub.job.HubJobStatus"/>
         <result property="payload"      column="payload"/>
@@ -78,7 +80,7 @@
             #{requestId}, #{requestKey}, #{channelCd}, #{status},
             CAST(#{payload} AS json),
             #{retryCount}, #{errorMessage}, #{completedAt}, NOW(), NOW(),
-            'ORDER_COLLECT', 'HUB'
+            #{jobType}, #{sourceErp}
         )
     </insert>
 

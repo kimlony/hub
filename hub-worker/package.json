@@ -9,6 +9,8 @@
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "pm2:start": "pm2 start ecosystem.config.cjs",
     "pm2:start:consumer": "pm2 start ecosystem.config.cjs --only hub-worker-consumer",
     "pm2:stop": "pm2 stop ecosystem.config.cjs",
@@ -24,12 +26,17 @@
     "fast-xml-parser": "^5.8.0",
     "kafkajs": "^2.2.4",
     "pg": "^8.13.1",
-    "pino": "^9.9.4"
+    "pino": "^9.9.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
     "@types/node": "^24.10.1",
     "@types/pg": "^8.11.10",
+    "cross-env": "^10.1.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }

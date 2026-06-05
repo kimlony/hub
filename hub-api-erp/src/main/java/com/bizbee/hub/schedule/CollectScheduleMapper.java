@@ -20,6 +20,7 @@ public interface CollectScheduleMapper {
                       @Param("enabledYn") String enabledYn,
                       @Param("nextRunAt") LocalDateTime nextRunAt);
     int delete(@Param("userId") Long userId, @Param("id") Long id);
+    int skipStaleDueSchedules(@Param("maxCatchUpMinutes") int maxCatchUpMinutes);
     List<CollectScheduleRow> claimDueSchedules(@Param("limit") int limit);
     void markRunSuccess(@Param("id") Long id,
                         @Param("nextRunAt") LocalDateTime nextRunAt);

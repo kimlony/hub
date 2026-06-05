@@ -6,6 +6,7 @@ import DashboardPage from './pages/DashboardPage'
 import JobsPage      from './pages/JobsPage'
 import MonitorPage   from './pages/MonitorPage'
 import SchedulePage  from './pages/SchedulePage'
+import NewsPage      from './pages/NewsPage'
 
 export default function App() {
   return (
@@ -21,6 +22,9 @@ export default function App() {
           } />
           <Route path="/schedules" element={
             <ProtectedRoute><SchedulePage /></ProtectedRoute>
+          } />
+          <Route path="/news" element={
+            <ProtectedRoute><NewsPage /></ProtectedRoute>
           } />
           <Route path="/monitor" element={
             <ProtectedRoute><MonitorPage /></ProtectedRoute>

@@ -2,10 +2,11 @@ services:
   postgres:
     image: postgres:16
     container_name: hub-postgres
+    env_file:
+      - ./hub-worker/.env
     environment:
       POSTGRES_DB: hub_db
       POSTGRES_USER: hub
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     ports:
       - "5432:5432"
     volumes:
@@ -15,7 +16,70 @@ services:
     image: apache/kafka:3.7.2
     container_name: hub-kafka
     ports:
-      - "9092:9092"
+      - "9092:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_NUM_PARTITIONS: 4
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+  hub-worker-consumer:
+    build: ./hub-worker
+    env_file:
+      - ./hub-worker/.env
+    environment:
+      NODE_ENV: production
+      WORKER_ROLE: consumer
+      POSTGRES_HOST: postgres
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      - postgres
+      - kafka
+    restart: unless-stopped
+    deploy:
+      replicas: 4
+
+  hub-worker-recovery:
+    build: ./hub-worker
+    env_file:
+      - ./hub-worker/.env
+    environment:
+      NODE_ENV: production
+      WORKER_ROLE: recovery
+      POSTGRES_HOST: postgres
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      - postgres
+      - kafka
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+
+  hub-worker-http:
+    build: ./hub-worker
+    env_file:
+      - ./hub-worker/.env
+    environment:
+      NODE_ENV: production
+      WORKER_ROLE: http
+      PORT: 4000
+      POSTGRES_HOST: postgres
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "4000:4000"
+    depends_on:
+      - postgres
+      - kafka
+    restart: unless-stopped
+    deploy:
+      replicas: 1
 
 volumes:
   hub_postgres_data:

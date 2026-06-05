@@ -1,4 +1,5 @@
 // src/server.ts
+import type { Server } from "node:http";
 import express, { type Request, type Response } from "express";
 import { CollectHandlerRegistry } from "./handlers/CollectHandlerRegistry.js";
 import { ElevenStCollectHandler } from "./channels/elevenst/ElevenStCollectHandler.js";
@@ -7,6 +8,7 @@ import { CoupangCollectHandler } from "./channels/coupang/CoupangCollectHandler.
 import { NfaCollectHandler } from "./channels/nfa/NfaCollectHandler.js";
 import type { JobHandlerMessage } from "./handlers/IJobHandler.js";
 import { getErrorMessage, logger } from "./logger.js";
+import { CollectRequestSchema } from "./schemas.js";
 
 export function createApp(): express.Application {
   const registry = new CollectHandlerRegistry();
@@ -23,14 +25,19 @@ export function createApp(): express.Application {
   });
 
   app.post("/collect", async (req: Request, res: Response): Promise<void> => {
-    const message = req.body as JobHandlerMessage;
-    const requestId = message?.requestId ?? "unknown";
+    const parseResult = CollectRequestSchema.safeParse(req.body);
+    const requestId = parseResult.success ? parseResult.data.requestId : "unknown";
 
-    if (!message?.requestId || !message?.payload) {
-      res.status(400).json({ requestId, error: "requestId and payload are required" });
+    if (!parseResult.success) {
+      res.status(400).json({
+        requestId,
+        error: "Invalid collect request format",
+        issues: parseResult.error.issues
+      });
       return;
     }
 
+    const message = parseResult.data as unknown as JobHandlerMessage;
     const channelCd = String(message.payload.channelCd ?? "");
     logger.info({
       event: "HTTP_COLLECT_REQUEST_RECEIVED",
@@ -75,7 +82,7 @@ export function createApp(): express.Application {
   return app;
 }
 
-export function startServer(port: number): void {
+export function startServer(port: number): Server {
   const app = createApp();
   const server = app.listen(port, () => {
     logger.info({
@@ -92,4 +99,5 @@ export function startServer(port: number): void {
     }, "HTTP server failed to start");
     process.exit(1);
   });
+  return server;
 }

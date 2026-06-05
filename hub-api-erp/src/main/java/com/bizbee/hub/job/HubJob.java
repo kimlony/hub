@@ -16,6 +16,8 @@ public class HubJob {
 
     private String requestId;
     private String requestKey;
+    private String jobType;
+    private String sourceErp;
     private String channelCd;
     private HubJobStatus status;
     private String payload;

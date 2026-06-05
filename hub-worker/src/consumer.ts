@@ -13,18 +13,23 @@ import {
 import { CoupangOrderHandler } from "./channels/coupang/CoupangOrderHandler.js";
 import { GchanOrderHandler } from "./channels/gchan/GchanOrderHandler.js";
 import { GodoOrderHandler } from "./channels/godo/GodoOrderHandler.js";
+import { DartCrawlHandler } from "./channels/dart/DartCrawlHandler.js";
 import { ElevenStOrderHandler } from "./channels/elevenst/ElevenStOrderHandler.js";
+import { NaverRssCrawlHandler } from "./channels/naverRss/NaverRssCrawlHandler.js";
 import { NfaOrderHandler } from "./channels/nfa/NfaOrderHandler.js";
+import { TestSleepHandler } from "./channels/test/TestSleepHandler.js";
 import { HandlerRegistry } from "./handlers/HandlerRegistry.js";
 import type { JobHandlerMessage } from "./handlers/IJobHandler.js";
 import { getErrorMessage, logger } from "./logger.js";
+import { HubJobMessageSchema } from "./schemas.js";
+import { getKafkaClientId, getWorkerId } from "./workerIdentity.js";
 
 export type HubJobMessage = JobHandlerMessage;
 
 const topic = process.env.KAFKA_TOPIC ?? "hub.jobs";
 const consumerGroup = process.env.KAFKA_GROUP_ID ?? "hub-worker-group";
-const workerInstanceId = `${process.env.WORKER_ROLE ?? "worker"}:${process.pid}`;
-const kafkaClientId = `${process.env.KAFKA_CLIENT_ID ?? "hub-worker"}-${process.env.WORKER_ROLE ?? "worker"}-${process.pid}`;
+const workerInstanceId = getWorkerId();
+const kafkaClientId = getKafkaClientId();
 const kafka = new Kafka({
   clientId: kafkaClientId,
   brokers: (process.env.KAFKA_BROKERS ?? "localhost:9092")
@@ -34,6 +39,8 @@ const kafka = new Kafka({
 });
 
 const consumer: Consumer = kafka.consumer({ groupId: consumerGroup });
+const activeJobs = new Set<Promise<void>>();
+let consumerStarted = false;
 
 const registry = new HandlerRegistry();
 registry.register("ORDER_COLLECT", new ElevenStOrderHandler(), "11ST");
@@ -41,10 +48,14 @@ registry.register("ORDER_COLLECT", new GchanOrderHandler(), "GCHAN");
 registry.register("ORDER_COLLECT", new GodoOrderHandler(), "GODO");
 registry.register("ORDER_COLLECT", new CoupangOrderHandler(), "COUPANG");
 registry.register("ORDER_COLLECT", new NfaOrderHandler(), "NSS");
+registry.register("CRAWL", new DartCrawlHandler(), "DART");
+registry.register("CRAWL", new NaverRssCrawlHandler(), "NAVER_RSS");
+registry.register("TEST_SLEEP", new TestSleepHandler(), "TEST");
 
 export async function startConsumer(): Promise<void> {
   await consumer.connect();
   await consumer.subscribe({ topic, fromBeginning: false });
+  consumerStarted = true;
 
   logger.info({
     event: "KAFKA_CONSUMER_STARTED",
@@ -60,7 +71,23 @@ export async function startConsumer(): Promise<void> {
 }
 
 export async function stopConsumer(): Promise<void> {
+  if (!consumerStarted) {
+    return;
+  }
+
+  logger.info({
+    event: "KAFKA_CONSUMER_STOPPING",
+    activeJobCount: activeJobs.size
+  }, "Kafka consumer stopping");
+
+  await consumer.stop();
+  await waitForActiveJobs();
   await consumer.disconnect();
+  consumerStarted = false;
+
+  logger.info({
+    event: "KAFKA_CONSUMER_STOPPED"
+  }, "Kafka consumer stopped");
 }
 
 async function handleKafkaMessage({ topic, partition, message }: EachMessagePayload): Promise<void> {
@@ -80,7 +107,7 @@ async function handleKafkaMessage({ topic, partition, message }: EachMessagePayl
     return;
   }
 
-  await processJobMessage(jobMessage, "consumer", {
+  const jobPromise = processJobMessage(jobMessage, "consumer", {
     kafka: {
       topic,
       partition,
@@ -89,6 +116,26 @@ async function handleKafkaMessage({ topic, partition, message }: EachMessagePayl
       kafkaMessageId
     }
   });
+
+  activeJobs.add(jobPromise);
+  try {
+    await jobPromise;
+  } finally {
+    activeJobs.delete(jobPromise);
+  }
+}
+
+async function waitForActiveJobs(): Promise<void> {
+  if (activeJobs.size === 0) {
+    return;
+  }
+
+  logger.info({
+    event: "KAFKA_CONSUMER_ACTIVE_JOBS_WAIT",
+    activeJobCount: activeJobs.size
+  }, "Waiting for active jobs to finish");
+
+  await Promise.allSettled([...activeJobs]);
 }
 
 export async function processJobMessage(
@@ -167,22 +214,11 @@ export async function processJobMessage(
       return;
     }
 
-    const enrichedMessage = await enrichWithChannelCredentials(jobMessage);
-    const lockKey = buildJobLockKey(enrichedMessage);
-    const lockAcquired = await tryAcquireJobLock(lockKey, requestId);
+    const handledMessage = await prepareJobMessage(jobMessage);
+    const succeeded = await runRegisteredHandler(handledMessage, requestId);
 
-    if (!lockAcquired) {
-      await deferJobForLockConflict(requestId, lockKey);
+    if (succeeded === null) {
       return;
-    }
-
-    let succeeded = false;
-    try {
-      const handler = registry.get(jobType, getChannelCd(enrichedMessage));
-      await handler.handle(enrichedMessage);
-      succeeded = await succeedJob(requestId);
-    } finally {
-      await releaseJobLock(lockKey, requestId);
     }
 
     if (!succeeded) {
@@ -199,10 +235,10 @@ export async function processJobMessage(
         level: "WARN",
         message: "Job completion skipped",
         jobType,
-        sourceErp: enrichedMessage.sourceErp,
-        requestKey: enrichedMessage.requestKey,
-        channelCd: getChannelCd(enrichedMessage),
-        mallKey: getMallKey(enrichedMessage),
+        sourceErp: handledMessage.sourceErp,
+        requestKey: handledMessage.requestKey,
+        channelCd: getChannelCd(handledMessage),
+        mallKey: getMallKey(handledMessage),
         detail: {
           source,
           reason: "success_status_update_skipped"
@@ -216,8 +252,8 @@ export async function processJobMessage(
       requestId,
       jobType,
       source,
-      channelCd: getChannelCd(enrichedMessage),
-      mallKey: getMallKey(enrichedMessage)
+      channelCd: getChannelCd(handledMessage),
+      mallKey: getMallKey(handledMessage)
     }, "Job completed successfully");
     await saveJobLog({
       requestId,
@@ -225,10 +261,10 @@ export async function processJobMessage(
       level: "INFO",
       message: "Job completed successfully",
       jobType,
-      sourceErp: enrichedMessage.sourceErp,
-      requestKey: enrichedMessage.requestKey,
-      channelCd: getChannelCd(enrichedMessage),
-      mallKey: getMallKey(enrichedMessage),
+      sourceErp: handledMessage.sourceErp,
+      requestKey: handledMessage.requestKey,
+      channelCd: getChannelCd(handledMessage),
+      mallKey: getMallKey(handledMessage),
       detail: {
         source
       }
@@ -326,13 +362,51 @@ export async function processJobMessage(
 }
 
 function getChannelCd(jobMessage: HubJobMessage): string | undefined {
-  const channelCd = jobMessage.payload.channelCd;
-  return typeof channelCd === "string" ? channelCd : undefined;
+  return getRequiredString(jobMessage.payload.channelCd, "channelCd");
 }
 
 function getMallKey(jobMessage: HubJobMessage): string | undefined {
-  const mallKey = jobMessage.payload.mallKey;
-  return typeof mallKey === "string" ? mallKey : undefined;
+  return getOptionalString(jobMessage.payload.mallKey);
+}
+
+async function prepareJobMessage(jobMessage: HubJobMessage): Promise<HubJobMessage> {
+  if (!requiresChannelCredentials(jobMessage)) {
+    return jobMessage;
+  }
+
+  return enrichWithChannelCredentials(jobMessage);
+}
+
+async function runRegisteredHandler(jobMessage: HubJobMessage, requestId: string): Promise<boolean | null> {
+  if (!requiresJobLock(jobMessage)) {
+    const handler = registry.get(jobMessage.jobType, getChannelCd(jobMessage));
+    await handler.handle(jobMessage);
+    return succeedJob(requestId);
+  }
+
+  const lockKey = buildJobLockKey(jobMessage);
+  const lockAcquired = await tryAcquireJobLock(lockKey, requestId);
+
+  if (!lockAcquired) {
+    await deferJobForLockConflict(requestId, lockKey);
+    return null;
+  }
+
+  try {
+    const handler = registry.get(jobMessage.jobType, getChannelCd(jobMessage));
+    await handler.handle(jobMessage);
+    return await succeedJob(requestId);
+  } finally {
+    await releaseJobLock(lockKey, requestId);
+  }
+}
+
+function requiresChannelCredentials(jobMessage: HubJobMessage): boolean {
+  return jobMessage.jobType === "ORDER_COLLECT";
+}
+
+function requiresJobLock(jobMessage: HubJobMessage): boolean {
+  return jobMessage.jobType === "ORDER_COLLECT";
 }
 
 function buildJobLockKey(jobMessage: HubJobMessage): string {
@@ -427,13 +501,8 @@ async function enrichWithChannelCredentials(jobMessage: HubJobMessage): Promise<
 }
 
 function getUserId(value: unknown): number | null {
-  if (typeof value === "number" && Number.isInteger(value)) {
-    return value;
-  }
-  if (typeof value === "string" && /^\d+$/.test(value)) {
-    return Number(value);
-  }
-  return null;
+  const userId = typeof value === "number" ? value : Number(value);
+  return Number.isInteger(userId) ? userId : null;
 }
 
 function getRequiredString(value: unknown, fieldName: string): string {
@@ -443,26 +512,13 @@ function getRequiredString(value: unknown, fieldName: string): string {
   return value.trim();
 }
 
-function parseHubJobMessage(rawMessage: string): HubJobMessage {
-  const parsed = JSON.parse(rawMessage) as Partial<HubJobMessage>;
-
-  if (
-    typeof parsed.requestId !== "string" ||
-    typeof parsed.sourceErp !== "string" ||
-    typeof parsed.jobType !== "string" ||
-    typeof parsed.requestKey !== "string" ||
-    parsed.payload === null ||
-    typeof parsed.payload !== "object" ||
-    Array.isArray(parsed.payload)
-  ) {
-    throw new Error("Invalid hub job message format");
+function getOptionalString(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.trim() === "") {
+    return undefined;
   }
+  return value.trim();
+}
 
-  return {
-    requestId: parsed.requestId,
-    sourceErp: parsed.sourceErp,
-    jobType: parsed.jobType,
-    requestKey: parsed.requestKey,
-    payload: parsed.payload as Record<string, unknown>
-  };
+function parseHubJobMessage(rawMessage: string): HubJobMessage {
+  return HubJobMessageSchema.parse(JSON.parse(rawMessage));
 }

@@ -2,6 +2,7 @@ import "dotenv/config";
 import { createDecipheriv } from "node:crypto";
 import pg from "pg";
 import { logger } from "../logger.js";
+import { getWorkerId } from "../workerIdentity.js";
 
 type HubJobMessage = {
   requestId: string;
@@ -29,10 +30,22 @@ export type SaveJobResultStatus = "INSERTED" | "SKIPPED";
 
 export type JobLogLevel = "INFO" | "WARN" | "ERROR";
 
+export type NewsItemInput = {
+  source: string;
+  category?: string;
+  title: string;
+  summary?: string;
+  url?: string;
+  corpName?: string;
+  contentHash: string;
+  publishedAt: Date;
+};
+
 const MAX_RETRY_COUNT = 3;
 const AES_SECRET = requiredEnv("HUB_AES_SECRET");
 const LOCK_TTL_MINUTES = Number(process.env.JOB_LOCK_TTL_MINUTES ?? 30);
-const WORKER_ID = `${process.env.WORKER_ROLE ?? "worker"}:${process.pid}`;
+const WORKER_ID = getWorkerId();
+const SCHEMA_INIT_LOCK_KEY = 2026060201;
 
 const { Pool } = pg;
 
@@ -47,6 +60,27 @@ const pool = new Pool({
 });
 
 export async function ensurePostgresSchema(): Promise<void> {
+  const client = await pool.connect();
+  let locked = false;
+
+  try {
+    await client.query("SELECT pg_advisory_lock($1)", [SCHEMA_INIT_LOCK_KEY]);
+    locked = true;
+    await ensurePostgresSchemaUnlocked();
+  } finally {
+    if (locked) {
+      await client.query("SELECT pg_advisory_unlock($1)", [SCHEMA_INIT_LOCK_KEY]).catch((error: unknown) => {
+        logger.warn({
+          event: "POSTGRES_SCHEMA_LOCK_RELEASE_FAILED",
+          err: error
+        }, "Postgres schema init lock release failed");
+      });
+    }
+    client.release();
+  }
+}
+
+async function ensurePostgresSchemaUnlocked(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS hub_job_result (
       id SERIAL PRIMARY KEY,
@@ -298,6 +332,49 @@ export async function saveJobLog(input: {
       eventType: input.eventType
     }, "Job log save failed");
   }
+}
+
+export async function saveNews(items: NewsItemInput[]): Promise<{ inserted: number; skipped: number }> {
+  let inserted = 0;
+  let skipped = 0;
+
+  for (const item of items) {
+    const result = await pool.query(
+      `
+        INSERT INTO hub_news (
+          source,
+          category,
+          title,
+          summary,
+          url,
+          corp_name,
+          content_hash,
+          published_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8
+        )
+        ON CONFLICT (content_hash) DO NOTHING
+      `,
+      [
+        item.source,
+        item.category ?? null,
+        item.title,
+        item.summary ?? null,
+        item.url ?? null,
+        item.corpName ?? null,
+        item.contentHash,
+        item.publishedAt
+      ]
+    );
+
+    if (result.rowCount === 1) {
+      inserted += 1;
+    } else {
+      skipped += 1;
+    }
+  }
+
+  return { inserted, skipped };
 }
 
 export async function findActiveChannelCredentials(

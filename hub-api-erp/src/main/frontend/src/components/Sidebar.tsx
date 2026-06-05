@@ -16,6 +16,10 @@ const nav: NavSection[] = [
     ],
   },
   {
+    section: '금융속보',
+    items: [{ label: '속보', to: '/news', icon: 'N' }],
+  },
+  {
     section: '모니터링',
     items: [
       { label: 'Kafka 현황', to: '/monitor', icon: 'K' },

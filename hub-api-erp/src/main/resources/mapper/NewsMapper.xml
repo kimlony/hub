@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.bizbee.hub.news.NewsMapper">
+
+    <select id="findList" resultType="com.bizbee.hub.news.NewsRow">
+        SELECT
+            id,
+            source,
+            category,
+            title,
+            summary,
+            url,
+            corp_name,
+            content_hash,
+            to_char(published_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS published_at,
+            to_char(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS created_at
+        FROM hub_news
+        WHERE 1 = 1
+        <if test="cond.source != null and cond.source != ''">
+            AND source = #{cond.source}
+        </if>
+        <if test="cond.keyword != null and cond.keyword != ''">
+            AND (
+                title ILIKE '%' || #{cond.keyword} || '%'
+                OR corp_name ILIKE '%' || #{cond.keyword} || '%'
+            )
+        </if>
+        ORDER BY published_at DESC
+        LIMIT #{cond.size} OFFSET #{cond.offset}
+    </select>
+
+    <select id="countList" resultType="int">
+        SELECT COUNT(*)
+        FROM hub_news
+        WHERE 1 = 1
+        <if test="cond.source != null and cond.source != ''">
+            AND source = #{cond.source}
+        </if>
+        <if test="cond.keyword != null and cond.keyword != ''">
+            AND (
+                title ILIKE '%' || #{cond.keyword} || '%'
+                OR corp_name ILIKE '%' || #{cond.keyword} || '%'
+            )
+        </if>
+    </select>
+
+</mapper>

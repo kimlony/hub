@@ -10,6 +10,7 @@ const RECOVERY_INTERVAL_MS = 5 * 60 * 1000;
 
 let recoveryTimer: NodeJS.Timeout | null = null;
 let running = false;
+let activeScan: Promise<void> | null = null;
 
 export function startRecovery(): void {
   logger.info({
@@ -17,20 +18,36 @@ export function startRecovery(): void {
     intervalMs: RECOVERY_INTERVAL_MS
   }, "Recovery DB scan started");
 
-  void scanAndProcess();
+  activeScan = scanAndProcess();
 
   recoveryTimer = setInterval(() => {
-    void scanAndProcess();
+    activeScan = scanAndProcess();
   }, RECOVERY_INTERVAL_MS);
 }
 
-export function stopRecovery(): void {
-  if (!recoveryTimer) {
-    return;
+export async function stopRecovery(): Promise<void> {
+  logger.info({
+    event: "RECOVERY_STOPPING",
+    scanRunning: running
+  }, "Recovery stopping");
+
+  if (recoveryTimer) {
+    clearInterval(recoveryTimer);
+    recoveryTimer = null;
   }
 
-  clearInterval(recoveryTimer);
-  recoveryTimer = null;
+  if (activeScan) {
+    await activeScan.catch((error: unknown) => {
+      logger.warn({
+        event: "RECOVERY_ACTIVE_SCAN_WAIT_FAILED",
+        err: error
+      }, "Recovery active scan wait failed");
+    });
+  }
+
+  logger.info({
+    event: "RECOVERY_STOPPED"
+  }, "Recovery stopped");
 }
 
 export async function scanAndProcess(): Promise<void> {

@@ -116,6 +116,8 @@ public class HubJobServiceImpl implements HubJobService {
         return HubJob.builder()
                 .requestId(UUID.randomUUID().toString())
                 .requestKey(requestKey)
+                .jobType("ORDER_COLLECT")
+                .sourceErp("HUB")
                 .channelCd(mallKey)
                 .status(HubJobStatus.QUEUED)
                 .payload(serializePayload(mallKey, request, user, triggerType, scheduleRunId))

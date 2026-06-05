@@ -1,6 +1,7 @@
 import os from "node:os";
 import { saveWorkerHeartbeat } from "./db/postgres.js";
 import { logger } from "./logger.js";
+import { getWorkerId, getWorkerSlot } from "./workerIdentity.js";
 
 const DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 10;
 
@@ -18,9 +19,9 @@ export type WorkerHeartbeat = {
 
 export function createWorkerHeartbeat(role: string): WorkerHeartbeat {
   const pid = process.pid;
-  const slot = process.env.NODE_APP_INSTANCE ?? process.env.pm_id ?? String(pid);
+  const slot = getWorkerSlot();
   return {
-    workerId: `${role}:${slot}`,
+    workerId: getWorkerId(role),
     role,
     pid,
     slot,

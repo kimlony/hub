@@ -13,6 +13,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +36,9 @@ public class CollectScheduleServiceImpl implements CollectScheduleService {
     private final ChannelMapper channelMapper;
     private final HubJobService hubJobService;
     private final ObjectMapper objectMapper;
+
+    @Value("${hub.schedule.collect-catch-up-minutes:120}")
+    private int collectCatchUpMinutes;
 
     @Transactional(readOnly = true)
     @Override
@@ -114,6 +118,11 @@ public class CollectScheduleServiceImpl implements CollectScheduleService {
     @Scheduled(fixedDelayString = "${hub.schedule.collect-scan-ms:60000}")
     @Override
     public void runDueSchedules() {
+        int skipped = collectScheduleMapper.skipStaleDueSchedules(collectCatchUpMinutes);
+        if (skipped > 0) {
+            log.info("stale collect schedules skipped: count={}, maxCatchUpMinutes={}",
+                    skipped, collectCatchUpMinutes);
+        }
         List<CollectScheduleRow> schedules = collectScheduleMapper.claimDueSchedules(20);
         for (CollectScheduleRow schedule : schedules) {
             runSchedule(schedule);

@@ -68,7 +68,7 @@ function parseOrdersXml(xml: string): GodoFetchOrdersResult {
   const message = toStringValue(header.msg);
   const lastOrder = toBooleanValue(header.lastOrder);
 
-  if (code && !isSuccessCode(code)) {
+  if (code && !isGodoSuccessCode(code)) {
     throw new Error(`GODO API failed (${code}): ${message}`);
   }
 
@@ -147,6 +147,7 @@ function toBooleanValue(value: unknown): boolean {
   return String(value).toLowerCase() === "true";
 }
 
-function isSuccessCode(code: string): boolean {
-  return code === "000" || code === "0";
+export function isGodoSuccessCode(code: unknown): boolean {
+  const normalizedCode = String(code);
+  return normalizedCode === "000" || normalizedCode === "0";
 }

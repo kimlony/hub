@@ -126,6 +126,21 @@
           AND id = #{id}
     </delete>
 
+    <update id="skipStaleDueSchedules">
+        UPDATE hub_collect_schedule
+        SET running_yn = 'N',
+            next_run_at = CASE
+                WHEN (CURRENT_DATE + run_time) &gt; NOW()
+                    THEN (CURRENT_DATE + run_time)
+                ELSE (CURRENT_DATE + run_time + INTERVAL '1 day')
+            END,
+            last_error_message = NULL,
+            updated_at = NOW()
+        WHERE enabled_yn = 'Y'
+          AND (running_yn = 'N' OR updated_at &lt; NOW() - INTERVAL '30 minutes')
+          AND next_run_at &lt;= NOW() - (CAST(#{maxCatchUpMinutes} AS int) * INTERVAL '1 minute')
+    </update>
+
     <select id="claimDueSchedules" resultType="com.bizbee.hub.schedule.CollectScheduleRow">
         WITH picked AS (
             SELECT id
