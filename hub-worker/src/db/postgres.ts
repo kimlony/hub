@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { createDecipheriv } from "node:crypto";
+import { createDecipheriv, randomUUID } from "node:crypto";
 import pg from "pg";
 import { logger } from "../logger.js";
 import { getWorkerId } from "../workerIdentity.js";
@@ -40,6 +40,22 @@ export type NewsItemInput = {
   corpName?: string;
   contentHash: string;
   publishedAt: Date;
+};
+
+export type NormalizeJobInput = {
+  requestId: string;
+  requestKey: string;
+  sourceErp: string;
+  jobType: string;
+  payload: Record<string, unknown>;
+};
+
+export type JobResultForNormalize = {
+  requestId: string;
+  requestKey: string;
+  sourceErp: string;
+  resultPayload: Record<string, unknown>;
+  jobPayload: Record<string, unknown>;
 };
 
 const MAX_RETRY_COUNT = 3;
@@ -120,6 +136,112 @@ async function ensurePostgresSchemaUnlocked(): Promise<void> {
   await pool.query(`
     ALTER TABLE hub_job_result
     ADD COLUMN IF NOT EXISTS request_key VARCHAR(200)
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_collected_order (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id),
+      request_id VARCHAR(36),
+      request_key VARCHAR(200),
+      source_erp VARCHAR(50) NOT NULL DEFAULT 'HUB',
+      channel_cd VARCHAR(30) NOT NULL,
+      mall_key VARCHAR(50),
+      channel_order_id VARCHAR(120) NOT NULL,
+      order_status VARCHAR(80),
+      claim_status VARCHAR(80),
+      claim_type VARCHAR(80),
+      order_date TIMESTAMPTZ,
+      paid_at TIMESTAMPTZ,
+      collected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      buyer_name VARCHAR(200),
+      buyer_tel VARCHAR(100),
+      buyer_email VARCHAR(300),
+      payment_method VARCHAR(80),
+      currency_code VARCHAR(10) NOT NULL DEFAULT 'KRW',
+      order_amount NUMERIC(18, 2),
+      product_amount NUMERIC(18, 2),
+      delivery_fee NUMERIC(18, 2),
+      discount_amount NUMERIC(18, 2),
+      raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    ALTER TABLE hub_collected_order
+    ADD COLUMN IF NOT EXISTS user_id BIGINT
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uidx_hub_collected_order_channel_order
+    ON hub_collected_order(channel_cd, channel_order_id)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_hub_collected_order_user_date
+    ON hub_collected_order(user_id, order_date DESC)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_hub_collected_order_channel_date
+    ON hub_collected_order(channel_cd, order_date DESC)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_hub_collected_order_request
+    ON hub_collected_order(request_id)
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_collected_order_item (
+      id BIGSERIAL PRIMARY KEY,
+      order_id BIGINT NOT NULL REFERENCES hub_collected_order(id) ON DELETE CASCADE,
+      channel_order_item_id VARCHAR(160) NOT NULL,
+      product_id VARCHAR(120),
+      seller_product_code VARCHAR(160),
+      sku_code VARCHAR(160),
+      product_name VARCHAR(500),
+      option_name VARCHAR(500),
+      item_status VARCHAR(80),
+      quantity INTEGER,
+      unit_price NUMERIC(18, 2),
+      item_amount NUMERIC(18, 2),
+      discount_amount NUMERIC(18, 2),
+      expected_settlement_amount NUMERIC(18, 2),
+      raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uidx_hub_collected_order_item_channel_item
+    ON hub_collected_order_item(order_id, channel_order_item_id)
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_collected_order_delivery (
+      id BIGSERIAL PRIMARY KEY,
+      order_id BIGINT NOT NULL UNIQUE REFERENCES hub_collected_order(id) ON DELETE CASCADE,
+      receiver_name VARCHAR(200),
+      receiver_tel VARCHAR(100),
+      receiver_zip_code VARCHAR(30),
+      receiver_addr1 VARCHAR(500),
+      receiver_addr2 VARCHAR(500),
+      delivery_memo VARCHAR(1000),
+      delivery_company VARCHAR(100),
+      tracking_number VARCHAR(100),
+      delivery_status VARCHAR(80),
+      shipping_due_at TIMESTAMPTZ,
+      shipped_at TIMESTAMPTZ,
+      delivered_at TIMESTAMPTZ,
+      raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_order_normalize_checkpoint (
+      request_id VARCHAR(36) PRIMARY KEY,
+      status VARCHAR(20) NOT NULL,
+      normalized_count INT NOT NULL DEFAULT 0,
+      error_message TEXT,
+      normalized_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
   `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS hub_worker_heartbeat (
@@ -287,6 +409,389 @@ export async function saveJobResult(
   });
 
   return saveStatus;
+}
+
+export async function createNormalizeJobForResult(message: HubJobMessage): Promise<NormalizeJobInput | null> {
+  if (message.jobType !== "ORDER_COLLECT") {
+    return null;
+  }
+
+  // Empty collection results are intentionally not normalized. This keeps the
+  // worker queue focused on useful downstream work while preserving raw results.
+  const result = await pool.query<{
+    request_id: string;
+    request_key: string;
+    source_erp: string;
+    result_payload: Record<string, unknown>;
+  }>(
+    `
+      SELECT request_id, request_key, source_erp, result_payload
+      FROM hub_job_result
+      WHERE request_id = $1
+        AND jsonb_typeof(result_payload -> 'orders') = 'array'
+        AND jsonb_array_length(result_payload -> 'orders') > 0
+    `,
+    [message.requestId]
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    logger.info({
+      event: "ORDER_NORMALIZE_JOB_SKIPPED",
+      requestId: message.requestId,
+      reason: "orders_empty_or_missing"
+    }, "Order normalize job skipped");
+    return null;
+  }
+
+  const requestId = randomUUID();
+  const requestKey = `NORMALIZE_${message.requestId}`;
+  const payload = {
+    sourceRequestId: message.requestId,
+    sourceRequestKey: row.request_key,
+    userId: message.payload?.userId,
+    channelCd: message.payload?.channelCd ?? row.result_payload?.channelCd,
+    mallKey: message.payload?.mallKey ?? row.result_payload?.mallKey,
+    frDt: message.payload?.frDt ?? row.result_payload?.frDt,
+    toDt: message.payload?.toDt ?? row.result_payload?.toDt
+  };
+
+  const insertResult = await pool.query<{
+    request_id: string;
+    request_key: string;
+    source_erp: string;
+    job_type: string;
+    payload: Record<string, unknown>;
+  }>(
+    `
+      INSERT INTO hub_job (
+        request_id,
+        request_key,
+        channel_cd,
+        status,
+        payload,
+        retry_count,
+        job_type,
+        source_erp,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1, $2, $3, 'QUEUED', $4::jsonb, 0, 'ORDER_NORMALIZE', 'HUB', NOW(), NOW()
+      )
+      ON CONFLICT (request_key) DO NOTHING
+      RETURNING request_id, request_key, source_erp, job_type, payload
+    `,
+    [
+      requestId,
+      requestKey,
+      String(payload.channelCd ?? "ORDER"),
+      JSON.stringify(payload)
+    ]
+  );
+
+  const inserted = insertResult.rows[0];
+  if (!inserted) {
+    logger.info({
+      event: "ORDER_NORMALIZE_JOB_SKIPPED",
+      requestId: message.requestId,
+      requestKey,
+      reason: "already_exists"
+    }, "Order normalize job skipped");
+    return null;
+  }
+
+  return {
+    requestId: inserted.request_id,
+    requestKey: inserted.request_key,
+    sourceErp: inserted.source_erp,
+    jobType: inserted.job_type,
+    payload: inserted.payload
+  };
+}
+
+export async function findJobResultForNormalize(sourceRequestId: string): Promise<JobResultForNormalize> {
+  const result = await pool.query<{
+    request_id: string;
+    request_key: string;
+    source_erp: string;
+    result_payload: Record<string, unknown>;
+    job_payload: Record<string, unknown>;
+  }>(
+    `
+      SELECT
+        r.request_id,
+        r.request_key,
+        r.source_erp,
+        r.result_payload,
+        COALESCE(j.payload::jsonb, '{}'::jsonb) AS job_payload
+      FROM hub_job_result r
+      LEFT JOIN hub_job j ON j.request_id = r.request_id
+      WHERE r.request_id = $1
+    `,
+    [sourceRequestId]
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error(`Job result not found for normalize: ${sourceRequestId}`);
+  }
+
+  return {
+    requestId: row.request_id,
+    requestKey: row.request_key,
+    sourceErp: row.source_erp,
+    resultPayload: row.result_payload,
+    jobPayload: row.job_payload
+  };
+}
+
+export async function saveNormalizeCheckpoint(input: {
+  sourceRequestId: string;
+  status: "SUCCESS" | "FAILED";
+  normalizedCount: number;
+  errorMessage?: string | null;
+}): Promise<void> {
+  await pool.query(
+    `
+      INSERT INTO hub_order_normalize_checkpoint (
+        request_id,
+        status,
+        normalized_count,
+        error_message,
+        normalized_at,
+        updated_at
+      ) VALUES ($1, $2, $3, $4, NOW(), NOW())
+      ON CONFLICT (request_id) DO UPDATE
+        SET status = EXCLUDED.status,
+            normalized_count = EXCLUDED.normalized_count,
+            error_message = EXCLUDED.error_message,
+            normalized_at = EXCLUDED.normalized_at,
+            updated_at = NOW()
+    `,
+    [input.sourceRequestId, input.status, input.normalizedCount, input.errorMessage ?? null]
+  );
+}
+
+export async function upsertNormalizedOrder(input: {
+  userId: number;
+  requestId: string;
+  requestKey: string;
+  sourceErp: string;
+  channelCd: string;
+  mallKey?: string | null;
+  channelOrderId: string;
+  orderStatus?: string | null;
+  orderDate?: Date | null;
+  paidAt?: Date | null;
+  buyerName?: string | null;
+  buyerTel?: string | null;
+  buyerEmail?: string | null;
+  paymentMethod?: string | null;
+  orderAmount?: number | null;
+  productAmount?: number | null;
+  deliveryFee?: number | null;
+  discountAmount?: number | null;
+  rawPayload: Record<string, unknown>;
+}): Promise<number> {
+  const result = await pool.query<{ id: number }>(
+    `
+      INSERT INTO hub_collected_order (
+        user_id,
+        request_id,
+        request_key,
+        source_erp,
+        channel_cd,
+        mall_key,
+        channel_order_id,
+        order_status,
+        order_date,
+        paid_at,
+        buyer_name,
+        buyer_tel,
+        buyer_email,
+        payment_method,
+        order_amount,
+        product_amount,
+        delivery_fee,
+        discount_amount,
+        raw_payload
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb
+      )
+      ON CONFLICT (channel_cd, channel_order_id) DO UPDATE
+        SET user_id = EXCLUDED.user_id,
+            request_id = EXCLUDED.request_id,
+            request_key = EXCLUDED.request_key,
+            source_erp = EXCLUDED.source_erp,
+            mall_key = EXCLUDED.mall_key,
+            order_status = EXCLUDED.order_status,
+            order_date = EXCLUDED.order_date,
+            paid_at = EXCLUDED.paid_at,
+            buyer_name = EXCLUDED.buyer_name,
+            buyer_tel = EXCLUDED.buyer_tel,
+            buyer_email = EXCLUDED.buyer_email,
+            payment_method = EXCLUDED.payment_method,
+            order_amount = EXCLUDED.order_amount,
+            product_amount = EXCLUDED.product_amount,
+            delivery_fee = EXCLUDED.delivery_fee,
+            discount_amount = EXCLUDED.discount_amount,
+            raw_payload = EXCLUDED.raw_payload,
+            updated_at = NOW()
+      RETURNING id
+    `,
+    [
+      input.userId,
+      input.requestId,
+      input.requestKey,
+      input.sourceErp,
+      input.channelCd,
+      input.mallKey ?? null,
+      input.channelOrderId,
+      input.orderStatus ?? null,
+      input.orderDate ?? null,
+      input.paidAt ?? null,
+      input.buyerName ?? null,
+      input.buyerTel ?? null,
+      input.buyerEmail ?? null,
+      input.paymentMethod ?? null,
+      input.orderAmount ?? null,
+      input.productAmount ?? null,
+      input.deliveryFee ?? null,
+      input.discountAmount ?? null,
+      JSON.stringify(input.rawPayload)
+    ]
+  );
+
+  return result.rows[0].id;
+}
+
+export async function upsertNormalizedOrderItem(input: {
+  orderId: number;
+  channelOrderItemId: string;
+  productId?: string | null;
+  sellerProductCode?: string | null;
+  skuCode?: string | null;
+  productName?: string | null;
+  optionName?: string | null;
+  itemStatus?: string | null;
+  quantity?: number | null;
+  unitPrice?: number | null;
+  itemAmount?: number | null;
+  discountAmount?: number | null;
+  expectedSettlementAmount?: number | null;
+  rawPayload: Record<string, unknown>;
+}): Promise<void> {
+  await pool.query(
+    `
+      INSERT INTO hub_collected_order_item (
+        order_id,
+        channel_order_item_id,
+        product_id,
+        seller_product_code,
+        sku_code,
+        product_name,
+        option_name,
+        item_status,
+        quantity,
+        unit_price,
+        item_amount,
+        discount_amount,
+        expected_settlement_amount,
+        raw_payload
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb
+      )
+      ON CONFLICT (order_id, channel_order_item_id) DO UPDATE
+        SET product_id = EXCLUDED.product_id,
+            seller_product_code = EXCLUDED.seller_product_code,
+            sku_code = EXCLUDED.sku_code,
+            product_name = EXCLUDED.product_name,
+            option_name = EXCLUDED.option_name,
+            item_status = EXCLUDED.item_status,
+            quantity = EXCLUDED.quantity,
+            unit_price = EXCLUDED.unit_price,
+            item_amount = EXCLUDED.item_amount,
+            discount_amount = EXCLUDED.discount_amount,
+            expected_settlement_amount = EXCLUDED.expected_settlement_amount,
+            raw_payload = EXCLUDED.raw_payload,
+            updated_at = NOW()
+    `,
+    [
+      input.orderId,
+      input.channelOrderItemId,
+      input.productId ?? null,
+      input.sellerProductCode ?? null,
+      input.skuCode ?? null,
+      input.productName ?? null,
+      input.optionName ?? null,
+      input.itemStatus ?? null,
+      input.quantity ?? null,
+      input.unitPrice ?? null,
+      input.itemAmount ?? null,
+      input.discountAmount ?? null,
+      input.expectedSettlementAmount ?? null,
+      JSON.stringify(input.rawPayload)
+    ]
+  );
+}
+
+export async function upsertNormalizedDelivery(input: {
+  orderId: number;
+  receiverName?: string | null;
+  receiverTel?: string | null;
+  receiverZipCode?: string | null;
+  receiverAddr1?: string | null;
+  receiverAddr2?: string | null;
+  deliveryMemo?: string | null;
+  deliveryCompany?: string | null;
+  trackingNumber?: string | null;
+  deliveryStatus?: string | null;
+  rawPayload: Record<string, unknown>;
+}): Promise<void> {
+  await pool.query(
+    `
+      INSERT INTO hub_collected_order_delivery (
+        order_id,
+        receiver_name,
+        receiver_tel,
+        receiver_zip_code,
+        receiver_addr1,
+        receiver_addr2,
+        delivery_memo,
+        delivery_company,
+        tracking_number,
+        delivery_status,
+        raw_payload
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb
+      )
+      ON CONFLICT (order_id) DO UPDATE
+        SET receiver_name = EXCLUDED.receiver_name,
+            receiver_tel = EXCLUDED.receiver_tel,
+            receiver_zip_code = EXCLUDED.receiver_zip_code,
+            receiver_addr1 = EXCLUDED.receiver_addr1,
+            receiver_addr2 = EXCLUDED.receiver_addr2,
+            delivery_memo = EXCLUDED.delivery_memo,
+            delivery_company = EXCLUDED.delivery_company,
+            tracking_number = EXCLUDED.tracking_number,
+            delivery_status = EXCLUDED.delivery_status,
+            raw_payload = EXCLUDED.raw_payload,
+            updated_at = NOW()
+    `,
+    [
+      input.orderId,
+      input.receiverName ?? null,
+      input.receiverTel ?? null,
+      input.receiverZipCode ?? null,
+      input.receiverAddr1 ?? null,
+      input.receiverAddr2 ?? null,
+      input.deliveryMemo ?? null,
+      input.deliveryCompany ?? null,
+      input.trackingNumber ?? null,
+      input.deliveryStatus ?? null,
+      JSON.stringify(input.rawPayload)
+    ]
+  );
 }
 
 export async function saveJobLog(input: {

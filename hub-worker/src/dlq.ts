@@ -24,6 +24,8 @@ const kafka = new Kafka({
 let producer: Producer | null = null;
 
 export async function publishDlq(input: DlqInput): Promise<boolean> {
+  // DLQ keeps the original job message together with retry metadata so failed
+  // work can be inspected or replayed without searching application logs first.
   const payload = {
     failedAt: new Date().toISOString(),
     source: input.source,

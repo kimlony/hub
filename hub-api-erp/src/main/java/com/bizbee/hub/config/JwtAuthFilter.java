@@ -20,6 +20,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private final JwtProvider jwtProvider;
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        // External API tokens carry different claims from the UI login token,
+        // so they are handled by ExternalApiAuthFilter instead of this filter.
+        return request.getRequestURI().startsWith("/api/external/");
+    }
+
+    @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {

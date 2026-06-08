@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { Kafka, type Consumer, type EachMessagePayload } from "kafkajs";
 import {
+  createNormalizeJobForResult,
   deferJobForLockConflict,
   findActiveChannelCredentials,
   releaseJobLock,
@@ -17,10 +18,12 @@ import { DartCrawlHandler } from "./channels/dart/DartCrawlHandler.js";
 import { ElevenStOrderHandler } from "./channels/elevenst/ElevenStOrderHandler.js";
 import { NaverRssCrawlHandler } from "./channels/naverRss/NaverRssCrawlHandler.js";
 import { NfaOrderHandler } from "./channels/nfa/NfaOrderHandler.js";
+import { OrderNormalizeHandler } from "./channels/orderNormalize/OrderNormalizeHandler.js";
 import { TestSleepHandler } from "./channels/test/TestSleepHandler.js";
 import { HandlerRegistry } from "./handlers/HandlerRegistry.js";
 import type { JobHandlerMessage } from "./handlers/IJobHandler.js";
 import { publishDlq } from "./dlq.js";
+import { closeJobPublisher, publishNormalizeJob } from "./jobPublisher.js";
 import { getErrorMessage, logger } from "./logger.js";
 import { HubJobMessageSchema } from "./schemas.js";
 import { getKafkaClientId, getWorkerId } from "./workerIdentity.js";
@@ -51,6 +54,7 @@ registry.register("ORDER_COLLECT", new CoupangOrderHandler(), "COUPANG");
 registry.register("ORDER_COLLECT", new NfaOrderHandler(), "NSS");
 registry.register("CRAWL", new DartCrawlHandler(), "DART");
 registry.register("CRAWL", new NaverRssCrawlHandler(), "NAVER_RSS");
+registry.register("ORDER_NORMALIZE", new OrderNormalizeHandler());
 registry.register("TEST_SLEEP", new TestSleepHandler(), "TEST");
 
 export async function startConsumer(): Promise<void> {
@@ -84,6 +88,7 @@ export async function stopConsumer(): Promise<void> {
   await consumer.stop();
   await waitForActiveJobs();
   await consumer.disconnect();
+  await closeJobPublisher();
   consumerStarted = false;
 
   logger.info({
@@ -248,6 +253,8 @@ export async function processJobMessage(
       return;
     }
 
+    await publishFollowUpJobs(handledMessage);
+
     logger.info({
       event: "JOB_STATUS_SUCCESS",
       requestId,
@@ -397,6 +404,36 @@ export async function processJobMessage(
       }
     });
   }
+}
+
+async function publishFollowUpJobs(jobMessage: HubJobMessage): Promise<void> {
+  if (jobMessage.jobType !== "ORDER_COLLECT") {
+    return;
+  }
+
+  // Order collection and normalization are separated so raw results survive even
+  // when channel-specific mapping fails and needs retry/DLQ handling.
+  const normalizeJob = await createNormalizeJobForResult(jobMessage);
+  if (!normalizeJob) {
+    return;
+  }
+
+  await publishNormalizeJob(normalizeJob);
+  await saveJobLog({
+    requestId: jobMessage.requestId,
+    eventType: "ORDER_NORMALIZE_JOB_PUBLISHED",
+    level: "INFO",
+    message: "Order normalize job published",
+    jobType: jobMessage.jobType,
+    sourceErp: jobMessage.sourceErp,
+    requestKey: jobMessage.requestKey,
+    channelCd: getChannelCd(jobMessage),
+    mallKey: getMallKey(jobMessage),
+    detail: {
+      normalizeRequestId: normalizeJob.requestId,
+      normalizeRequestKey: normalizeJob.requestKey
+    }
+  });
 }
 
 function getChannelCd(jobMessage: HubJobMessage): string | undefined {

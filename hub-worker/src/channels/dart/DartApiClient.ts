@@ -29,6 +29,10 @@ export class DartApiClient {
     });
 
     const data = response.data;
+    if (data.status === "013") {
+      return [];
+    }
+
     if (data.status !== "000") {
       throw new Error(`DART API failed: ${data.status} ${data.message ?? ""}`.trim());
     }

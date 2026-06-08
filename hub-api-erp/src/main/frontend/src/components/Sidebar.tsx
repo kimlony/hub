@@ -20,6 +20,10 @@ const nav: NavSection[] = [
     items: [{ label: '속보', to: '/news', icon: 'N' }],
   },
   {
+    section: '외부 연동',
+    items: [{ label: 'API 연동', to: '/external', icon: 'E' }],
+  },
+  {
     section: '모니터링',
     items: [
       { label: 'Kafka 현황', to: '/monitor', icon: 'K' },

@@ -70,13 +70,14 @@ public class KafkaMonitorService {
             List<KafkaTopicInfo> topics = fetchTopics(adminClient, monitorTopicNames());
             long totalLag = topics.stream().mapToLong(KafkaTopicInfo::lag).sum();
             int partitionCount = topics.stream().mapToInt(KafkaTopicInfo::partitions).sum();
+            boolean hasWarning = topics.stream().anyMatch(topic -> "WARN".equals(topic.status()));
 
             return new KafkaMonitorResponse(
                     new KafkaMonitorStats(topics.size(), brokers.size(), partitionCount, totalLag),
                     topics,
                     brokers,
                     consumerGroup,
-                    totalLag > 0 ? "WARN" : "HEALTHY",
+                    hasWarning ? "WARN" : "HEALTHY",
                     null,
                     LocalDateTime.now()
             );
@@ -123,6 +124,8 @@ public class KafkaMonitorService {
 
         try (AdminClient adminClient = AdminClient.create(adminProperties());
              KafkaConsumer<String, String> consumer = new KafkaConsumer<>(dlqConsumerProperties())) {
+            // Read DLQ directly from Kafka instead of the job table so operators
+            // can inspect the exact failed message that would be replayed later.
             TopicDescription description = adminClient.describeTopics(List.of(dlqTopic))
                     .allTopicNames()
                     .get(ADMIN_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -147,7 +150,7 @@ public class KafkaMonitorService {
             while (System.currentTimeMillis() < deadline && messages.size() < safeLimit * partitions.size()) {
                 ConsumerRecords<String, String> records = consumer.poll(java.time.Duration.ofMillis(250));
                 if (records.isEmpty()) {
-                    break;
+                    continue;
                 }
                 for (ConsumerRecord<String, String> record : records) {
                     messages.add(toDlqMessageItem(record));
@@ -321,17 +324,22 @@ public class KafkaMonitorService {
         List<KafkaTopicInfo> topics = new ArrayList<>();
         for (TopicDescription description : descriptions.values()) {
             long topicLag = 0L;
+            long topicLatestOffset = 0L;
             int replicaCount = 0;
             List<KafkaPartitionInfo> partitionDetails = new ArrayList<>();
+            boolean dlqStorageTopic = description.name().equals(dlqTopic);
 
             for (var partition : description.partitions()) {
                 TopicPartition topicPartition = new TopicPartition(description.name(), partition.partition());
                 long latestOffset = latestOffsets.getOrDefault(topicPartition, 0L);
-                long committedOffset = committedOffsets.getOrDefault(topicPartition, 0L);
-                long lag = Math.max(0L, latestOffset - committedOffset);
+                long committedOffset = dlqStorageTopic
+                        ? latestOffset
+                        : committedOffsets.getOrDefault(topicPartition, 0L);
+                long lag = dlqStorageTopic ? 0L : Math.max(0L, latestOffset - committedOffset);
                 MemberDescription member = partitionMembers.get(topicPartition);
 
                 topicLag += lag;
+                topicLatestOffset += latestOffset;
                 replicaCount = Math.max(replicaCount, partition.replicas().size());
                 partitionDetails.add(new KafkaPartitionInfo(
                         description.name(),
@@ -344,7 +352,7 @@ public class KafkaMonitorService {
                         member != null ? member.consumerId() : null,
                         member != null ? member.clientId() : null,
                         member != null ? member.host() : null,
-                        lag > 0 ? "WARN" : "HEALTHY"
+                        (dlqStorageTopic ? latestOffset > 0 : lag > 0) ? "WARN" : "HEALTHY"
                 ));
             }
 
@@ -353,7 +361,7 @@ public class KafkaMonitorService {
                     description.partitions().size(),
                     replicaCount,
                     topicLag,
-                    topicLag > 0 ? "WARN" : "HEALTHY",
+                    (dlqStorageTopic ? topicLatestOffset > 0 : topicLag > 0) ? "WARN" : "HEALTHY",
                     partitionDetails.stream()
                             .sorted(Comparator.comparingInt(KafkaPartitionInfo::partition))
                             .toList()

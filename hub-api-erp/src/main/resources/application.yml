@@ -36,6 +36,9 @@ hub:
     collect-catch-up-minutes: ${HUB_SCHEDULE_COLLECT_CATCH_UP_MINUTES:120}
     crawl-dart-ms: ${HUB_SCHEDULE_CRAWL_DART_MS:300000}
     crawl-rss-ms: ${HUB_SCHEDULE_CRAWL_RSS_MS:120000}
+  order:
+    normalize-scan-ms: ${HUB_ORDER_NORMALIZE_SCAN_MS:60000}
+    normalize-initial-delay-ms: ${HUB_ORDER_NORMALIZE_INITIAL_DELAY_MS:30000}
   security:
     enabled: ${HUB_SECURITY_ENABLED:true}
     header-name: ${HUB_API_KEY_HEADER:X-Hub-Api-Key}

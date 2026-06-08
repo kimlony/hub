@@ -7,6 +7,7 @@ import JobsPage      from './pages/JobsPage'
 import MonitorPage   from './pages/MonitorPage'
 import SchedulePage  from './pages/SchedulePage'
 import NewsPage      from './pages/NewsPage'
+import ExternalApiPage from './pages/ExternalApiPage'
 
 export default function App() {
   return (
@@ -25,6 +26,9 @@ export default function App() {
           } />
           <Route path="/news" element={
             <ProtectedRoute><NewsPage /></ProtectedRoute>
+          } />
+          <Route path="/external" element={
+            <ProtectedRoute><ExternalApiPage /></ProtectedRoute>
           } />
           <Route path="/monitor" element={
             <ProtectedRoute><MonitorPage /></ProtectedRoute>

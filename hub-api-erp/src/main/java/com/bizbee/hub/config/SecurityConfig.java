@@ -1,5 +1,6 @@
 package com.bizbee.hub.config;
 
+import com.bizbee.hub.external.ExternalApiAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -25,6 +26,7 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final ExternalApiAuthFilter externalApiAuthFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -34,16 +36,22 @@ public class SecurityConfig {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/login").permitAll()
+                .requestMatchers("/api/external/auth/token").permitAll()
+                .requestMatchers("/api/external/orders/**").permitAll()
+                .requestMatchers("/api/external/**").authenticated()
                 .requestMatchers("/api/auth/me/**").authenticated()
                 .requestMatchers("/api/channels/**").authenticated()
                 .requestMatchers("/api/hub/jobs/**").authenticated()
                 .requestMatchers("/api/hub/schedules/**").authenticated()
+                .requestMatchers("/api/hub/orders/**").authenticated()
+                .requestMatchers("/api/hub/external/**").authenticated()
                 .requestMatchers("/api/hub/notices/**").authenticated()
                 .requestMatchers("/api/hub/news/**").authenticated()
                 .requestMatchers("/api/hub/kafka/**").authenticated()
                 .requestMatchers("/api/hub/workers/**").authenticated()
                 .anyRequest().permitAll()
             )
+            .addFilterBefore(externalApiAuthFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

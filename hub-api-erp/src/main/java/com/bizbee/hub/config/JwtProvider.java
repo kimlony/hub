@@ -34,6 +34,10 @@ public class JwtProvider {
         return claims(token).getSubject();
     }
 
+    public Claims extractClaims(String token) {
+        return claims(token);
+    }
+
     public boolean isValid(String token) {
         try {
             claims(token);
