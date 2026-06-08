@@ -1,4 +1,4 @@
--- Mock normalized order data for BizBee HUB order export.
+-- Mock normalized order data for Eazy Hub order export.
 -- Prerequisite: run docs/order-export-normalized-schema.sql first.
 
 WITH upsert_order AS (

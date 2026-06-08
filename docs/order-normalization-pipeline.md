@@ -1,11 +1,11 @@
 # Order Normalization Pipeline
 
-이 문서는 BizBee HUB의 주문 정규화 파이프라인을 정리한 포트폴리오용 설계 문서입니다.
+이 문서는 Eazy Hub의 주문 정규화 파이프라인을 정리한 포트폴리오용 설계 문서입니다.
 핵심은 쇼핑몰마다 다른 주문 응답을 그대로 테이블에 맞추는 것이 아니라, 원본은 보존하고 Worker에서 채널별 Normalizer를 통해 공통 주문 모델로 변환하는 것입니다.
 
 ## Summary
 
-BizBee HUB collects order data from several shopping mall channels. Each channel returns a different response shape, field naming convention, date format, and item structure.
+Eazy Hub collects order data from several shopping mall channels. Each channel returns a different response shape, field naming convention, date format, and item structure.
 
 The normalization pipeline separates this problem into two steps:
 
@@ -37,7 +37,7 @@ If every raw field were turned into a database column, the schema would become t
 
 ## Design Decision
 
-BizBee HUB uses a hybrid model:
+Eazy Hub uses a hybrid model:
 
 - Common business fields are normalized into columns.
 - Channel-specific details are preserved in `raw_payload`.

@@ -1,6 +1,6 @@
-# BizBee HUB
+# Eazy Hub
 
-BizBee HUB는 여러 쇼핑몰 채널의 주문을 자동으로 수집하고, Kafka Worker로 비동기 처리한 뒤, 채널마다 다른 응답 데이터를 공통 주문 모델로 정규화해 외부 API로 제공하는 주문수집 자동화 플랫폼입니다.
+Eazy Hub는 여러 쇼핑몰 채널의 주문을 자동으로 수집하고, Kafka Worker로 비동기 처리한 뒤, 채널마다 다른 응답 데이터를 공통 주문 모델로 정규화해 외부 API로 제공하는 주문수집 자동화 플랫폼입니다.
 
 이 프로젝트의 핵심 목표는 **안정화**와 **자동화**입니다. 단순히 쇼핑몰 API를 호출하는 데서 끝내지 않고, 실패 복구, 재시도 제어, DLQ, 모니터링, 정규화, 외부 연동 API까지 하나의 흐름으로 설계했습니다.
 
@@ -14,7 +14,7 @@ ERP 업무에서 쇼핑몰 주문수집은 보통 담당자가 각 쇼핑몰 관
 - Queue, Worker, 실패 Job 상태를 한눈에 보기 어려움
 - 쇼핑몰마다 다른 주문 응답 구조
 
-BizBee HUB는 이 문제를 Job 기반 자동화 파이프라인으로 해결하는 것을 목표로 합니다.
+Eazy Hub는 이 문제를 Job 기반 자동화 파이프라인으로 해결하는 것을 목표로 합니다.
 
 ## 전체 처리 흐름
 
@@ -136,4 +136,3 @@ Worker에는 다음 방어 로직을 적용했습니다.
 - [Normalized Order Schema](docs/order-export-normalized-schema.sql)
 - [Normalized Mock Data](docs/order-export-normalized-mock-data.sql)
 - [External API Client Schema](docs/external-api-client-schema.sql)
-- [Technical Summary](BizBee_HUB_technical_summary.md)

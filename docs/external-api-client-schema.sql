@@ -1,4 +1,4 @@
--- External API client registry for BizBee HUB.
+-- External API client registry for Eazy Hub.
 -- Purpose:
 --   - issue a separated clientId/clientSecret per external system
 --   - verify HMAC signatures without storing the secret in plain text

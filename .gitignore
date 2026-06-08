@@ -27,3 +27,12 @@ bizbee-hub-local-config/
 bizbee-hub-local-config.zip
 bizbee-hub-local-config-*/
 bizbee-hub-local-config-*.zip
+
+# Local/company-specific notes and exports. Keep portfolio docs generic.
+API_요청_문서_*.md
+BHUB.sql
+CONTEXT.md
+claude_code_prompt_*.md
+BizBee_HUB_*.md
+BizBee_HUB_*.docx
+*.local.zip

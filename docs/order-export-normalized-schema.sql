@@ -1,4 +1,4 @@
--- BizBee HUB normalized order export schema
+-- Eazy Hub normalized order export schema
 -- Target channels: NAVER, GODO, 11ST, COUPANG, GCHAN
 --
 -- Design notes
