@@ -1,22 +1,10 @@
 # Order Normalization Pipeline
 
-이 문서는 Eazy Hub의 주문 정규화 파이프라인을 정리한 포트폴리오용 설계 문서입니다.
-핵심은 쇼핑몰마다 다른 주문 응답을 그대로 테이블에 맞추는 것이 아니라, 원본은 보존하고 Worker에서 채널별 Normalizer를 통해 공통 주문 모델로 변환하는 것입니다.
+이 문서는 Eazy Hub의 주문 정규화 파이프라인을 정리한 문서입니다. 핵심은 쇼핑몰마다 다른 주문 응답을 그대로 사용하지 않고, 원본은 보존하면서 Worker에서 채널별 Normalizer를 통해 공통 주문 모델로 변환하는 것입니다.
 
-## Summary
+## 문제
 
-Eazy Hub collects order data from several shopping mall channels. Each channel returns a different response shape, field naming convention, date format, and item structure.
-
-The normalization pipeline separates this problem into two steps:
-
-1. **Raw collection**: preserve the original channel response in `hub_job_result`.
-2. **Normalization**: convert raw channel data into the common `hub_collected_order*` tables through a worker job.
-
-This allows the system to keep the source data for debugging while providing stable, standardized data to external API clients.
-
-## Problem
-
-The project currently targets 4 to 5 shopping mall channels:
+프로젝트에서 다루는 쇼핑몰 채널은 서로 다른 주문 응답 구조를 가지고 있습니다.
 
 - NAVER / NSS
 - GODO
@@ -24,67 +12,60 @@ The project currently targets 4 to 5 shopping mall channels:
 - COUPANG
 - GCHAN
 
-These channels do not share one fixed order schema.
+예를 들어 어떤 채널은 주문번호를 `orderId`로 주고, 다른 채널은 `ordNo`, `orderCode`처럼 다른 이름으로 줍니다. 상품 목록 위치도 다르고, 배송 정보가 주문에 붙어 있거나 shipment 안에 들어 있는 경우도 있습니다.
 
-Examples:
+모든 raw 필드를 DB 컬럼으로 만들면 스키마가 과도하게 커지고, 채널 응답이 바뀔 때마다 DB 변경이 반복됩니다.
 
-- One channel may use `orderId`, another may use `ordNo`, and another may use `orderCode`.
-- Some channels return item lists under `items`; others nest them under shipment or product-order objects.
-- Delivery information may be attached to the order, the shipment, or the recipient.
-- Some fields are reliable across channels, but many are channel-specific.
+## 설계 방향
 
-If every raw field were turned into a database column, the schema would become too large and fragile. Every channel change would require schema migration.
+Eazy Hub는 다음 방식으로 이 문제를 분리했습니다.
 
-## Design Decision
+1. 쇼핑몰 응답 원본은 `hub_job_result.result_payload`에 JSONB로 저장한다.
+2. 수집 성공 후 `ORDER_NORMALIZE` Job을 별도로 생성한다.
+3. Worker가 채널별 Normalizer를 선택해 공통 주문 모델로 변환한다.
+4. 정규화 결과를 `hub_collected_order*` 테이블에 upsert한다.
+5. 외부 API와 운영 화면은 정규화된 주문 모델을 조회한다.
 
-Eazy Hub uses a hybrid model:
-
-- Common business fields are normalized into columns.
-- Channel-specific details are preserved in `raw_payload`.
-- Each channel has its own normalizer strategy.
-
-This keeps query/export performance acceptable while still retaining the original data for troubleshooting.
-
-## Pipeline
+## 처리 흐름
 
 ```text
-ORDER_COLLECT job
-    |
-    v
-Mall API handler
-    |
-    v
+ORDER_COLLECT Job
+      |
+      v
+채널별 주문수집 Handler
+      |
+      v
 hub_job_result.result_payload
-    |
-    v
+      |
+      v
 createNormalizeJobForResult()
-    |
-    v
+      |
+      v
 Kafka: ORDER_NORMALIZE
-    |
-    v
+      |
+      v
 OrderNormalizeHandler
-    |
-    v
+      |
+      v
 NormalizerRegistry
-    |
-    +-- SmartstoreOrderNormalizer
-    +-- CoupangOrderNormalizer
-    +-- GiftOrderNormalizer
-    +-- FlatCommerceOrderNormalizer
-    +-- GenericOrderNormalizer
-    |
-    v
+      |
+      +-- SmartstoreOrderNormalizer
+      +-- CoupangOrderNormalizer
+      +-- GiftOrderNormalizer
+      +-- FlatCommerceOrderNormalizer
+      +-- GenericOrderNormalizer
+      |
+      v
 hub_collected_order*
 ```
 
-## Tables
+## 테이블 구조
 
 ### `hub_collected_order`
 
-Stores the normalized order header.
+정규화된 주문 header를 저장합니다.
 
-Important fields:
+주요 필드:
 
 - `user_id`
 - `channel_cd`
@@ -103,13 +84,13 @@ Important fields:
 - `discount_amount`
 - `raw_payload`
 
-The key idea is that `channel_cd + channel_order_id` identifies an order from a mall channel.
+`channel_cd + channel_order_id`를 채널 주문의 고유 기준으로 사용합니다.
 
 ### `hub_collected_order_item`
 
-Stores item-level data.
+주문 상품 line을 저장합니다.
 
-Important fields:
+주요 필드:
 
 - `order_id`
 - `channel_order_item_id`
@@ -128,9 +109,9 @@ Important fields:
 
 ### `hub_collected_order_delivery`
 
-Stores delivery and receiver information.
+배송 및 수취인 정보를 저장합니다.
 
-Important fields:
+주요 필드:
 
 - `order_id`
 - `receiver_name`
@@ -146,80 +127,70 @@ Important fields:
 
 ### `hub_order_normalize_checkpoint`
 
-Tracks normalization execution per source collection job.
+수집 Job별 정규화 수행 여부를 기록합니다.
 
-This helps answer:
+확인 가능한 정보:
 
-- Was the raw collection result normalized?
-- How many orders were normalized?
-- Did normalization fail?
+- 해당 raw result가 정규화되었는지
+- 몇 건이 정규화되었는지
+- 정규화 중 실패했는지
 
-## Normalizer Strategy
+## Normalizer 전략
 
-The worker uses `NormalizerRegistry` to choose the right normalizer for each channel.
+`NormalizerRegistry`는 `channelCd`를 기준으로 적절한 Normalizer를 선택합니다.
 
-| Normalizer | Channels | Purpose |
+| Normalizer | 채널 | 역할 |
 | --- | --- | --- |
-| `SmartstoreOrderNormalizer` | `NAVER`, `NSS` | Handles SmartStore-style nested order/product-order/shipping structures |
-| `CoupangOrderNormalizer` | `COUPANG` | Handles shipment/order item/receiver style data |
-| `GiftOrderNormalizer` | `GCHAN` | Handles gift or recipient-oriented order data |
-| `FlatCommerceOrderNormalizer` | `11ST`, `GODO` | Handles flatter commerce response structures |
-| `GenericOrderNormalizer` | fallback | Handles unknown but reasonably flat order data |
+| `SmartstoreOrderNormalizer` | `NAVER`, `NSS` | 스마트스토어 계열 주문 / 상품 / 배송 구조 처리 |
+| `CoupangOrderNormalizer` | `COUPANG` | 쿠팡 shipment / order item / receiver 구조 처리 |
+| `GiftOrderNormalizer` | `GCHAN` | 선물 또는 수령자 중심 주문 구조 처리 |
+| `FlatCommerceOrderNormalizer` | `11ST`, `GODO` | 비교적 flat한 커머스 응답 구조 처리 |
+| `GenericOrderNormalizer` | fallback | 전용 정책이 없는 채널의 기본 매핑 |
 
-## Why This Is Useful
+## 왜 별도 Job으로 분리했나
 
-This structure makes channel expansion safer.
+정규화를 API 서버에서 바로 수행하지 않고 Worker Job으로 분리한 이유는 다음과 같습니다.
 
-To add or refine a channel:
+- API 서버가 무거운 parsing / mapping 작업을 직접 수행하지 않게 하기 위해
+- 정규화 실패도 retry / backoff / DLQ 흐름에 태우기 위해
+- raw 수집 성공과 정규화 성공을 분리해 추적하기 위해
+- 채널별 mapping 오류가 있어도 원본 데이터를 보존하기 위해
 
-1. Add a new normalizer or extend an existing one.
-2. Register it in `NormalizerRegistry`.
-3. Add representative tests for the channel response shape.
-4. Keep the normalized tables stable.
+## 실패 처리
 
-The external API does not need to know how each mall structures its response.
+정규화 대상이 되는 `orders` 배열이 없거나 비어 있으면 `ORDER_NORMALIZE` Job을 만들지 않습니다. 빈 결과는 실패가 아니라 수집 결과가 없는 정상 상황으로 봤습니다.
 
-## Failure Handling
+정규화 중 실패하면 기존 Worker 처리 흐름과 동일하게 retry/backoff 대상이 되고, 반복 실패하면 DLQ로 분리될 수 있습니다.
 
-Normalization is handled as a separate Kafka job.
+## 장점
 
-Benefits:
+- 외부 API는 쇼핑몰별 응답 차이를 몰라도 된다.
+- 원본 JSON이 남아 있어 디버깅과 재정제가 가능하다.
+- 채널 추가 시 Normalizer만 추가하면 된다.
+- 공통 주문 테이블은 안정적으로 유지할 수 있다.
+- 채널별 예외 처리가 한 계층에 모인다.
 
-- The API server does not perform heavy parsing work.
-- Failed normalization can use the same retry/backoff/DLQ flow as other worker jobs.
-- Raw collection data remains available even when normalization fails.
-- Empty `orders` results are skipped and marked as successful with zero normalized rows.
+## 한계
 
-## Portfolio Interpretation
+- 실제 운영에서는 쇼핑몰별 예외 케이스가 더 많을 수 있다.
+- 채널별 샘플 응답을 더 확보해 회귀 테스트를 늘려야 한다.
+- 개인정보 필드는 마스킹/접근권한 정책을 더 구체화해야 한다.
+- 정규화 실패 Job을 운영자가 화면에서 재처리하는 기능은 추가 보완 대상이다.
 
-This feature can be described as:
+## 검증
 
-> Built a Kafka-based asynchronous order normalization pipeline that converts heterogeneous shopping mall order responses into a common internal order model using a channel-specific strategy pattern.
-
-Good interview talking points:
-
-- Why raw data is stored before normalization
-- Why normalization is a worker job instead of API-side polling
-- How channel-specific formats are isolated
-- How idempotent storage protects against repeated collection
-- How retry/backoff/DLQ makes failures observable and recoverable
-
-## Verification
-
-The worker normalization layer is covered by unit tests for representative routing and mapping behavior.
-
-Current verification commands:
+Worker 정규화 계층에는 대표 routing 및 mapping 테스트를 추가했습니다.
 
 ```powershell
 cd hub-worker
-node node_modules\typescript\bin\tsc --noEmit -p tsconfig.json
-node node_modules\jest\bin\jest.js --runInBand
-node node_modules\typescript\bin\tsc -p tsconfig.json
+node node_modules\\typescript\\bin\\tsc --noEmit -p tsconfig.json
+node node_modules\\jest\\bin\\jest.js --runInBand
+node node_modules\\typescript\\bin\\tsc -p tsconfig.json
 ```
 
-Latest verification result:
+최종 확인:
 
-- TypeScript check: passed
-- Jest: 4 suites / 20 tests passed
-- Worker build: passed
-- API `compileJava`: passed
+- TypeScript check 통과
+- Jest 4 suites / 20 tests 통과
+- Worker build 통과
+- API compileJava 통과
