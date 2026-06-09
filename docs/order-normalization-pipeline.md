@@ -1,6 +1,6 @@
 # Order Normalization Pipeline
 
-이 문서는 Eazy Hub의 주문 정규화 파이프라인을 정리한 문서입니다. 핵심은 쇼핑몰마다 다른 주문 응답을 그대로 사용하지 않고, 원본은 보존하면서 Worker에서 채널별 Normalizer를 통해 공통 주문 모델로 변환하는 것입니다.
+이 문서는 Easy Hub의 주문 정규화 파이프라인을 정리한 문서입니다. 핵심은 쇼핑몰마다 다른 주문 응답을 그대로 사용하지 않고, 원본은 보존하면서 Worker에서 채널별 Normalizer를 통해 공통 주문 모델로 변환하는 것입니다.
 
 ## 문제
 
@@ -18,7 +18,7 @@
 
 ## 설계 방향
 
-Eazy Hub는 다음 방식으로 이 문제를 분리했습니다.
+Easy Hub는 다음 방식으로 이 문제를 분리했습니다.
 
 1. 쇼핑몰 응답 원본은 `hub_job_result.result_payload`에 JSONB로 저장한다.
 2. 수집 성공 후 `ORDER_NORMALIZE` Job을 별도로 생성한다.
