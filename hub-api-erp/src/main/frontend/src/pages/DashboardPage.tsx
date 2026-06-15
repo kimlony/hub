@@ -138,7 +138,7 @@ type StatCard = {
 const channelMeta: Record<string, { label: string; initial: string; gradient: string }> = {
   '11ST': { label: '11번가', initial: '11', gradient: 'from-[#e8192c] to-[#ff6b6b]' },
   COUPANG: { label: '쿠팡', initial: 'C', gradient: 'from-[#ee2b2b] to-[#ff6060]' },
-  GCHAN: { label: '선물찬스', initial: 'G', gradient: 'from-[#ff6f00] to-[#ffa040]' },
+  GCHAN: { label: 'Gift Channel', initial: 'G', gradient: 'from-[#ff6f00] to-[#ffa040]' },
   NSS: { label: '네이버', initial: 'N', gradient: 'from-[#03c75a] to-[#3ddc97]' },
   GODO: { label: 'GODO', initial: 'GO', gradient: 'from-[#4f46e5] to-[#38bdf8]' },
 }

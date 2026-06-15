@@ -37,7 +37,14 @@ export function createApp(): express.Application {
       return;
     }
 
-    const message = parseResult.data as unknown as JobHandlerMessage;
+    const request = parseResult.data as typeof parseResult.data & Record<string, unknown>;
+    const message: JobHandlerMessage = {
+      requestId,
+      sourceErp: typeof request.sourceErp === "string" ? request.sourceErp : "HTTP",
+      jobType: typeof request.jobType === "string" ? request.jobType : "ORDER_COLLECT",
+      requestKey: typeof request.requestKey === "string" ? request.requestKey : requestId,
+      payload: parseResult.data.payload
+    };
     const channelCd = String(message.payload.channelCd ?? "");
     logger.info({
       event: "HTTP_COLLECT_REQUEST_RECEIVED",

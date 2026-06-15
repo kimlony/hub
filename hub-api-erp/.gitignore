@@ -7,3 +7,9 @@
 src/main/resources/application-local.yml
 src/main/resources/application-*.local.yml
 srctestjavacombizbeehubHashGenTest.java
+src/main/frontend/src/**/*.js
+src/main/frontend/dist/
+*.log
+*.zip
+*.tmp
+*.bak

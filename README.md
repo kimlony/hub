@@ -339,6 +339,63 @@ DLQ 메시지는 화면에서 확인할 수 있지만, 운영자가 선택한 DL
 | Test | Jest, ts-jest |
 | Runtime | Docker Compose |
 
+## 로컬 실행
+
+### 1. 환경 파일 생성
+
+```bash
+cp hub-worker/.env.example hub-worker/.env
+cp hub-api-erp/.env.example hub-api-erp/.env
+```
+
+`HUB_AES_SECRET`은 API와 Worker가 같은 값을 사용해야 하며 정확히 32 bytes여야 합니다. 공개 저장소에는 실제 credential, token, DB 비밀번호를 커밋하지 않습니다.
+
+공개 저장소에는 기본 관리자 계정 seed를 포함하지 않습니다. 로컬 테스트 계정은 PostgreSQL에 `users` 레코드를 직접 생성하거나, 별도 비공개 seed SQL로 관리하세요.
+
+### 2. 인프라와 Worker 실행
+
+루트 디렉터리에서 PostgreSQL, Kafka, Worker role을 Docker Compose로 실행합니다.
+
+```bash
+docker compose up -d
+```
+
+Compose 구성은 다음 역할을 실행합니다.
+
+- `hub-worker-consumer`: Kafka Job 처리
+- `hub-worker-recovery`: 멈춘 Job 복구
+- `hub-worker-http`: Worker 상태 확인용 HTTP 서버
+
+### 3. API 서버 실행
+
+```bash
+cd hub-api-erp
+./gradlew bootRun
+```
+
+### 4. Frontend 실행
+
+```bash
+cd hub-api-erp/src/main/frontend
+npm install
+npm run dev
+```
+
+### 5. 검증 명령
+
+```bash
+cd hub-worker
+npm install
+npm run check
+npm test
+
+cd ../hub-api-erp
+./gradlew compileJava
+
+cd src/main/frontend
+npm run build
+```
+
 ## 관련 문서
 
 - [Order Normalization Pipeline](docs/order-normalization-pipeline.md)

@@ -14,11 +14,7 @@ The API receives order collection requests from ERP, stores one job per channel 
 
 ## APIs
 
-All APIs require:
-
-```http
-X-Hub-Api-Key: {API_KEY}
-```
+UI/API endpoints use JWT authentication after login. External order export endpoints use a separate external API token issued through the HMAC-based client flow.
 
 ### Create Batch Jobs
 
@@ -31,19 +27,9 @@ Request:
 
 ```json
 {
-  "corpCd": "A001",
   "frDt": "20260512",
   "toDt": "20260513",
-  "channels": [
-    {
-      "channelCd": "11ST",
-      "channelAccountId": "shop_001",
-      "authType": "API_KEY",
-      "authInfo": {
-        "apiKey": "xxxxx"
-      }
-    }
-  ]
+  "mallKeys": ["11ST", "GODO"]
 }
 ```
 
@@ -55,7 +41,6 @@ Response:
     {
       "requestId": "uuid",
       "channelCd": "11ST",
-      "channelAccountId": "shop_001",
       "status": "QUEUED"
     }
   ]
@@ -67,7 +52,7 @@ Each channel creates one `hub_job`.
 Request key format:
 
 ```text
-ORDER_COLLECT_{corpCd}_{channelCd}_{channelAccountId}_{frDt}_{toDt}
+{mallKey}_{frDt}_{toDt}_{username}
 ```
 
 Duplicate `requestKey` requests return the existing job.
@@ -97,7 +82,18 @@ Response:
 ## Local Run
 
 ```bash
+cp .env.example .env
+```
+
+Run shared infrastructure from the repository root:
+
+```bash
 docker compose up -d
+```
+
+Then start the API server:
+
+```bash
 ./gradlew bootRun
 ```
 
@@ -105,3 +101,11 @@ Local services:
 
 - PostgreSQL: `localhost:5432`
 - Kafka: `localhost:9092`
+
+Frontend:
+
+```bash
+cd src/main/frontend
+npm install
+npm run dev
+```

@@ -51,7 +51,7 @@ WITH upsert_order AS (
               "name": "Naver Receiver",
               "tel1": "010-2000-0001",
               "zipCode": "06100",
-              "baseAddress": "Seoul Gangnam-gu",
+              "baseAddress": "Sample City",
               "detailedAddress": "101-1001"
             }
           }
@@ -63,7 +63,7 @@ WITH upsert_order AS (
         'MOCK_11ST_20260608_20260608_admin',
         '11ST',
         '11ST',
-        '201001108318120',
+        'MOCK11STORDER001',
         'PAYMENT_COMPLETE',
         NULL,
         NULL,
@@ -78,7 +78,7 @@ WITH upsert_order AS (
         0,
         2690,
         '{
-          "ordNo": "201001108318120",
+          "ordNo": "MOCK11STORDER001",
           "ordDt": "2026-06-08 10:07:11",
           "ordNm": "11ST Buyer",
           "ordPrtblTel": "010-1000-0011",
@@ -86,13 +86,13 @@ WITH upsert_order AS (
           "ordAmt": 19000,
           "ordQty": 1,
           "prdNm": "11ST Mock Product",
-          "prdNo": "29370295",
-          "sellerPrdCd": "000000000133275",
+          "prdNo": "MOCK11STPRODUCT001",
+          "sellerPrdCd": "MOCK11STSKU001",
           "slctPrdOptNm": "Size: S / Color: Ivory",
           "rcvrNm": "11ST Receiver",
           "rcvrPrtblNo": "010-2000-0011",
           "rcvrMailNo": "360100",
-          "rcvrBaseAddr": "Chungbuk Cheongju",
+          "rcvrBaseAddr": "Sample City",
           "rcvrDtlsAddr": "8809"
         }'::jsonb
     ),
@@ -102,7 +102,7 @@ WITH upsert_order AS (
         'MOCK_COUPANG_20260608_20260608_admin',
         'COUPANG',
         'COUPANG',
-        '22000009546234',
+        'MOCKCOUPANGORDER001',
         'FINAL_DELIVERY',
         NULL,
         NULL,
@@ -117,8 +117,8 @@ WITH upsert_order AS (
         5000,
         3000,
         '{
-          "shipmentBoxId": "642538970006401429",
-          "orderId": "22000009546234",
+          "shipmentBoxId": "MOCKSHIPBOX001",
+          "orderId": "MOCKCOUPANGORDER001",
           "orderedAt": "2026-06-08T11:17:13+09:00",
           "paidAt": "2026-06-08T11:18:13+09:00",
           "status": "FINAL_DELIVERY",
@@ -130,23 +130,23 @@ WITH upsert_order AS (
           "receiver": {
             "name": "Coupang Receiver",
             "safeNumber": "010-2000-0022",
-            "addr1": "Gyeonggi Osan-si",
-            "addr2": "109-1001",
-            "postCode": "18100"
+            "addr1": "Sample City",
+            "addr2": "Sample Detail",
+            "postCode": "00000"
           },
           "shippingPrice": {
             "currencyCode": "KRW",
             "units": 5000
           },
-          "deliveryCompanyName": "CJ Logistics",
-          "invoiceNumber": "340010913442",
+          "deliveryCompanyName": "Sample Logistics",
+          "invoiceNumber": "MOCKINVOICECP001",
           "orderItems": [
             {
-              "vendorItemId": "3242596358",
+              "vendorItemId": "MOCKCOUPANGITEM001",
               "vendorItemName": "Coupang Mock Product, Dark Grey, 160",
-              "sellerProductId": "80240831",
+              "sellerProductId": "MOCKCOUPANGPRODUCT001",
               "sellerProductName": "Coupang Seller Product",
-              "externalVendorSkuCode": "170816368810",
+              "externalVendorSkuCode": "MOCKCOUPANGSKU001",
               "shippingCount": 1,
               "orderPrice": {
                 "currencyCode": "KRW",
@@ -166,7 +166,7 @@ WITH upsert_order AS (
         'MOCK_GCHAN_20260608_20260608_admin',
         'GCHAN',
         'GCHAN',
-        'S20260329000001',
+        'MOCKGCHANORDER001',
         'PAID',
         NULL,
         NULL,
@@ -184,25 +184,25 @@ WITH upsert_order AS (
           "recipientId": 1,
           "giftSendId": 100,
           "itemId": 50,
-          "orderCode": "S20260329000001",
+          "orderCode": "MOCKGCHANORDER001",
           "recipientName": "Gift Receiver",
-          "recipientPhone": "01012345678",
+          "recipientPhone": "01000000000",
           "receivedStatus": "RECEIVED",
           "quantity": 1,
           "totalPrice": 50000,
           "deliveryStatus": "SHIPPED",
-          "address1": "Seoul Gangnam-gu",
-          "address2": "101-202",
+          "address1": "Sample City",
+          "address2": "Sample Detail",
           "deliveryName": "Gift Receiver",
-          "deliveryPhone": "01012345678",
+          "deliveryPhone": "01000000000",
           "productName": "Premium Gift Set",
           "giftSupplyPrice": 35000,
           "senderFullName": "Gift Sender",
           "paidAt": "2026-04-01T09:55:00",
           "paymentStatus": "PAID",
           "paymentMethod": "CARD",
-          "trackingNumber": "1234567890",
-          "carrierCode": "CJ Logistics",
+          "trackingNumber": "MOCKTRACK0001",
+          "carrierCode": "Sample Logistics",
           "orderDeliveryStatus": "SHIPPING"
         }'::jsonb
     ),
@@ -212,7 +212,7 @@ WITH upsert_order AS (
         'MOCK_GODO_20260608_20260608_admin',
         'GODO',
         'GODO',
-        '250608000001',
+        'MOCKGODOORDER001',
         'p1',
         NULL,
         NULL,
@@ -227,7 +227,7 @@ WITH upsert_order AS (
         3000,
         0,
         '{
-          "orderNo": "250608000001",
+          "orderNo": "MOCKGODOORDER001",
           "orderStatus": "p1",
           "orderChannel": "shop",
           "settleKind": "pc",
@@ -252,8 +252,8 @@ WITH upsert_order AS (
             }
           ],
           "orderDeliveryData": {
-            "deliveryCompany": "CJ Logistics",
-            "invoiceNo": "555566667777",
+            "deliveryCompany": "Sample Logistics",
+            "invoiceNo": "MOCKINVOICEGD001",
             "deliveryStatus": "d1"
           }
         }'::jsonb
@@ -301,10 +301,10 @@ FROM hub_collected_order o
 JOIN (
     VALUES
     ('NAVER', 'NAVER-ORDER-20260608-0001', 'NAVER-PRODUCT-ORDER-0001', 'NAVER-PROD-10001', 'SELLER-NAVER-001', 'NS-SKU-001', 'Naver SmartStore Mock Product', 'Color: Black / Size: M', 'PAYED', 2, 21000, 42000, 1000, 41000, '{"productOrderId":"NAVER-PRODUCT-ORDER-0001"}'),
-    ('11ST', '201001108318120', '201001108318120-1', '29370295', '000000000133275', '43434232', '11ST Mock Product', 'Size: S / Color: Ivory', 'PAYMENT_COMPLETE', 1, 19000, 19000, 2690, 16310, '{"ordPrdSeq":1,"prdNo":"29370295"}'),
-    ('COUPANG', '22000009546234', '3242596358', '80240831', '170816368810', '3242596358', 'Coupang Mock Product, Dark Grey, 160', 'Dark Grey / 160', 'FINAL_DELIVERY', 1, 19000, 19000, 3000, 16000, '{"vendorItemId":"3242596358","sellerProductId":"80240831"}'),
-    ('GCHAN', 'S20260329000001', 'recipient-1-item-50', '50', NULL, NULL, 'Premium Gift Set', 'Red', 'RECEIVED', 1, 50000, 50000, 0, 35000, '{"recipientId":1,"itemId":50}'),
-    ('GODO', '250608000001', '7771', 'GD-10001', NULL, NULL, 'Godo Mock Goods', 'Color: Navy / Size: L', 'p1', 2, 34500, 69000, 0, NULL, '{"sno":7771,"goodsNo":"GD-10001"}')
+    ('11ST', 'MOCK11STORDER001', 'MOCK11STORDER001-1', 'MOCK11STPRODUCT001', 'MOCK11STSKU001', 'MOCK11STITEM001', '11ST Mock Product', 'Size: S / Color: Ivory', 'PAYMENT_COMPLETE', 1, 19000, 19000, 2690, 16310, '{"ordPrdSeq":1,"prdNo":"MOCK11STPRODUCT001"}'),
+    ('COUPANG', 'MOCKCOUPANGORDER001', 'MOCKCOUPANGITEM001', 'MOCKCOUPANGPRODUCT001', 'MOCKCOUPANGSKU001', 'MOCKCOUPANGVENDOR001', 'Coupang Mock Product, Dark Grey, 160', 'Dark Grey / 160', 'FINAL_DELIVERY', 1, 19000, 19000, 3000, 16000, '{"vendorItemId":"MOCKCOUPANGITEM001","sellerProductId":"MOCKCOUPANGPRODUCT001"}'),
+    ('GCHAN', 'MOCKGCHANORDER001', 'recipient-1-item-50', '50', NULL, NULL, 'Premium Gift Set', 'Red', 'RECEIVED', 1, 50000, 50000, 0, 35000, '{"recipientId":1,"itemId":50}'),
+    ('GODO', 'MOCKGODOORDER001', '7771', 'GD-10001', NULL, NULL, 'Godo Mock Goods', 'Color: Navy / Size: L', 'p1', 2, 34500, 69000, 0, NULL, '{"sno":7771,"goodsNo":"GD-10001"}')
 ) AS v(channel_cd, channel_order_id, channel_order_item_id, product_id, seller_product_code, sku_code, product_name, option_name, item_status, quantity, unit_price, item_amount, discount_amount, expected_settlement_amount, raw_payload)
 ON o.channel_cd = v.channel_cd AND o.channel_order_id = v.channel_order_id
 ON CONFLICT (order_id, channel_order_item_id) DO UPDATE
@@ -345,11 +345,11 @@ SELECT o.id, v.receiver_name, v.receiver_tel, v.receiver_zip_code, v.receiver_ad
 FROM hub_collected_order o
 JOIN (
     VALUES
-    ('NAVER', 'NAVER-ORDER-20260608-0001', 'Naver Receiver', '010-2000-0001', '06100', 'Seoul Gangnam-gu', '101-1001', 'Leave at door', 'NAVER_EXPECTED', NULL, 'READY', '2026-06-09 18:00:00+09', NULL, NULL, '{"shippingAddress":{"baseAddress":"Seoul Gangnam-gu"}}'),
-    ('11ST', '201001108318120', '11ST Receiver', '010-2000-0011', '360100', 'Chungbuk Cheongju', '8809', NULL, NULL, NULL, 'READY', '2026-06-09 18:00:00+09', NULL, NULL, '{"rcvrMailNo":"360100"}'),
-    ('COUPANG', '22000009546234', 'Coupang Receiver', '010-2000-0022', '18100', 'Gyeonggi Osan-si', '109-1001', 'Door front', 'CJ Logistics', '340010913442', 'FINAL_DELIVERY', NULL, '2026-06-08 13:00:00+09', '2026-06-09 14:00:00+09', '{"shipmentBoxId":"642538970006401429"}'),
-    ('GCHAN', 'S20260329000001', 'Gift Receiver', '01012345678', NULL, 'Seoul Gangnam-gu', '101-202', NULL, 'CJ Logistics', '1234567890', 'SHIPPING', NULL, '2026-04-02 09:00:00+09', NULL, '{"carrierId":4}'),
-    ('GODO', '250608000001', 'Godo Receiver', '010-2000-0033', '04524', 'Seoul Jung-gu', '10F', 'Call before delivery', 'CJ Logistics', '555566667777', 'd1', NULL, '2026-06-08 16:00:00+09', NULL, '{"deliveryStatus":"d1"}')
+    ('NAVER', 'NAVER-ORDER-20260608-0001', 'Naver Receiver', '010-0000-0001', '00000', 'Sample City', 'Sample Detail', 'Leave at door', 'NAVER_EXPECTED', NULL, 'READY', '2026-06-09 18:00:00+09', NULL, NULL, '{"shippingAddress":{"baseAddress":"Sample City"}}'),
+    ('11ST', 'MOCK11STORDER001', '11ST Receiver', '010-0000-0011', '00000', 'Sample City', 'Sample Detail', NULL, NULL, NULL, 'READY', '2026-06-09 18:00:00+09', NULL, NULL, '{"rcvrMailNo":"00000"}'),
+    ('COUPANG', 'MOCKCOUPANGORDER001', 'Coupang Receiver', '010-0000-0022', '00000', 'Sample City', 'Sample Detail', 'Door front', 'Sample Logistics', 'MOCKINVOICECP001', 'FINAL_DELIVERY', NULL, '2026-06-08 13:00:00+09', '2026-06-09 14:00:00+09', '{"shipmentBoxId":"MOCKSHIPBOX001"}'),
+    ('GCHAN', 'MOCKGCHANORDER001', 'Gift Receiver', '01000000000', NULL, 'Sample City', 'Sample Detail', NULL, 'Sample Logistics', 'MOCKTRACK0001', 'SHIPPING', NULL, '2026-04-02 09:00:00+09', NULL, '{"carrierId":4}'),
+    ('GODO', 'MOCKGODOORDER001', 'Godo Receiver', '010-0000-0033', '00000', 'Sample City', 'Sample Detail', 'Call before delivery', 'Sample Logistics', 'MOCKINVOICEGD001', 'd1', NULL, '2026-06-08 16:00:00+09', NULL, '{"deliveryStatus":"d1"}')
 ) AS v(channel_cd, channel_order_id, receiver_name, receiver_tel, receiver_zip_code, receiver_addr1, receiver_addr2, delivery_memo, delivery_company, tracking_number, delivery_status, shipping_due_at, shipped_at, delivered_at, raw_payload)
 ON o.channel_cd = v.channel_cd AND o.channel_order_id = v.channel_order_id
 ON CONFLICT (order_id) DO UPDATE
@@ -416,7 +416,7 @@ INSERT INTO hub_collected_order_raw (
     raw_payload
 ) VALUES
 ('naver-mock-0001', 'MOCK_NAVER_20260608_20260608_admin', 'NAVER', 'NAVER', '20260608', '20260608', 'JSON', '{"data":{"contents":[{"productOrderId":"NAVER-PRODUCT-ORDER-0001"}]}}'),
-('st11-mock-0001', 'MOCK_11ST_20260608_20260608_admin', '11ST', '11ST', '20260608', '20260608', 'XML', '<orders><order><ordNo>201001108318120</ordNo></order></orders>'),
-('coupang-mock-0001', 'MOCK_COUPANG_20260608_20260608_admin', 'COUPANG', 'COUPANG', '20260608', '20260608', 'JSON', '{"code":200,"data":[{"orderId":"22000009546234"}]}'),
-('gchan-mock-0001', 'MOCK_GCHAN_20260608_20260608_admin', 'GCHAN', 'GCHAN', '20260401', '20260401', 'JSON', '{"data":{"list":[{"orderCode":"S20260329000001"}]}}'),
-('godo-mock-0001', 'MOCK_GODO_20260608_20260608_admin', 'GODO', 'GODO', '20260608', '20260608', 'JSON', '{"order_data":[{"orderNo":"250608000001"}]}');
+('st11-mock-0001', 'MOCK_11ST_20260608_20260608_admin', '11ST', '11ST', '20260608', '20260608', 'XML', '<orders><order><ordNo>MOCK11STORDER001</ordNo></order></orders>'),
+('coupang-mock-0001', 'MOCK_COUPANG_20260608_20260608_admin', 'COUPANG', 'COUPANG', '20260608', '20260608', 'JSON', '{"code":200,"data":[{"orderId":"MOCKCOUPANGORDER001"}]}'),
+('gchan-mock-0001', 'MOCK_GCHAN_20260608_20260608_admin', 'GCHAN', 'GCHAN', '20260401', '20260401', 'JSON', '{"data":{"list":[{"orderCode":"MOCKGCHANORDER001"}]}}'),
+('godo-mock-0001', 'MOCK_GODO_20260608_20260608_admin', 'GODO', 'GODO', '20260608', '20260608', 'JSON', '{"order_data":[{"orderNo":"MOCKGODOORDER001"}]}');

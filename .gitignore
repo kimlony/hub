@@ -9,19 +9,25 @@ out/
 .gradle/
 .idea/
 .claude/
+.codex/
+.agents/
 .superpowers/
 *.iml
 
 logs/
 *.log
+*.tmp
+*.bak
+*.dump
+*.zip
 npm-debug.log*
 worker-codex.log
 load-test-results/
-[{]
 
 hub-api-erp/src/main/resources/application-local.yml
 hub-api-erp/src/main/resources/application-*.local.yml
 hub-api-erp/srctestjavacombizbeehubHashGenTest.java
+hub-api-erp/src/main/frontend/src/**/*.js
 
 bizbee-hub-local-config/
 bizbee-hub-local-config.zip
@@ -36,3 +42,8 @@ claude_code_prompt_*.md
 BizBee_HUB_*.md
 BizBee_HUB_*.docx
 *.local.zip
+
+# Local agent/planning artifacts are not part of the portfolio source.
+CLAUDE.md
+setup-prompt.md
+docs/superpowers/

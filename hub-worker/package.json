@@ -11,6 +11,7 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
     "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watch",
+    "test:integration": "cross-env RUN_INTEGRATION_TESTS=true NODE_OPTIONS=--experimental-vm-modules jest --runInBand --testMatch \"**/src/**/*.integration.test.ts\"",
     "load:test": "node scripts/load-test.mjs",
     "pm2:start": "pm2 start ecosystem.config.cjs",
     "pm2:start:consumer": "pm2 start ecosystem.config.cjs --only hub-worker-consumer",

@@ -24,11 +24,13 @@ The worker now stores collection results only in PostgreSQL.
 | `http` | Starts the worker HTTP server |
 | `all` | Starts all roles in one process, useful for local dev |
 
-PM2 uses `ecosystem.config.cjs` to run:
+Docker Compose is the default runtime for the portfolio project. It runs:
 
 - 4 consumer processes
 - 1 recovery process
 - 1 HTTP process
+
+`ecosystem.config.cjs` is kept only as a local rollback option for PM2-based testing.
 
 ## Result Storage
 
@@ -52,9 +54,12 @@ No Oracle connection or Oracle client is required.
 Create `.env` from `.env.example`.
 
 ```env
-PORT=3001
+PORT=4000
 LOG_LEVEL=info
 JOB_LOCK_TTL_MINUTES=30
+JOB_RETRY_BACKOFF_MS=60000,300000,900000
+WORKER_HEARTBEAT_INTERVAL_SECONDS=10
+GRACEFUL_SHUTDOWN_TIMEOUT_MS=60000
 
 POSTGRES_HOST=127.0.0.1
 POSTGRES_PORT=5432
@@ -66,10 +71,13 @@ HUB_AES_SECRET=change-me-32-byte-secret-local!!
 
 KAFKA_BROKERS=localhost:9092
 KAFKA_TOPIC=hub.jobs
+KAFKA_DLQ_TOPIC=hub.jobs.dlq
 KAFKA_GROUP_ID=hub-worker-group
 KAFKA_CLIENT_ID=hub-worker
 
 ELEVENST_API_KEY_OVERRIDE=
+DART_API_KEY=
+NAVER_RSS_URLS=https://feeds.feedburner.com/yonhapnewseconomy,https://rss.hankyung.com/economy.xml
 ```
 
 `HUB_AES_SECRET` must be exactly 32 bytes and must match the API service.
@@ -83,7 +91,7 @@ npm run build
 npm start
 ```
 
-PM2:
+PM2, optional local fallback:
 
 ```bash
 npm run build
@@ -91,8 +99,9 @@ pm2 start ecosystem.config.cjs
 pm2 logs
 ```
 
-Docker Compose can scale consumer processes later with:
+Docker Compose from the repository root:
 
 ```bash
-docker compose up -d --scale hub-worker-consumer=4
+docker compose up -d
+docker compose logs -f hub-worker-consumer
 ```

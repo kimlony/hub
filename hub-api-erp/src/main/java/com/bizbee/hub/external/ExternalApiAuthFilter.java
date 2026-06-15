@@ -30,6 +30,7 @@ public class ExternalApiAuthFilter extends OncePerRequestFilter {
         return !uri.startsWith("/api/external/") || uri.equals("/api/external/auth/token");
     }
 
+
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,

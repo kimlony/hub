@@ -18,9 +18,6 @@ CREATE TABLE IF NOT EXISTS user_malls (
     PRIMARY KEY (user_id, mall_key)
 );
 
--- 시드 데이터
-INSERT INTO users (username, password)
-VALUES ('admin', '$2a$10$Sztjtnpoc2U0Owgasj/7g.0cbJm7aQM4/201FVx9tvihFL3S87mvS')
-ON CONFLICT (username) DO NOTHING;
-
+-- 포트폴리오 공개 저장소에는 기본 관리자 계정을 포함하지 않습니다.
+-- 로컬 테스트 계정은 각 환경에서 BCrypt 해시를 생성해 직접 등록하세요.
 -- user_malls 시드 없음: 채널 자격증명은 사용자가 채널 관리 UI에서 직접 등록

@@ -3,4 +3,8 @@ dist
 .env
 npm-debug.log*
 worker-codex.log
-[{]
+*.log
+*.zip
+*.tmp
+*.bak
+load-test-results/

@@ -11,7 +11,7 @@ import java.util.Optional;
 public enum SupportedMall {
     MALL_11ST("11ST",    "11번가"),
     COUPANG(  "COUPANG", "쿠팡"),
-    GCHAN(    "GCHAN",   "선물찬스"),
+    GCHAN(    "GCHAN",   "Gift Channel"),
     NSS(      "NSS",     "네이버 스마트스토어");
 
     private final String key;
