@@ -48,3 +48,7 @@ hub:
     expiry-ms: ${HUB_JWT_EXPIRY_MS:86400000}
   aes:
     secret: ${HUB_AES_SECRET}
+  outbox:
+    publish-delay-ms: ${HUB_OUTBOX_PUBLISH_DELAY_MS:3000}
+    batch-size: ${HUB_OUTBOX_BATCH_SIZE:50}
+    publishing-stale-seconds: ${HUB_OUTBOX_PUBLISHING_STALE_SECONDS:60}

@@ -24,27 +24,23 @@ public class KafkaJobEventAdapter implements JobEventPort {
     @Override
     public void publish(HubJobEvent event) {
         String partitionKey = buildPartitionKey(event);
-        kafkaTemplate.send(jobsTopic, partitionKey, toJson(event))
-                .whenComplete((result, exception) -> {
-                    if (exception != null) {
-                        log.error(
-                                "Failed to publish hub job event. requestId={}, partitionKey={}",
-                                event.requestId(),
-                                partitionKey,
-                                exception
-                        );
-                        return;
-                    }
+        try {
+            var result = kafkaTemplate.send(jobsTopic, partitionKey, toJson(event)).get();
 
-                    log.debug(
-                            "Published hub job event. requestId={}, partitionKey={}, topic={}, partition={}, offset={}",
-                            event.requestId(),
-                            partitionKey,
-                            result.getRecordMetadata().topic(),
-                            result.getRecordMetadata().partition(),
-                            result.getRecordMetadata().offset()
-                    );
-                });
+            log.debug(
+                    "Published hub job event. requestId={}, partitionKey={}, topic={}, partition={}, offset={}",
+                    event.requestId(),
+                    partitionKey,
+                    result.getRecordMetadata().topic(),
+                    result.getRecordMetadata().partition(),
+                    result.getRecordMetadata().offset()
+            );
+        } catch (Exception exception) {
+            throw new IllegalStateException(
+                    "failed to publish hub job event. requestId=" + event.requestId(),
+                    exception
+            );
+        }
     }
 
     private String buildPartitionKey(HubJobEvent event) {

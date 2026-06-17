@@ -6,7 +6,8 @@ import com.bizbee.hub.auth.UserMapper;
 import com.bizbee.hub.channel.ChannelMapper;
 import com.bizbee.hub.channel.ChannelNotFoundException;
 import com.bizbee.hub.exception.HubJobNotFoundException;
-import com.bizbee.hub.port.JobEventPort;
+import com.bizbee.hub.outbox.JobOutboxService;
+//import com.bizbee.hub.port.JobEventPort;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,7 +29,9 @@ import java.util.stream.Collectors;
 public class HubJobServiceImpl implements HubJobService {
 
     private final HubJobMapper hubJobMapper;
-    private final JobEventPort jobEventPort;
+//    private final JobEventPort jobEventPort;
+//    OUTBOX 패턴으로 변경하면서 직접 Kafka로 이벤트를 발행하는 대신, Outbox 테이블에 이벤트를 저장하는 방식으로 변경했습니다.
+    private final JobOutboxService jobOutboxService;
     private final ObjectMapper objectMapper;
     private final UserMapper userMapper;
     private final ChannelMapper channelMapper;
@@ -180,7 +183,7 @@ public class HubJobServiceImpl implements HubJobService {
                     job.getPayload(), new TypeReference<Map<String, Object>>() {});
             payloadMap.put("channelCd", job.getChannelCd());
 
-            jobEventPort.publish(new HubJobEvent(
+            jobOutboxService.enqueue(new HubJobEvent(
                     job.getRequestId(),
                     "HUB",
                     "ORDER_COLLECT",

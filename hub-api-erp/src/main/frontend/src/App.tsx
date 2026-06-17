@@ -5,6 +5,7 @@ import LoginPage     from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import JobsPage      from './pages/JobsPage'
 import MonitorPage   from './pages/MonitorPage'
+import OutboxPage    from './pages/OutboxPage'
 import SchedulePage  from './pages/SchedulePage'
 import NewsPage      from './pages/NewsPage'
 import ExternalApiPage from './pages/ExternalApiPage'
@@ -32,6 +33,9 @@ export default function App() {
           } />
           <Route path="/monitor" element={
             <ProtectedRoute><MonitorPage /></ProtectedRoute>
+          } />
+          <Route path="/outbox" element={
+            <ProtectedRoute><OutboxPage /></ProtectedRoute>
           } />
         </Routes>
       </BrowserRouter>

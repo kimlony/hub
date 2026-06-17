@@ -27,6 +27,7 @@ const nav: NavSection[] = [
     section: '모니터링',
     items: [
       { label: 'Kafka 현황', to: '/monitor', icon: 'K' },
+      { label: 'Outbox', to: '/outbox', icon: 'O' },
     ],
   },
 ]

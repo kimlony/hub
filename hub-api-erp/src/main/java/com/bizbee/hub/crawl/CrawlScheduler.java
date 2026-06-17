@@ -4,6 +4,7 @@ import com.bizbee.hub.job.HubJob;
 import com.bizbee.hub.job.HubJobEvent;
 import com.bizbee.hub.job.HubJobMapper;
 import com.bizbee.hub.job.HubJobStatus;
+import com.bizbee.hub.outbox.JobOutboxService;
 import com.bizbee.hub.port.JobEventPort;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,7 +30,9 @@ public class CrawlScheduler {
     private static final String JOB_TYPE = "CRAWL";
 
     private final HubJobMapper hubJobMapper;
-    private final JobEventPort jobEventPort;
+//    private final JobEventPort jobEventPort;
+//    OUTBOX 패턴으로 변경하면서 직접 Kafka로 이벤트를 발행하는 대신, Outbox 테이블에 이벤트를 저장하는 방식으로 변경했습니다.
+    private final JobOutboxService jobOutboxService;
     private final ObjectMapper objectMapper;
 
     @Scheduled(fixedDelayString = "${hub.schedule.crawl-dart-ms:300000}")
@@ -73,7 +76,7 @@ public class CrawlScheduler {
                     .build();
 
             hubJobMapper.insertJob(job);
-            jobEventPort.publish(new HubJobEvent(
+            jobOutboxService.enqueue(new HubJobEvent(
                     job.getRequestId(),
                     SOURCE_ERP,
                     JOB_TYPE,

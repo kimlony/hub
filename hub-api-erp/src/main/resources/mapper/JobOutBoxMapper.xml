@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bizbee.hub.outbox.JobOutboxMapper">
+
+    <resultMap id="jobOutboxResultMap" type="com.bizbee.hub.outbox.JobOutbox">
+        <result property="id" column="id"/>
+        <result property="requestId" column="request_id"/>
+        <result property="eventType" column="event_type"/>
+        <result property="topic" column="topic"/>
+        <result property="partitionKey" column="partition_key"/>
+        <result property="payload" column="payload"/>
+        <result property="status" column="status" javaType="com.bizbee.hub.outbox.JobOutboxStatus"/>
+        <result property="retryCount" column="retry_count"/>
+        <result property="maxRetryCount" column="max_retry_count"/>
+        <result property="nextRetryAt" column="next_retry_at"/>
+        <result property="lockedBy" column="locked_by"/>
+        <result property="lockedAt" column="locked_at"/>
+        <result property="lastError" column="last_error"/>
+        <result property="publishedAt" column="published_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <resultMap id="jobOutboxStatsResultMap" type="com.bizbee.hub.outbox.JobOutboxStats">
+        <constructor>
+            <arg column="total" javaType="java.lang.Long"/>
+            <arg column="pending" javaType="java.lang.Long"/>
+            <arg column="publishing" javaType="java.lang.Long"/>
+            <arg column="sent" javaType="java.lang.Long"/>
+            <arg column="failed" javaType="java.lang.Long"/>
+            <arg column="stale" javaType="java.lang.Long"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="jobOutboxItemResultMap" type="com.bizbee.hub.outbox.JobOutboxItem">
+        <constructor>
+            <arg column="id" javaType="java.lang.Long"/>
+            <arg column="request_id" javaType="java.lang.String"/>
+            <arg column="event_type" javaType="java.lang.String"/>
+            <arg column="topic" javaType="java.lang.String"/>
+            <arg column="partition_key" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="retry_count" javaType="java.lang.Integer"/>
+            <arg column="max_retry_count" javaType="java.lang.Integer"/>
+            <arg column="last_error" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.lang.String"/>
+            <arg column="updated_at" javaType="java.lang.String"/>
+            <arg column="next_retry_at" javaType="java.lang.String"/>
+            <arg column="locked_at" javaType="java.lang.String"/>
+            <arg column="published_at" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO hub_job_outbox (
+        request_id,
+        event_type,
+        topic,
+        partition_key,
+        payload,
+        status,
+        retry_count,
+        max_retry_count,
+        next_retry_at,
+        created_at,
+        updated_at
+        ) VALUES (
+        #{requestId},
+        #{eventType},
+        #{topic},
+        #{partitionKey},
+        CAST(#{payload} AS jsonb),
+        #{status},
+        #{retryCount},
+        #{maxRetryCount},
+        NOW(),
+        NOW(),
+        NOW()
+        )
+    </insert>
+
+    <select id="claimPending" resultMap="jobOutboxResultMap">
+        WITH picked AS (
+                    SELECT id
+                      FROM hub_job_outbox
+                     WHERE (
+                               status = 'PENDING'
+                               AND next_retry_at <![CDATA[ <= ]]> NOW()
+                           )
+                        OR (
+                               status = 'PUBLISHING'
+                               AND COALESCE(locked_at, updated_at, created_at)
+                                   <![CDATA[ < ]]> NOW() - (#{staleSeconds} * INTERVAL '1 second')
+                           )
+                  ORDER BY id
+                           LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+        )
+        UPDATE hub_job_outbox o
+        SET status = 'PUBLISHING',
+        locked_by = #{lockedBy},
+        locked_at = NOW(),
+        updated_at = NOW()
+        FROM picked
+        WHERE o.id = picked.id
+        RETURNING o.*
+    </select>
+
+    <update id="markSent">
+        UPDATE hub_job_outbox
+        SET status = 'SENT',
+        published_at = NOW(),
+        last_error = NULL,
+        updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="markRetry">
+        UPDATE hub_job_outbox
+        SET status = 'PENDING',
+        retry_count = retry_count + 1,
+        last_error = #{errorMessage},
+        next_retry_at = NOW() + (#{delaySeconds} * INTERVAL '1 second'),
+        locked_by = NULL,
+        locked_at = NULL,
+        updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="markFailed">
+        UPDATE hub_job_outbox
+        SET status = 'FAILED',
+        last_error = #{errorMessage},
+        locked_by = NULL,
+        locked_at = NULL,
+        updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectStats" resultMap="jobOutboxStatsResultMap">
+        SELECT
+            COUNT(*)::bigint AS total,
+            COUNT(*) FILTER (WHERE status = 'PENDING')::bigint AS pending,
+            COUNT(*) FILTER (WHERE status = 'PUBLISHING')::bigint AS publishing,
+            COUNT(*) FILTER (WHERE status = 'SENT')::bigint AS sent,
+            COUNT(*) FILTER (WHERE status = 'FAILED')::bigint AS failed,
+            COUNT(*) FILTER (
+                WHERE status = 'PUBLISHING'
+                  AND COALESCE(locked_at, updated_at, created_at)
+                      <![CDATA[ < ]]> NOW() - (#{staleSeconds} * INTERVAL '1 second')
+            )::bigint AS stale
+        FROM hub_job_outbox
+    </select>
+
+    <select id="selectRecent" resultMap="jobOutboxItemResultMap">
+        SELECT
+            id,
+            request_id,
+            event_type,
+            topic,
+            partition_key,
+            status,
+            retry_count,
+            max_retry_count,
+            last_error,
+            to_char(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+            to_char(updated_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS updated_at,
+            to_char(next_retry_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS next_retry_at,
+            to_char(locked_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS locked_at,
+            to_char(published_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS published_at
+        FROM hub_job_outbox
+        <where>
+            <if test="status != null and status != ''">
+                status = #{status}
+            </if>
+        </where>
+        ORDER BY id DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>
