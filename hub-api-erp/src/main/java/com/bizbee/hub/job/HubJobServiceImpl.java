@@ -89,10 +89,23 @@ public class HubJobServiceImpl implements HubJobService {
 
         if (existing == null) {
             HubJob newJob = buildNewJob(requestKey, mallKey, request, user, triggerType, scheduleRunId);
-            hubJobMapper.insertJob(newJob);
-            publishEvent(newJob);
-            requestId = newJob.getRequestId();
-            status = newJob.getStatus().name();
+
+            // requestKey unique index makes concurrent duplicate requests idempotent.
+            int inserted = hubJobMapper.insertJobIfAbsent(newJob);
+
+            if (inserted == 1) {
+                publishEvent(newJob);
+                requestId = newJob.getRequestId();
+                status = newJob.getStatus().name();
+            } else {
+                HubJob duplicated = hubJobMapper.selectByRequestKey(requestKey);
+                if (duplicated == null) {
+                    throw new IllegalStateException("Duplicated job was not found after insert conflict");
+                }
+                requestId = duplicated.getRequestId();
+                status = duplicated.getStatus().name();
+            }
+
         } else if (existing.getStatus() == HubJobStatus.QUEUED
                 || existing.getStatus() == HubJobStatus.PROCESSING) {
             requestId = existing.getRequestId();
@@ -101,7 +114,10 @@ public class HubJobServiceImpl implements HubJobService {
             String latestPayload = serializePayload(mallKey, request, user, triggerType, scheduleRunId);
             existing.setPayload(latestPayload);
             existing.setStatus(HubJobStatus.QUEUED);
-            hubJobMapper.updateStatusToReset(requestKey, latestPayload);
+            int updated = hubJobMapper.updateStatusToReset(requestKey, latestPayload);
+            if(updated != 1){
+                throw new IllegalStateException("Job reset skipped because current status is not completed");
+            }
             publishEvent(existing);
             requestId = existing.getRequestId();
             status = HubJobStatus.QUEUED.name();
@@ -264,7 +280,10 @@ public class HubJobServiceImpl implements HubJobService {
         String latestPayload = rebuildPayloadForRetry(job);
         job.setPayload(latestPayload);
         job.setStatus(HubJobStatus.QUEUED);
-        hubJobMapper.updateStatusToReset(job.getRequestKey(), latestPayload);
+        int updated = hubJobMapper.resetFailedJobForRetry(job.getRequestKey(), latestPayload);
+        if (updated != 1) {
+            throw new IllegalStateException("Job retry skipped because current status is not FAILED");
+        }
         publishEvent(job);
     }
 

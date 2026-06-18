@@ -35,14 +35,14 @@ public interface HubJobMapper {
 
     List<DashboardChannelStat> selectDashboardChannelStats();
 
-    void updateStatus(
-            @Param("requestId") String requestId,
-            @Param("status") String status,
-            @Param("errorMessage") String errorMessage
-    );
-
-    void updateStatusToReset(
+    int updateStatusToReset(
             @Param("requestKey") String requestKey,
             @Param("payload") String payload
     );
+    int resetFailedJobForRetry(
+            @Param("requestKey") String requestKey,
+            @Param("payload") String payload
+    );
+
+    int insertJobIfAbsent(HubJob job);
 }

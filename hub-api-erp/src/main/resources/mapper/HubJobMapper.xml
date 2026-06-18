@@ -182,12 +182,6 @@
         ORDER BY total_count DESC, channel_cd ASC
     </select>
 
-    <update id="updateStatus">
-        UPDATE hub_job
-        SET status = #{status}, error_message = #{errorMessage}, updated_at = NOW()
-        WHERE request_id = #{requestId}
-    </update>
-
     <update id="updateStatusToReset">
         UPDATE hub_job
         SET status = 'QUEUED',
@@ -197,6 +191,32 @@
             completed_at = NULL,
             updated_at = NOW()
         WHERE request_key = #{requestKey}
+          AND status IN ('SUCCESS', 'FAILED')
     </update>
 
+    <update id="resetFailedJobForRetry">
+        UPDATE hub_job
+        SET status = 'QUEUED',
+            payload = CAST(#{payload} AS json),
+            retry_count = 0,
+            error_message = NULL,
+            completed_at = NULL,
+            updated_at = NOW()
+        WHERE request_key = #{requestKey}
+          AND status = 'FAILED'
+    </update>
+
+    <insert id="insertJobIfAbsent">
+        INSERT INTO hub_job (
+            request_id, request_key, channel_cd, status, payload,
+            retry_count, error_message, completed_at, created_at, updated_at,
+            job_type, source_erp
+        ) VALUES (
+            #{requestId}, #{requestKey}, #{channelCd}, #{status},
+            CAST(#{payload} AS json),
+            #{retryCount}, #{errorMessage}, #{completedAt}, NOW(), NOW(),
+            #{jobType}, #{sourceErp}
+        )
+        ON CONFLICT (request_key) DO NOTHING
+    </insert>
 </mapper>
