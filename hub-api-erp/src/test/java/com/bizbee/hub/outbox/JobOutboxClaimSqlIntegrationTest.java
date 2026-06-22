@@ -1,5 +1,6 @@
 package com.bizbee.hub.outbox;
 
+import com.bizbee.hub.support.IntegrationTestDatabase;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,7 +10,6 @@ import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
 import java.util.List;
@@ -122,12 +122,7 @@ class JobOutboxClaimSqlIntegrationTest {
     }
 
     private DataSource dataSource() {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource();
-        dataSource.setDriverClassName("org.postgresql.Driver");
-        dataSource.setUrl(envOrDefault("POSTGRES_URL", "jdbc:postgresql://localhost:5432/hub_db"));
-        dataSource.setUsername(envOrDefault("POSTGRES_USER", "hub"));
-        dataSource.setPassword(envOrDefault("POSTGRES_PASSWORD", ""));
-        return dataSource;
+        return IntegrationTestDatabase.dataSource();
     }
 
     private JobOutboxMapper mapper(DataSource dataSource) throws Exception {
@@ -228,8 +223,4 @@ class JobOutboxClaimSqlIntegrationTest {
                 """.formatted(requestId);
     }
 
-    private String envOrDefault(String key, String defaultValue) {
-        String value = System.getenv(key);
-        return value == null || value.isBlank() ? defaultValue : value;
-    }
 }

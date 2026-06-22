@@ -1,12 +1,12 @@
 package com.bizbee.hub.order;
 
+import com.bizbee.hub.support.IntegrationTestDatabase;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
@@ -229,12 +229,7 @@ class OrderExportRowMapperIntegrationTest {
     }
 
     private DataSource dataSource() {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource();
-        dataSource.setDriverClassName("org.postgresql.Driver");
-        dataSource.setUrl(envOrDefault("POSTGRES_URL", "jdbc:postgresql://localhost:5432/hub_db"));
-        dataSource.setUsername(envOrDefault("POSTGRES_USER", "hub"));
-        dataSource.setPassword(envOrDefault("POSTGRES_PASSWORD", ""));
-        return dataSource;
+        return IntegrationTestDatabase.dataSource();
     }
 
     private <T> T inRollbackTransaction(Supplier<T> action) {
@@ -382,11 +377,6 @@ class OrderExportRowMapperIntegrationTest {
                 rawPayload,
                 orderId
         );
-    }
-
-    private String envOrDefault(String key, String defaultValue) {
-        String value = System.getenv(key);
-        return value == null || value.isBlank() ? defaultValue : value;
     }
 
     private String shortId() {

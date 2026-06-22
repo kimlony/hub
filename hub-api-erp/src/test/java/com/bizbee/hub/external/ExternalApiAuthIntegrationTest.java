@@ -4,6 +4,7 @@ import com.bizbee.hub.config.AesEncryptor;
 import com.bizbee.hub.config.AesProperties;
 import com.bizbee.hub.config.JwtProperties;
 import com.bizbee.hub.config.JwtProvider;
+import com.bizbee.hub.support.IntegrationTestDatabase;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -16,7 +17,6 @@ import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.Authentication;
@@ -182,12 +182,7 @@ class ExternalApiAuthIntegrationTest {
     }
 
     private DataSource dataSource() {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource();
-        dataSource.setDriverClassName("org.postgresql.Driver");
-        dataSource.setUrl(envOrDefault("POSTGRES_URL", "jdbc:postgresql://localhost:5432/hub_db"));
-        dataSource.setUsername(envOrDefault("POSTGRES_USER", "hub"));
-        dataSource.setPassword(envOrDefault("POSTGRES_PASSWORD", ""));
-        return dataSource;
+        return IntegrationTestDatabase.dataSource();
     }
 
     private ExternalApiClientMapper mapper(DataSource dataSource) throws Exception {
@@ -307,11 +302,6 @@ class ExternalApiAuthIntegrationTest {
         } catch (Exception exception) {
             throw new IllegalStateException(exception);
         }
-    }
-
-    private String envOrDefault(String key, String defaultValue) {
-        String value = System.getenv(key);
-        return value == null || value.isBlank() ? defaultValue : value;
     }
 
     private String shortId() {

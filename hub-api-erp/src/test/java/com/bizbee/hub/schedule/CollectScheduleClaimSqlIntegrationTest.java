@@ -1,5 +1,6 @@
 package com.bizbee.hub.schedule;
 
+import com.bizbee.hub.support.IntegrationTestDatabase;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,7 +11,6 @@ import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
@@ -217,12 +217,7 @@ class CollectScheduleClaimSqlIntegrationTest {
     }
 
     private DataSource dataSource() {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource();
-        dataSource.setDriverClassName("org.postgresql.Driver");
-        dataSource.setUrl(envOrDefault("POSTGRES_URL", "jdbc:postgresql://localhost:5432/hub_db"));
-        dataSource.setUsername(envOrDefault("POSTGRES_USER", "hub"));
-        dataSource.setPassword(envOrDefault("POSTGRES_PASSWORD", ""));
-        return dataSource;
+        return IntegrationTestDatabase.dataSource();
     }
 
     private CollectScheduleMapper mapper(DataSource dataSource) throws Exception {
@@ -320,11 +315,6 @@ class CollectScheduleClaimSqlIntegrationTest {
                 String.class,
                 id
         );
-    }
-
-    private String envOrDefault(String key, String defaultValue) {
-        String value = System.getenv(key);
-        return value == null || value.isBlank() ? defaultValue : value;
     }
 
     private String shortId() {

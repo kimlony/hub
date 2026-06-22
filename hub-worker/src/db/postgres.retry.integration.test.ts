@@ -1,5 +1,10 @@
 import dotenv from "dotenv";
-import pg from "pg";
+import type pg from "pg";
+import {
+  createIntegrationPgPool,
+  setupWorkerIntegrationContainers,
+  stopWorkerIntegrationContainers
+} from "../test/containers.js";
 
 dotenv.config();
 
@@ -7,19 +12,6 @@ const runIntegration = process.env.RUN_INTEGRATION_TESTS === "true";
 const describeIntegration = runIntegration ? describe : describe.skip;
 
 type PostgresModule = typeof import("./postgres.js");
-
-const { Pool } = pg;
-
-function createPool(): pg.Pool {
-  return new Pool({
-    host: process.env.POSTGRES_HOST ?? "localhost",
-    port: Number(process.env.POSTGRES_PORT ?? 5432),
-    database: process.env.POSTGRES_DATABASE ?? "hub_db",
-    user: process.env.POSTGRES_USER ?? "hub",
-    password: process.env.POSTGRES_PASSWORD,
-    options: "-c timezone=Asia/Seoul"
-  });
-}
 
 describeIntegration("job retry state transition", () => {
   let db: PostgresModule;
@@ -29,7 +21,8 @@ describeIntegration("job retry state transition", () => {
   const failedRequestId = `retry-failed-test-${Date.now()}`;
 
   beforeAll(async () => {
-    pool = createPool();
+    await setupWorkerIntegrationContainers();
+    pool = createIntegrationPgPool();
 
     // Integration setup keeps the test focused on the retry transition. In the
     // running application this table is created by the API migration/schema.
@@ -54,14 +47,15 @@ describeIntegration("job retry state transition", () => {
 
     db = await import("./postgres.js");
     await db.ensurePostgresSchema();
-  });
+  }, 120_000);
 
   afterAll(async () => {
     await pool?.query("DELETE FROM hub_job_log WHERE request_id = ANY($1)", [[retryRequestId, failedRequestId]]);
     await pool?.query("DELETE FROM hub_job WHERE request_id = ANY($1)", [[retryRequestId, failedRequestId]]);
     await db?.closePostgresPool();
     await pool?.end();
-  });
+    await stopWorkerIntegrationContainers();
+  }, 60_000);
 
   it("moves a processing job back to queued until max retry count is reached", async () => {
     await pool.query(

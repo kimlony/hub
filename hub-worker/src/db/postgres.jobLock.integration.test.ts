@@ -1,4 +1,8 @@
 import dotenv from "dotenv";
+import {
+  setupWorkerIntegrationContainers,
+  stopWorkerIntegrationContainers
+} from "../test/containers.js";
 
 dotenv.config();
 
@@ -16,15 +20,17 @@ describeIntegration("job lock idempotency", () => {
   const thirdRequestId = "lock-test-third";
 
   beforeAll(async () => {
+    await setupWorkerIntegrationContainers();
     db = await import("./postgres.js");
     await db.ensurePostgresSchema();
-  });
+  }, 120_000);
 
   afterAll(async () => {
     await db?.releaseJobLock(lockKey, firstRequestId);
     await db?.releaseJobLock(lockKey, thirdRequestId);
     await db?.closePostgresPool();
-  });
+    await stopWorkerIntegrationContainers();
+  }, 60_000);
 
   it("allows only one active collector for the same account lock key", async () => {
     // Portfolio note: this verifies the defense that keeps parallel workers from

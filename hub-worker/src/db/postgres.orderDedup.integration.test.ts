@@ -1,5 +1,10 @@
 import dotenv from "dotenv";
-import pg from "pg";
+import type pg from "pg";
+import {
+  createIntegrationPgPool,
+  setupWorkerIntegrationContainers,
+  stopWorkerIntegrationContainers
+} from "../test/containers.js";
 
 dotenv.config();
 
@@ -7,19 +12,6 @@ const runIntegration = process.env.RUN_INTEGRATION_TESTS === "true";
 const describeIntegration = runIntegration ? describe : describe.skip;
 
 type PostgresModule = typeof import("./postgres.js");
-
-const { Pool } = pg;
-
-function createPool(): pg.Pool {
-  return new Pool({
-    host: process.env.POSTGRES_HOST ?? "localhost",
-    port: Number(process.env.POSTGRES_PORT ?? 5432),
-    database: process.env.POSTGRES_DATABASE ?? "hub_db",
-    user: process.env.POSTGRES_USER ?? "hub",
-    password: process.env.POSTGRES_PASSWORD,
-    options: "-c timezone=Asia/Seoul"
-  });
-}
 
 describeIntegration("normalized order idempotency", () => {
   let db: PostgresModule;
@@ -31,7 +23,8 @@ describeIntegration("normalized order idempotency", () => {
   const channelOrderId = `MOCK-DEDUP-${Date.now()}`;
 
   beforeAll(async () => {
-    pool = createPool();
+    await setupWorkerIntegrationContainers();
+    pool = createIntegrationPgPool();
 
     // Integration setup mirrors the API auth schema enough for worker FK checks.
     // The test proves that repeated normalization of the same channel order is
@@ -59,7 +52,7 @@ describeIntegration("normalized order idempotency", () => {
 
     db = await import("./postgres.js");
     await db.ensurePostgresSchema();
-  });
+  }, 120_000);
 
   afterAll(async () => {
     await pool?.query(
@@ -69,7 +62,8 @@ describeIntegration("normalized order idempotency", () => {
     await pool?.query("DELETE FROM users WHERE username = $1", [username]);
     await db?.closePostgresPool();
     await pool?.end();
-  });
+    await stopWorkerIntegrationContainers();
+  }, 60_000);
 
   it("updates an existing normalized order when the same channel order arrives again", async () => {
     const firstId = await db.upsertNormalizedOrder({

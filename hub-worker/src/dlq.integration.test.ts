@@ -1,11 +1,15 @@
 import dotenv from "dotenv";
 import { jest } from "@jest/globals";
 import { Kafka, logLevel, type Consumer } from "kafkajs";
-import pg from "pg";
+import type pg from "pg";
 import type { JobHandlerMessage } from "./handlers/IJobHandler.js";
+import {
+  createIntegrationPgPool,
+  setupWorkerIntegrationContainers,
+  stopWorkerIntegrationContainers
+} from "./test/containers.js";
 
 dotenv.config();
-process.env.KAFKAJS_NO_PARTITIONER_WARNING ??= "1";
 
 const runIntegration = process.env.RUN_INTEGRATION_TESTS === "true";
 const describeIntegration = runIntegration ? describe : describe.skip;
@@ -22,24 +26,6 @@ type DlqPayload = {
   job: JobHandlerMessage;
 };
 
-const { Pool } = pg;
-const dlqTopic = process.env.KAFKA_DLQ_TOPIC ?? "hub.jobs.dlq";
-const kafkaBrokers = (process.env.KAFKA_BROKERS ?? "localhost:9092")
-  .split(",")
-  .map((broker) => broker.trim())
-  .filter(Boolean);
-
-function createPool(): pg.Pool {
-  return new Pool({
-    host: process.env.POSTGRES_HOST ?? "localhost",
-    port: Number(process.env.POSTGRES_PORT ?? 5432),
-    database: process.env.POSTGRES_DATABASE ?? "hub_db",
-    user: process.env.POSTGRES_USER ?? "hub",
-    password: process.env.POSTGRES_PASSWORD,
-    options: "-c timezone=Asia/Seoul"
-  });
-}
-
 function parseDlqPayload(value: Buffer | null): DlqPayload | null {
   if (!value) {
     return null;
@@ -54,19 +40,27 @@ function parseDlqPayload(value: Buffer | null): DlqPayload | null {
 }
 
 describeIntegration("DLQ publish after retry exhaustion", () => {
-  jest.setTimeout(30_000);
+  jest.setTimeout(180_000);
 
   let db: PostgresModule;
   let dlq: DlqModule;
   let pool: pg.Pool;
   let consumer: Consumer | null = null;
+  let dlqTopic: string;
+  let kafkaBrokers: string[];
 
   const requestId = `dlq-test-${Date.now()}`;
   const requestKey = "DLQ_TEST_001";
   const errorMessage = "retry exhausted external API failure";
 
   beforeAll(async () => {
-    pool = createPool();
+    await setupWorkerIntegrationContainers({ kafka: true });
+    pool = createIntegrationPgPool();
+    dlqTopic = process.env.KAFKA_DLQ_TOPIC ?? "hub.jobs.dlq";
+    kafkaBrokers = (process.env.KAFKA_BROKERS ?? "localhost:9092")
+      .split(",")
+      .map((broker) => broker.trim())
+      .filter(Boolean);
 
     // Integration setup mirrors the minimal hub_job columns needed to exercise
     // retry exhaustion before publishing the failed job to Kafka DLQ.
@@ -112,7 +106,7 @@ describeIntegration("DLQ publish after retry exhaustion", () => {
       });
     }
     await admin.disconnect();
-  });
+  }, 180_000);
 
   afterAll(async () => {
     await consumer?.disconnect().catch(() => undefined);
@@ -121,7 +115,8 @@ describeIntegration("DLQ publish after retry exhaustion", () => {
     await pool?.query("DELETE FROM hub_job WHERE request_id = $1", [requestId]);
     await db?.closePostgresPool();
     await pool?.end();
-  });
+    await stopWorkerIntegrationContainers();
+  }, 90_000);
 
   it("publishes exhausted retry jobs to the DLQ topic with retry metadata", async () => {
     await pool.query(
