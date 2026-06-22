@@ -64,7 +64,7 @@ public final class IntegrationTestDatabase {
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS hub_job_outbox (
                     id BIGSERIAL PRIMARY KEY,
-                    request_id VARCHAR(80) NOT NULL,
+                    request_id VARCHAR(100) NOT NULL,
                     event_type VARCHAR(50) NOT NULL,
                     topic VARCHAR(120) NOT NULL,
                     partition_key VARCHAR(200) NOT NULL,
