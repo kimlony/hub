@@ -31,6 +31,10 @@ jobs:
         working-directory: hub-worker
         run: npm ci
 
+      - name: Make Gradle wrapper executable
+        working-directory: hub-api-erp
+        run: chmod +x ./gradlew
+
       - name: Run Java DB integration tests
         working-directory: hub-api-erp
         env:
