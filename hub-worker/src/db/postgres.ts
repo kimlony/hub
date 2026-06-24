@@ -25,6 +25,8 @@ export type RetryDecision = {
   retryCount: number;
   maxRetryCount: number;
   nextRetryAt?: Date;
+  retryable: boolean;
+  reason?: "non_retryable" | "retry_exhausted";
 };
 
 export type SaveJobResultStatus = "INSERTED" | "SKIPPED";
@@ -1185,8 +1187,12 @@ export async function succeedJob(requestId: string): Promise<boolean> {
 
 export async function retryOrFailJob(
   requestId: string,
-  errorMessage: string
+  errorMessage: string,
+  options: {
+    retryable?: boolean;
+  } = {}
 ): Promise<RetryDecision> {
+  const retryable = options.retryable ?? true;
   const retryResult = await pool.query<{ retry_count: number }>(
     `
       SELECT retry_count
@@ -1198,7 +1204,7 @@ export async function retryOrFailJob(
 
   const retryCount = retryResult.rows[0]?.retry_count ?? MAX_RETRY_COUNT;
 
-  if (retryCount < MAX_RETRY_COUNT) {
+  if (retryable && retryCount < MAX_RETRY_COUNT) {
     const nextRetryCount = retryCount + 1;
     const backoffMs = getBackoffMs(nextRetryCount);
     const nextRetryAt = new Date(Date.now() + backoffMs);
@@ -1253,7 +1259,8 @@ export async function retryOrFailJob(
       return {
         status: "SKIPPED",
         retryCount,
-        maxRetryCount: MAX_RETRY_COUNT
+        maxRetryCount: MAX_RETRY_COUNT,
+        retryable
       };
     }
 
@@ -1290,7 +1297,8 @@ export async function retryOrFailJob(
       status: "RETRY",
       retryCount: nextRetryCount,
       maxRetryCount: MAX_RETRY_COUNT,
-      nextRetryAt
+      nextRetryAt,
+      retryable
     };
   }
 
@@ -1316,6 +1324,8 @@ export async function retryOrFailJob(
     toStatus: "FAILED",
     retryCount,
     maxRetryCount: MAX_RETRY_COUNT,
+    retryable,
+    reason: retryable ? "retry_exhausted" : "non_retryable",
     errorMessage,
     rowCount: result.rowCount
   }, updated ? "Job marked as failed" : "Job failed update skipped");
@@ -1331,6 +1341,8 @@ export async function retryOrFailJob(
     detail: {
       fromStatus: "PROCESSING",
       toStatus: "FAILED",
+      retryable,
+      reason: retryable ? "retry_exhausted" : "non_retryable",
       rowCount: result.rowCount,
       workerInstanceId: WORKER_ID
     }
@@ -1340,14 +1352,17 @@ export async function retryOrFailJob(
     return {
       status: "SKIPPED",
       retryCount,
-      maxRetryCount: MAX_RETRY_COUNT
+      maxRetryCount: MAX_RETRY_COUNT,
+      retryable
     };
   }
 
   return {
     status: "FAILED",
     retryCount,
-    maxRetryCount: MAX_RETRY_COUNT
+    maxRetryCount: MAX_RETRY_COUNT,
+    retryable,
+    reason: retryable ? "retry_exhausted" : "non_retryable"
   };
 }
 

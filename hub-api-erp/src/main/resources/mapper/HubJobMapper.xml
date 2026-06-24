@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.bizbee.hub.job.HubJobMapper">
+<mapper namespace="hub.job.mapper.HubJobMapper">
 
-    <resultMap id="hubJobResultMap" type="com.bizbee.hub.job.HubJob">
+    <resultMap id="hubJobResultMap" type="hub.job.domain.HubJob">
         <result property="requestId"    column="request_id"/>
         <result property="requestKey"   column="request_key"/>
         <result property="jobType"      column="job_type"/>
         <result property="sourceErp"    column="source_erp"/>
         <result property="channelCd"    column="channel_cd"/>
-        <result property="status"       column="status"       javaType="com.bizbee.hub.job.HubJobStatus"/>
+        <result property="status"       column="status"       javaType="hub.job.domain.HubJobStatus"/>
         <result property="payload"      column="payload"/>
         <result property="retryCount"   column="retry_count"/>
         <result property="errorMessage" column="error_message"/>
@@ -17,7 +17,7 @@
         <result property="updatedAt"    column="updated_at"/>
     </resultMap>
 
-    <resultMap id="hubJobLogResultMap" type="com.bizbee.hub.job.HubJobLogItem">
+    <resultMap id="hubJobLogResultMap" type="hub.job.dto.response.HubJobLogItem">
         <constructor>
             <idArg     column="id"              javaType="java.lang.Long"/>
             <arg       column="request_id"      javaType="java.lang.String"/>
@@ -34,7 +34,7 @@
         </constructor>
     </resultMap>
 
-    <resultMap id="dashboardStatsResultMap" type="com.bizbee.hub.job.DashboardStats">
+    <resultMap id="dashboardStatsResultMap" type="hub.job.dto.response.DashboardStats">
         <constructor>
             <arg column="today_total"        javaType="java.lang.Long"/>
             <arg column="today_success"      javaType="java.lang.Long"/>
@@ -46,7 +46,7 @@
         </constructor>
     </resultMap>
 
-    <resultMap id="dashboardRecentJobResultMap" type="com.bizbee.hub.job.DashboardRecentJob">
+    <resultMap id="dashboardRecentJobResultMap" type="hub.job.dto.response.DashboardRecentJob">
         <constructor>
             <arg column="request_id"    javaType="java.lang.String"/>
             <arg column="channel_cd"    javaType="java.lang.String"/>
@@ -60,7 +60,7 @@
         </constructor>
     </resultMap>
 
-    <resultMap id="dashboardChannelStatResultMap" type="com.bizbee.hub.job.DashboardChannelStat">
+    <resultMap id="dashboardChannelStatResultMap" type="hub.job.dto.response.DashboardChannelStat">
         <constructor>
             <arg column="channel_cd"       javaType="java.lang.String"/>
             <arg column="total_count"      javaType="java.lang.Long"/>

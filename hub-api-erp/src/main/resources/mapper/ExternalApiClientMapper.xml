@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
-<mapper namespace="com.bizbee.hub.external.ExternalApiClientMapper">
+<mapper namespace="hub.external.mapper.ExternalApiClientMapper">
 
     <sql id="clientColumns">
         id,
@@ -23,27 +23,27 @@
         to_char(updated_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS updated_at
     </sql>
 
-    <select id="findByUserId" resultType="com.bizbee.hub.external.ExternalApiClientRow">
+    <select id="findByUserId" resultType="hub.external.domain.ExternalApiClientRow">
         SELECT <include refid="clientColumns" />
         FROM hub_external_api_client
         WHERE user_id = #{userId}
         ORDER BY created_at DESC, id DESC
     </select>
 
-    <select id="findByClientId" resultType="com.bizbee.hub.external.ExternalApiClientRow">
+    <select id="findByClientId" resultType="hub.external.domain.ExternalApiClientRow">
         SELECT <include refid="clientColumns" />
         FROM hub_external_api_client
         WHERE client_id = #{clientId}
     </select>
 
-    <select id="findByUserIdAndClientId" resultType="com.bizbee.hub.external.ExternalApiClientRow">
+    <select id="findByUserIdAndClientId" resultType="hub.external.domain.ExternalApiClientRow">
         SELECT <include refid="clientColumns" />
         FROM hub_external_api_client
         WHERE user_id = #{userId}
           AND client_id = #{clientId}
     </select>
 
-    <insert id="insert" parameterType="com.bizbee.hub.external.ExternalApiClientRow" useGeneratedKeys="true" keyProperty="id">
+    <insert id="insert" parameterType="hub.external.domain.ExternalApiClientRow" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO hub_external_api_client (
             user_id,
             client_name,

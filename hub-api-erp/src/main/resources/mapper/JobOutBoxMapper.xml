@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.bizbee.hub.outbox.JobOutboxMapper">
+<mapper namespace="hub.outbox.mapper.JobOutboxMapper">
 
-    <resultMap id="jobOutboxResultMap" type="com.bizbee.hub.outbox.JobOutbox">
+    <resultMap id="jobOutboxResultMap" type="hub.outbox.domain.JobOutbox">
         <result property="id" column="id"/>
         <result property="requestId" column="request_id"/>
         <result property="eventType" column="event_type"/>
         <result property="topic" column="topic"/>
         <result property="partitionKey" column="partition_key"/>
         <result property="payload" column="payload"/>
-        <result property="status" column="status" javaType="com.bizbee.hub.outbox.JobOutboxStatus"/>
+        <result property="status" column="status" javaType="hub.outbox.domain.JobOutboxStatus"/>
         <result property="retryCount" column="retry_count"/>
         <result property="maxRetryCount" column="max_retry_count"/>
         <result property="nextRetryAt" column="next_retry_at"/>
@@ -21,7 +21,7 @@
         <result property="updatedAt" column="updated_at"/>
     </resultMap>
 
-    <resultMap id="jobOutboxStatsResultMap" type="com.bizbee.hub.outbox.JobOutboxStats">
+    <resultMap id="jobOutboxStatsResultMap" type="hub.outbox.dto.response.JobOutboxStats">
         <constructor>
             <arg column="total" javaType="java.lang.Long"/>
             <arg column="pending" javaType="java.lang.Long"/>
@@ -32,7 +32,7 @@
         </constructor>
     </resultMap>
 
-    <resultMap id="jobOutboxItemResultMap" type="com.bizbee.hub.outbox.JobOutboxItem">
+    <resultMap id="jobOutboxItemResultMap" type="hub.outbox.dto.response.JobOutboxItem">
         <constructor>
             <arg column="id" javaType="java.lang.Long"/>
             <arg column="request_id" javaType="java.lang.String"/>

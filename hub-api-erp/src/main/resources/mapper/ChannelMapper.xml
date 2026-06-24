@@ -2,9 +2,9 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
-<mapper namespace="com.bizbee.hub.channel.ChannelMapper">
+<mapper namespace="hub.channel.mapper.ChannelMapper">
 
-    <select id="findAllHubChannels" resultType="com.bizbee.hub.channel.HubChannel">
+    <select id="findAllHubChannels" resultType="hub.channel.domain.HubChannel">
         SELECT mall_key, mall_name, sort_order
         FROM hub_channels
         ORDER BY sort_order, mall_key
@@ -16,21 +16,21 @@
         WHERE mall_key = #{mallKey}
     </select>
 
-    <select id="findAllByUserId" resultType="com.bizbee.hub.channel.ChannelRow">
+    <select id="findAllByUserId" resultType="hub.channel.domain.ChannelRow">
         SELECT user_id, mall_key, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
         FROM user_malls
         WHERE user_id = #{userId}
         ORDER BY mall_key
     </select>
 
-    <select id="findByUserIdAndMallKey" resultType="com.bizbee.hub.channel.ChannelRow">
+    <select id="findByUserIdAndMallKey" resultType="hub.channel.domain.ChannelRow">
         SELECT user_id, mall_key, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
         FROM user_malls
         WHERE user_id = #{userId}
           AND mall_key = #{mallKey}
     </select>
 
-    <select id="findActiveByUserIdAndMallKey" resultType="com.bizbee.hub.channel.ChannelRow">
+    <select id="findActiveByUserIdAndMallKey" resultType="hub.channel.domain.ChannelRow">
         SELECT user_id, mall_key, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
         FROM user_malls
         WHERE user_id = #{userId}
@@ -38,12 +38,12 @@
           AND use_yn = 'Y'
     </select>
 
-    <insert id="insert" parameterType="com.bizbee.hub.channel.ChannelRow">
+    <insert id="insert" parameterType="hub.channel.domain.ChannelRow">
         INSERT INTO user_malls (user_id, mall_key, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id)
         VALUES (#{userId}, #{mallKey}, #{key}, #{key2}, #{authKey}, #{mallId}, #{mallPw}, #{useYn}, #{vendorId})
     </insert>
 
-    <update id="update" parameterType="com.bizbee.hub.channel.ChannelRow">
+    <update id="update" parameterType="hub.channel.domain.ChannelRow">
         UPDATE user_malls
         SET key       = #{key},
             key2      = #{key2},

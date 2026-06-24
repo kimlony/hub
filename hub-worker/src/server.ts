@@ -6,6 +6,7 @@ import { ElevenStCollectHandler } from "./channels/elevenst/ElevenStCollectHandl
 import { GchanCollectHandler } from "./channels/gchan/GchanCollectHandler.js";
 import { CoupangCollectHandler } from "./channels/coupang/CoupangCollectHandler.js";
 import { NfaCollectHandler } from "./channels/nfa/NfaCollectHandler.js";
+import { MockMallCollectHandler } from "./channels/mockMall/MockMallCollectHandler.js";
 import type { JobHandlerMessage } from "./handlers/IJobHandler.js";
 import { getErrorMessage, logger } from "./logger.js";
 import { CollectRequestSchema } from "./schemas.js";
@@ -16,6 +17,8 @@ export function createApp(): express.Application {
   registry.register("GCHAN", new GchanCollectHandler());
   registry.register("COUPANG", new CoupangCollectHandler());
   registry.register("NSS", new NfaCollectHandler()); // NSS = 네이버 스마트스토어 (nfa folder)
+
+  registry.register("MOCK_MALL", new MockMallCollectHandler());
 
   const app = express();
   app.use(express.json({ limit: "1mb" }));

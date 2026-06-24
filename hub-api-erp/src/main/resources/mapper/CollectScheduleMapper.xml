@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
-<mapper namespace="com.bizbee.hub.schedule.CollectScheduleMapper">
+<mapper namespace="hub.schedule.mapper.CollectScheduleMapper">
 
     <sql id="scheduleColumns">
         s.id,
@@ -21,7 +21,7 @@
         to_char(s.updated_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS updated_at
     </sql>
 
-    <select id="findByUserId" resultType="com.bizbee.hub.schedule.CollectScheduleRow">
+    <select id="findByUserId" resultType="hub.schedule.domain.CollectScheduleRow">
         SELECT <include refid="scheduleColumns" />
         FROM hub_collect_schedule s
         JOIN users u ON u.id = s.user_id
@@ -29,7 +29,7 @@
         ORDER BY s.enabled_yn DESC, s.run_time ASC, s.id DESC
     </select>
 
-    <select id="findRunLogsByUserId" resultType="com.bizbee.hub.schedule.CollectScheduleRunLogRow">
+    <select id="findRunLogsByUserId" resultType="hub.schedule.domain.CollectScheduleRunLogRow">
         SELECT
             id,
             schedule_id,
@@ -52,7 +52,7 @@
         LIMIT #{limit}
     </select>
 
-    <select id="findByUserIdAndId" resultType="com.bizbee.hub.schedule.CollectScheduleRow">
+    <select id="findByUserIdAndId" resultType="hub.schedule.domain.CollectScheduleRow">
         SELECT <include refid="scheduleColumns" />
         FROM hub_collect_schedule s
         JOIN users u ON u.id = s.user_id
@@ -60,7 +60,7 @@
           AND s.id = #{id}
     </select>
 
-    <insert id="insert" parameterType="com.bizbee.hub.schedule.CollectScheduleRow" useGeneratedKeys="true" keyProperty="id">
+    <insert id="insert" parameterType="hub.schedule.domain.CollectScheduleRow" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO hub_collect_schedule (
             user_id, schedule_name, mall_keys, date_range_type, run_time, enabled_yn, next_run_at
         ) VALUES (
@@ -69,7 +69,7 @@
         )
     </insert>
 
-    <insert id="insertRunLog" parameterType="com.bizbee.hub.schedule.CollectScheduleRunLogRow" useGeneratedKeys="true" keyProperty="id">
+    <insert id="insertRunLog" parameterType="hub.schedule.domain.CollectScheduleRunLogRow" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO hub_collect_schedule_run_log (
             schedule_id,
             user_id,
@@ -95,7 +95,7 @@
         )
     </insert>
 
-    <update id="update" parameterType="com.bizbee.hub.schedule.CollectScheduleRow">
+    <update id="update" parameterType="hub.schedule.domain.CollectScheduleRow">
         UPDATE hub_collect_schedule
         SET schedule_name = #{scheduleName},
             mall_keys = CAST(#{mallKeysJson} AS jsonb),
@@ -141,7 +141,7 @@
           AND next_run_at &lt;= NOW() - (CAST(#{maxCatchUpMinutes} AS int) * INTERVAL '1 minute')
     </update>
 
-    <select id="claimDueSchedules" resultType="com.bizbee.hub.schedule.CollectScheduleRow">
+    <select id="claimDueSchedules" resultType="hub.schedule.domain.CollectScheduleRow">
         WITH picked AS (
             SELECT id
             FROM hub_collect_schedule

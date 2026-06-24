@@ -18,13 +18,15 @@ import { DartCrawlHandler } from "./channels/dart/DartCrawlHandler.js";
 import { ElevenStOrderHandler } from "./channels/elevenst/ElevenStOrderHandler.js";
 import { NaverRssCrawlHandler } from "./channels/naverRss/NaverRssCrawlHandler.js";
 import { NfaOrderHandler } from "./channels/nfa/NfaOrderHandler.js";
+import { MockMallOrderHandler } from "./channels/mockMall/MockMallOrderHandler.js";
 import { OrderNormalizeHandler } from "./channels/orderNormalize/OrderNormalizeHandler.js";
 import { TestSleepHandler } from "./channels/test/TestSleepHandler.js";
 import { HandlerRegistry } from "./handlers/HandlerRegistry.js";
 import type { JobHandlerMessage } from "./handlers/IJobHandler.js";
 import { publishDlq } from "./dlq.js";
+import { classifyRetry } from "./errors/retryPolicy.js";
 import { closeJobPublisher, publishNormalizeJob } from "./jobPublisher.js";
-import { getErrorMessage, logger } from "./logger.js";
+import { logger } from "./logger.js";
 import { HubJobMessageSchema } from "./schemas.js";
 import { getKafkaClientId, getWorkerId } from "./workerIdentity.js";
 
@@ -52,6 +54,7 @@ registry.register("ORDER_COLLECT", new GchanOrderHandler(), "GCHAN");
 registry.register("ORDER_COLLECT", new GodoOrderHandler(), "GODO");
 registry.register("ORDER_COLLECT", new CoupangOrderHandler(), "COUPANG");
 registry.register("ORDER_COLLECT", new NfaOrderHandler(), "NSS");
+registry.register("ORDER_COLLECT", new MockMallOrderHandler(), "MOCK_MALL");
 registry.register("CRAWL", new DartCrawlHandler(), "DART");
 registry.register("CRAWL", new NaverRssCrawlHandler(), "NAVER_RSS");
 registry.register("ORDER_NORMALIZE", new OrderNormalizeHandler());
@@ -280,8 +283,11 @@ export async function processJobMessage(
       }
     });
   } catch (error) {
-    const errorMessage = getErrorMessage(error);
-    const decision = await retryOrFailJob(requestId, errorMessage);
+    const retryClassification = classifyRetry(error);
+    const errorMessage = retryClassification.errorMessage;
+    const decision = await retryOrFailJob(requestId, errorMessage, {
+      retryable: retryClassification.retryable
+    });
 
     if (decision.status === "SKIPPED") {
       logger.warn({
@@ -306,7 +312,8 @@ export async function processJobMessage(
         detail: {
           source,
           workerInstanceId,
-          kafkaClientId
+          kafkaClientId,
+          retryClassification
         }
       });
       return;
@@ -339,27 +346,29 @@ export async function processJobMessage(
         detail: {
           source,
           workerInstanceId,
-          kafkaClientId
+          kafkaClientId,
+          retryClassification
         }
       });
       return;
     }
 
     logger.error({
-      event: "JOB_STATUS_FAILED",
+      event: retryClassification.retryable ? "JOB_STATUS_FAILED" : "JOB_STATUS_FAILED_NON_RETRYABLE",
       err: error,
       requestId,
       jobType,
       source,
       retryCount: decision.retryCount,
       maxRetryCount: decision.maxRetryCount,
-      errorMessage
+      errorMessage,
+      retryClassification
     }, "Job failed permanently");
     await saveJobLog({
       requestId,
-      eventType: "JOB_FAILED_PERMANENTLY",
+      eventType: retryClassification.retryable ? "JOB_FAILED_PERMANENTLY" : "JOB_FAILED_NON_RETRYABLE",
       level: "ERROR",
-      message: "Job failed permanently",
+      message: retryClassification.retryable ? "Job failed permanently" : "Job failed without retry",
       jobType,
       sourceErp: jobMessage.sourceErp,
       requestKey: jobMessage.requestKey,
@@ -371,7 +380,8 @@ export async function processJobMessage(
       detail: {
         source,
         workerInstanceId,
-        kafkaClientId
+        kafkaClientId,
+        retryClassification
       }
     });
 
@@ -477,11 +487,11 @@ async function runRegisteredHandler(jobMessage: HubJobMessage, requestId: string
 }
 
 function requiresChannelCredentials(jobMessage: HubJobMessage): boolean {
-  return jobMessage.jobType === "ORDER_COLLECT";
+  return jobMessage.jobType === "ORDER_COLLECT" && getChannelCd(jobMessage) !== "MOCK_MALL";
 }
 
 function requiresJobLock(jobMessage: HubJobMessage): boolean {
-  return jobMessage.jobType === "ORDER_COLLECT";
+  return jobMessage.jobType === "ORDER_COLLECT" && getChannelCd(jobMessage) !== "MOCK_MALL";
 }
 
 function buildJobLockKey(jobMessage: HubJobMessage): string {

@@ -9,6 +9,7 @@ import OutboxPage    from './pages/OutboxPage'
 import SchedulePage  from './pages/SchedulePage'
 import NewsPage      from './pages/NewsPage'
 import ExternalApiPage from './pages/ExternalApiPage'
+import LoadTestPage from './pages/LoadTestPage'
 
 export default function App() {
   return (
@@ -36,6 +37,9 @@ export default function App() {
           } />
           <Route path="/outbox" element={
             <ProtectedRoute><OutboxPage /></ProtectedRoute>
+          } />
+          <Route path="/load-test" element={
+            <ProtectedRoute><LoadTestPage /></ProtectedRoute>
           } />
         </Routes>
       </BrowserRouter>

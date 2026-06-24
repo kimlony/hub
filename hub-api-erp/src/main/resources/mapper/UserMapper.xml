@@ -2,15 +2,15 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
-<mapper namespace="com.bizbee.hub.auth.UserMapper">
+<mapper namespace="hub.auth.mapper.UserMapper">
 
-    <select id="findById" resultType="com.bizbee.hub.auth.HubUser">
+    <select id="findById" resultType="hub.auth.domain.HubUser">
         SELECT id, username, password
         FROM users
         WHERE id = #{id}
     </select>
 
-    <select id="findByUsername" resultType="com.bizbee.hub.auth.HubUser">
+    <select id="findByUsername" resultType="hub.auth.domain.HubUser">
         SELECT id, username, password
         FROM users
         WHERE username = #{username}

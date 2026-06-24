@@ -20,14 +20,14 @@ spring:
 
 mybatis:
   mapper-locations: classpath:mapper/**/*.xml
-  type-aliases-package: com.bizbee.hub
+  type-aliases-package: hub
   configuration:
     map-underscore-to-camel-case: true
 
 hub:
   kafka:
     topics:
-      jobs: ${HUB_JOBS_TOPIC:hub.jobs}
+      jobs: ${HUB_KAFKA_TOPICS_JOBS:${HUB_JOBS_TOPIC:hub.jobs}}
       dlq: ${HUB_JOBS_DLQ_TOPIC:hub.jobs.dlq}
     jobs-topic:
       partitions: ${HUB_JOBS_TOPIC_PARTITIONS:4}

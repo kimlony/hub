@@ -43,11 +43,19 @@ type JobLogsResponse = {
   logs: JobLog[]
 }
 
+type FailureInfo = {
+  code: string
+  label: string
+  retryable: boolean | null
+  reason: string
+}
+
 const CHANNEL_COLORS: Record<string, string> = {
   '11ST': 'bg-red-50 text-red-600',
   GCHAN: 'bg-orange-50 text-orange-600',
   COUPANG: 'bg-rose-50 text-rose-700',
   NSS: 'bg-[#E8FAF0] text-[#00C073]',
+  MOCK_MALL: 'bg-blue-50 text-blue-700',
 }
 
 const LOG_LEVEL_COLORS: Record<string, string> = {
@@ -87,6 +95,38 @@ function formatDetail(detail: string | null): string {
     return JSON.stringify(JSON.parse(detail), null, 2)
   } catch {
     return detail
+  }
+}
+
+function parseFailureInfo(errorMessage: string | null): FailureInfo | null {
+  if (!errorMessage) return null
+
+  const http = errorMessage.match(/HTTP\s+(\d{3})\s+([^:]+):?/i)
+  if (http) {
+    const status = Number(http[1])
+    return {
+      code: `HTTP ${status}`,
+      label: http[2].trim(),
+      retryable: status >= 500,
+      reason: status >= 400 && status < 500 ? '재시도 제외' : '재시도 대상',
+    }
+  }
+
+  const code = errorMessage.match(/\b(E[A-Z_]+|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ECONNABORTED|ENOTFOUND|EAI_AGAIN)\b/)
+  if (code) {
+    return {
+      code: code[1],
+      label: code[1].includes('TIME') || code[1] === 'ECONNABORTED' ? 'Timeout' : 'Network',
+      retryable: true,
+      reason: '재시도 대상',
+    }
+  }
+
+  return {
+    code: 'ERROR',
+    label: 'Unknown',
+    retryable: null,
+    reason: '정책 확인 필요',
   }
 }
 
@@ -173,7 +213,7 @@ export default function JobsPage() {
             <select
               value={statusFilter}
               onChange={handleFilterChange(setStatusFilter)}
-              className="px-3 py-2 text-[13px] font-medium border border-slate-200 rounded-xl bg-white text-[#4E5968] focus:outline-none focus:ring-2 focus:ring-[#3182F6]/30"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-[#4E5968] focus:outline-none focus:ring-2 focus:ring-[#3182F6]/30"
             >
               <option value="">전체 상태</option>
               <option>QUEUED</option>
@@ -184,99 +224,111 @@ export default function JobsPage() {
             <select
               value={channelFilter}
               onChange={handleFilterChange(setChannelFilter)}
-              className="px-3 py-2 text-[13px] font-medium border border-slate-200 rounded-xl bg-white text-[#4E5968] focus:outline-none focus:ring-2 focus:ring-[#3182F6]/30"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-[#4E5968] focus:outline-none focus:ring-2 focus:ring-[#3182F6]/30"
             >
               <option value="">전체 채널</option>
               <option>11ST</option>
               <option>GCHAN</option>
               <option>COUPANG</option>
               <option>NSS</option>
+              <option>MOCK_MALL</option>
             </select>
             <button
               onClick={() => setModalOpen(true)}
-              className="px-4 py-2 text-[13px] font-bold rounded-xl bg-[#3182F6] text-white hover:bg-blue-600 transition-colors"
+              className="rounded-lg bg-[#3182F6] px-4 py-2 text-[13px] font-bold text-white transition-colors hover:bg-blue-600"
             >
               + 수집 요청
             </button>
           </>
         }
       >
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+        <div className="overflow-hidden rounded-lg bg-white shadow-sm">
           <table className="w-full">
             <thead>
-              <tr className="bg-[#FAFAFA] border-b border-slate-100">
-                <th className="px-5 py-3 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Request ID</th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">채널</th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">수집 기간</th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">상태</th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">재시도</th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">생성 시각</th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">액션</th>
+              <tr className="border-b border-slate-100 bg-[#FAFAFA]">
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#8B95A1]">Request ID</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#8B95A1]">채널</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#8B95A1]">수집 기간</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#8B95A1]">상태</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#8B95A1]">실패 원인</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#8B95A1]">재시도</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#8B95A1]">생성 시각</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#8B95A1]">액션</th>
               </tr>
             </thead>
             <tbody>
               {loading && jobs.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center text-[#8B95A1] text-[13px]">
+                  <td colSpan={8} className="px-5 py-12 text-center text-[13px] text-[#8B95A1]">
                     불러오는 중...
                   </td>
                 </tr>
               ) : jobs.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center text-[#8B95A1] text-[13px]">
+                  <td colSpan={8} className="px-5 py-12 text-center text-[13px] text-[#8B95A1]">
                     조건에 맞는 작업이 없습니다.
                   </td>
                 </tr>
               ) : (
-                jobs.map((j) => (
-                  <tr key={j.requestId} className="border-t border-slate-50 hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-3 font-mono text-[#8B95A1] text-[11px]">
-                      {j.requestId.slice(0, 8)}...
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold ${CHANNEL_COLORS[j.channelCd] ?? 'bg-slate-100 text-slate-600'}`}>
-                        {j.channelCd}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-[13px] text-[#4E5968]">
-                      {formatPeriod(j.frDt, j.toDt)}
-                    </td>
-                    <td className="px-5 py-3"><StatusBadge status={j.status} /></td>
-                    <td className="px-5 py-3 text-[13px] text-[#8B95A1]">{j.retryCount}</td>
-                    <td className="px-5 py-3 text-[13px] text-[#8B95A1]">
-                      {formatDateTime(j.createdAt)}
-                    </td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setLogRequestId(j.requestId)}
-                          className="px-3 py-1.5 text-[12px] font-bold rounded-xl bg-slate-100 text-[#4E5968] hover:bg-slate-200 transition-colors"
-                        >
-                          LOG 보기
-                        </button>
-                        {j.status === 'FAILED' && (
-                          <button
-                            onClick={() => void handleRetry(j.requestId)}
-                            className="px-3 py-1.5 text-[12px] font-bold rounded-xl bg-red-50 text-[#FF6B6B] hover:bg-red-100 transition-colors"
-                          >
-                            재시도
-                          </button>
+                jobs.map((j) => {
+                  const failure = parseFailureInfo(j.errorMessage)
+                  return (
+                    <tr key={j.requestId} className="border-t border-slate-50 transition-colors hover:bg-slate-50">
+                      <td className="px-5 py-3 font-mono text-[11px] text-[#8B95A1]">
+                        {j.requestId.slice(0, 8)}...
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className={`rounded-md px-2.5 py-0.5 text-[11px] font-bold ${CHANNEL_COLORS[j.channelCd] ?? 'bg-slate-100 text-slate-600'}`}>
+                          {j.channelCd}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-[13px] text-[#4E5968]">
+                        {formatPeriod(j.frDt, j.toDt)}
+                      </td>
+                      <td className="px-5 py-3"><StatusBadge status={j.status} /></td>
+                      <td className="px-5 py-3">
+                        {j.status === 'FAILED' && failure ? (
+                          <FailureBadge info={failure} message={j.errorMessage} />
+                        ) : (
+                          <span className="text-[12px] text-[#8B95A1]">-</span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="px-5 py-3 text-[13px] text-[#8B95A1]">{j.retryCount}</td>
+                      <td className="px-5 py-3 text-[13px] text-[#8B95A1]">
+                        {formatDateTime(j.createdAt)}
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setLogRequestId(j.requestId)}
+                            className="rounded-lg bg-slate-100 px-3 py-1.5 text-[12px] font-bold text-[#4E5968] transition-colors hover:bg-slate-200"
+                          >
+                            로그
+                          </button>
+                          {j.status === 'FAILED' && (
+                            <button
+                              onClick={() => void handleRetry(j.requestId)}
+                              className="rounded-lg bg-red-50 px-3 py-1.5 text-[12px] font-bold text-[#FF6B6B] transition-colors hover:bg-red-100"
+                            >
+                              재시도
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
 
-          <div className="flex items-center justify-between px-5 py-4 border-t border-slate-100">
-            <span className="text-[13px] text-[#8B95A1]">총 {totalCount}건</span>
+          <div className="flex items-center justify-between border-t border-slate-100 px-5 py-4">
+            <span className="text-[13px] text-[#8B95A1]">총 {totalCount.toLocaleString()}건</span>
             <div className="flex gap-1.5">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="px-3 py-1.5 text-[12px] font-semibold rounded-lg bg-[#F2F4F6] text-[#4E5968] hover:bg-slate-200 disabled:opacity-40 transition-colors"
+                className="rounded-lg bg-[#F2F4F6] px-3 py-1.5 text-[12px] font-semibold text-[#4E5968] transition-colors hover:bg-slate-200 disabled:opacity-40"
               >
                 이전
               </button>
@@ -287,7 +339,7 @@ export default function JobsPage() {
                   <button
                     key={p}
                     onClick={() => setPage(p)}
-                    className={`px-3 py-1.5 text-[12px] font-semibold rounded-lg transition-colors ${
+                    className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors ${
                       p === page
                         ? 'bg-[#3182F6] text-white'
                         : 'bg-[#F2F4F6] text-[#4E5968] hover:bg-slate-200'
@@ -300,7 +352,7 @@ export default function JobsPage() {
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="px-3 py-1.5 text-[12px] font-semibold rounded-lg bg-[#F2F4F6] text-[#4E5968] hover:bg-slate-200 disabled:opacity-40 transition-colors"
+                className="rounded-lg bg-[#F2F4F6] px-3 py-1.5 text-[12px] font-semibold text-[#4E5968] transition-colors hover:bg-slate-200 disabled:opacity-40"
               >
                 다음
               </button>
@@ -309,6 +361,30 @@ export default function JobsPage() {
         </div>
       </Layout>
     </>
+  )
+}
+
+function FailureBadge({ info, message }: { info: FailureInfo; message: string | null }) {
+  const cls = info.retryable === false
+    ? 'bg-red-50 text-red-700'
+    : info.retryable === true
+      ? 'bg-amber-50 text-amber-700'
+      : 'bg-slate-100 text-slate-600'
+
+  return (
+    <div className="max-w-[260px]">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={`rounded-md px-2 py-0.5 text-[11px] font-extrabold ${cls}`} title={message ?? undefined}>
+          {info.code}
+        </span>
+        <span className="rounded-md bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-[#4E5968]">
+          {info.reason}
+        </span>
+      </div>
+      <p className="mt-1 truncate text-[11px] font-semibold text-[#8B95A1]" title={message ?? undefined}>
+        {info.label}
+      </p>
+    </div>
   )
 }
 
@@ -341,16 +417,16 @@ function JobLogModal({ requestId, onClose }: { requestId: string; onClose: () =>
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative w-[920px] max-w-[calc(100vw-32px)] max-h-[82vh] bg-white rounded-2xl shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      <div className="relative max-h-[82vh] w-[920px] max-w-[calc(100vw-32px)] overflow-hidden rounded-lg bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <div>
             <h2 className="text-[16px] font-extrabold text-[#191F28]">Job 로그</h2>
             <p className="mt-1 font-mono text-[11px] text-[#8B95A1]">{requestId}</p>
           </div>
-          <button onClick={onClose} className="text-[#8B95A1] hover:text-[#4E5968] text-[22px] leading-none">x</button>
+          <button onClick={onClose} className="text-[22px] leading-none text-[#8B95A1] hover:text-[#4E5968]">x</button>
         </div>
 
-        <div className="p-6 overflow-auto max-h-[calc(82vh-73px)]">
+        <div className="max-h-[calc(82vh-73px)] overflow-auto p-6">
           {loading ? (
             <div className="py-12 text-center text-[13px] text-[#8B95A1]">로그를 불러오는 중...</div>
           ) : error ? (
@@ -359,39 +435,43 @@ function JobLogModal({ requestId, onClose }: { requestId: string; onClose: () =>
             <div className="py-12 text-center text-[13px] text-[#8B95A1]">저장된 로그가 없습니다.</div>
           ) : (
             <div className="space-y-3">
-              {logs.map((log) => (
-                <div key={log.id} className="border border-slate-100 rounded-xl p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded-lg text-[11px] font-bold ${LOG_LEVEL_COLORS[log.level] ?? 'bg-slate-100 text-slate-600'}`}>
-                          {log.level}
-                        </span>
-                        <span className="font-mono text-[12px] font-bold text-[#191F28]">{log.eventType}</span>
+              {logs.map((log) => {
+                const failure = parseFailureInfo(log.errorMessage)
+                return (
+                  <div key={log.id} className="rounded-lg border border-slate-100 p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${LOG_LEVEL_COLORS[log.level] ?? 'bg-slate-100 text-slate-600'}`}>
+                            {log.level}
+                          </span>
+                          <span className="font-mono text-[12px] font-bold text-[#191F28]">{log.eventType}</span>
+                          {failure && <FailureBadge info={failure} message={log.errorMessage} />}
+                        </div>
+                        <p className="mt-2 text-[13px] text-[#4E5968]">{log.message}</p>
+                        {log.errorMessage && (
+                          <p className="mt-2 break-words text-[12px] text-red-600">{log.errorMessage}</p>
+                        )}
                       </div>
-                      <p className="mt-2 text-[13px] text-[#4E5968]">{log.message}</p>
-                      {log.errorMessage && (
-                        <p className="mt-2 text-[12px] text-red-600 break-words">{log.errorMessage}</p>
+                      <span className="shrink-0 text-[12px] text-[#8B95A1]">{formatDateTime(log.createdAt)}</span>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-[#8B95A1]">
+                      {log.channelCd && <span className="rounded-md bg-slate-50 px-2 py-1">channel: {log.channelCd}</span>}
+                      {log.mallKey && <span className="rounded-md bg-slate-50 px-2 py-1">mall: {log.mallKey}</span>}
+                      {log.retryCount !== null && (
+                        <span className="rounded-md bg-slate-50 px-2 py-1">retry: {log.retryCount}/{log.maxRetryCount ?? '-'}</span>
                       )}
                     </div>
-                    <span className="shrink-0 text-[12px] text-[#8B95A1]">{formatDateTime(log.createdAt)}</span>
-                  </div>
 
-                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-[#8B95A1]">
-                    {log.channelCd && <span className="px-2 py-1 rounded-lg bg-slate-50">channel: {log.channelCd}</span>}
-                    {log.mallKey && <span className="px-2 py-1 rounded-lg bg-slate-50">mall: {log.mallKey}</span>}
-                    {log.retryCount !== null && (
-                      <span className="px-2 py-1 rounded-lg bg-slate-50">retry: {log.retryCount}/{log.maxRetryCount ?? '-'}</span>
+                    {log.detail && log.detail !== '{}' && (
+                      <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-[#F8FAFC] px-3 py-2 text-[11px] text-[#4E5968]">
+                        {formatDetail(log.detail)}
+                      </pre>
                     )}
                   </div>
-
-                  {log.detail && log.detail !== '{}' && (
-                    <pre className="mt-3 max-h-40 overflow-auto rounded-xl bg-[#F8FAFC] px-3 py-2 text-[11px] text-[#4E5968]">
-                      {formatDetail(log.detail)}
-                    </pre>
-                  )}
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

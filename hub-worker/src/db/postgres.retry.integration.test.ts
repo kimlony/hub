@@ -19,6 +19,7 @@ describeIntegration("job retry state transition", () => {
 
   const retryRequestId = `retry-test-${Date.now()}`;
   const failedRequestId = `retry-failed-test-${Date.now()}`;
+  const nonRetryableRequestId = `retry-non-retryable-test-${Date.now()}`;
 
   beforeAll(async () => {
     await setupWorkerIntegrationContainers();
@@ -50,8 +51,8 @@ describeIntegration("job retry state transition", () => {
   }, 120_000);
 
   afterAll(async () => {
-    await pool?.query("DELETE FROM hub_job_log WHERE request_id = ANY($1)", [[retryRequestId, failedRequestId]]);
-    await pool?.query("DELETE FROM hub_job WHERE request_id = ANY($1)", [[retryRequestId, failedRequestId]]);
+    await pool?.query("DELETE FROM hub_job_log WHERE request_id = ANY($1)", [[retryRequestId, failedRequestId, nonRetryableRequestId]]);
+    await pool?.query("DELETE FROM hub_job WHERE request_id = ANY($1)", [[retryRequestId, failedRequestId, nonRetryableRequestId]]);
     await db?.closePostgresPool();
     await pool?.end();
     await stopWorkerIntegrationContainers();
@@ -146,6 +147,62 @@ describeIntegration("job retry state transition", () => {
       status: "FAILED",
       retry_count: 3,
       error_message: "permanent external API failure",
+      next_retry_at: null
+    });
+    expect(result.rows[0].completed_at).toBeInstanceOf(Date);
+  });
+
+  it("marks a non-retryable 4xx failure as failed without increasing retry count", async () => {
+    await pool.query(
+      `
+        INSERT INTO hub_job (
+          request_id,
+          request_key,
+          channel_cd,
+          status,
+          payload,
+          retry_count,
+          job_type,
+          source_erp,
+          created_at,
+          updated_at
+        ) VALUES ($1, $2, $3, 'PROCESSING', '{}'::jsonb, 0, 'ORDER_COLLECT', 'HUB_TEST', NOW(), NOW())
+      `,
+      [nonRetryableRequestId, "RETRY_NON_RETRYABLE_TEST_001", "TEST"]
+    );
+
+    const decision = await db.retryOrFailJob(
+      nonRetryableRequestId,
+      "HTTP 401 Unauthorized: Request failed with status code 401",
+      { retryable: false }
+    );
+
+    const result = await pool.query<{
+      status: string;
+      retry_count: number;
+      error_message: string;
+      next_retry_at: Date | null;
+      completed_at: Date | null;
+    }>(
+      `
+        SELECT status, retry_count, error_message, next_retry_at, completed_at
+        FROM hub_job
+        WHERE request_id = $1
+      `,
+      [nonRetryableRequestId]
+    );
+
+    expect(decision).toMatchObject({
+      status: "FAILED",
+      retryCount: 0,
+      maxRetryCount: 3,
+      retryable: false,
+      reason: "non_retryable"
+    });
+    expect(result.rows[0]).toMatchObject({
+      status: "FAILED",
+      retry_count: 0,
+      error_message: "HTTP 401 Unauthorized: Request failed with status code 401",
       next_retry_at: null
     });
     expect(result.rows[0].completed_at).toBeInstanceOf(Date);

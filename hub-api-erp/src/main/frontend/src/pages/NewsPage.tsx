@@ -22,6 +22,10 @@ type NewsResponse = {
   size: number
 }
 
+type CrawlControlResponse = {
+  enabled: boolean
+}
+
 const PAGE_SIZE = 20
 
 const SOURCE_TABS: Array<{ label: string; value: NewsSource }> = [
@@ -39,6 +43,8 @@ export default function NewsPage() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [crawlEnabled, setCrawlEnabled] = useState(true)
+  const [crawlControlLoading, setCrawlControlLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const hasMore = items.length < total
@@ -70,9 +76,26 @@ export default function NewsPage() {
     }
   }, [authenticatedFetch, queryString])
 
+  const fetchCrawlControl = useCallback(async () => {
+    try {
+      const response = await authenticatedFetch('/api/hub/news/crawl-control')
+      if (!response.ok) {
+        throw new Error(`crawl control status failed (${response.status})`)
+      }
+      const data = await response.json() as CrawlControlResponse
+      setCrawlEnabled(data.enabled)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '크롤링 상태를 불러오지 못했습니다.')
+    }
+  }, [authenticatedFetch])
+
   useEffect(() => {
     void fetchNews(page === 1 ? 'replace' : 'append')
   }, [fetchNews, page])
+
+  useEffect(() => {
+    void fetchCrawlControl()
+  }, [fetchCrawlControl])
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -98,6 +121,30 @@ export default function NewsPage() {
   function handleRefresh() {
     setPage(1)
     void fetchNews('replace')
+  }
+
+  async function toggleCrawlControl() {
+    if (crawlControlLoading) return
+
+    const nextEnabled = !crawlEnabled
+    setCrawlControlLoading(true)
+    setError(null)
+    try {
+      const response = await authenticatedFetch('/api/hub/news/crawl-control', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: nextEnabled }),
+      })
+      if (!response.ok) {
+        throw new Error(`crawl control update failed (${response.status})`)
+      }
+      const data = await response.json() as CrawlControlResponse
+      setCrawlEnabled(data.enabled)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '크롤링 상태를 변경하지 못했습니다.')
+    } finally {
+      setCrawlControlLoading(false)
+    }
   }
 
   return (
@@ -131,7 +178,7 @@ export default function NewsPage() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <input
                 value={keywordInput}
                 onChange={(event) => setKeywordInput(event.target.value)}
@@ -146,6 +193,29 @@ export default function NewsPage() {
                 className="px-4 py-2 text-[13px] font-bold rounded-xl bg-[#3182F6] text-white hover:bg-blue-600"
               >
                 검색
+              </button>
+              <button
+                type="button"
+                onClick={() => void toggleCrawlControl()}
+                disabled={crawlControlLoading}
+                aria-pressed={crawlEnabled}
+                className="flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-[12px] font-bold text-[#4E5968] hover:bg-slate-50 disabled:opacity-50"
+              >
+                <span>자동수집</span>
+                <span
+                  className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${
+                    crawlEnabled ? 'bg-[#3182F6]' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                      crawlEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                    }`}
+                  />
+                </span>
+                <span className={crawlEnabled ? 'text-[#3182F6]' : 'text-[#8B95A1]'}>
+                  {crawlEnabled ? 'ON' : 'OFF'}
+                </span>
               </button>
             </div>
           </div>
