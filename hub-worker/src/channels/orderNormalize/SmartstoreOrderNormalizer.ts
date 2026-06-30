@@ -1,5 +1,6 @@
 import type { NormalizedOrder, OrderNormalizer, RawOrderContext } from "./types.js";
 import { firstNestedText, firstNonBlank, integerValue, nestedRecord, numberValue, parseDate, text } from "./normalizeUtils.js";
+import { normalizeOrderStatus } from "./OrderStatusNormalizer.js";
 
 export class SmartstoreOrderNormalizer implements OrderNormalizer {
   supports(channelCd: string): boolean {
@@ -19,7 +20,7 @@ export class SmartstoreOrderNormalizer implements OrderNormalizer {
 
     return {
       channelOrderId,
-      orderStatus: firstNonBlank(text(productOrder, "productOrderStatus"), text(order, "orderStatus")),
+      orderStatus: normalizeOrderStatus(text(productOrder, "productOrderStatus"), text(order, "orderStatus")),
       orderDate: parseDate(firstNonBlank(text(orderPart, "orderDate"), text(order, "orderDate"))),
       paidAt: parseDate(firstNonBlank(text(orderPart, "paymentDate"), text(order, "paymentDate"))),
       buyerName: firstNonBlank(text(orderPart, "ordererName"), text(order, "ordererName")),
@@ -37,7 +38,7 @@ export class SmartstoreOrderNormalizer implements OrderNormalizer {
         skuCode: firstNonBlank(text(productOrder, "skuCode"), text(order, "skuCode")),
         productName: firstNonBlank(text(productOrder, "productName"), text(order, "productName")),
         optionName: firstNonBlank(text(productOrder, "productOption"), text(order, "productOption")),
-        itemStatus: firstNonBlank(text(productOrder, "productOrderStatus"), text(order, "productOrderStatus")),
+        itemStatus: normalizeOrderStatus(text(productOrder, "productOrderStatus"), text(order, "productOrderStatus")),
         quantity: integerValue(productOrder, "quantity"),
         unitPrice: numberValue(productOrder, "unitPrice"),
         itemAmount: numberValue(productOrder, "totalPaymentAmount", "orderAmount"),
@@ -52,7 +53,7 @@ export class SmartstoreOrderNormalizer implements OrderNormalizer {
         receiverAddr1: text(shippingAddress, "baseAddress"),
         receiverAddr2: text(shippingAddress, "detailedAddress"),
         deliveryMemo: text(shippingAddress, "shippingMemo"),
-        deliveryStatus: firstNonBlank(text(productOrder, "deliveryStatus"), text(order, "deliveryStatus")),
+        deliveryStatus: normalizeOrderStatus(text(productOrder, "deliveryStatus"), text(order, "deliveryStatus")),
         rawPayload: shippingAddress
       }
     };

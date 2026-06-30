@@ -37,7 +37,7 @@ describe("WchanOrderNormalizer", () => {
 
     expect(order).toMatchObject({
       channelOrderId: "00049921",
-      orderStatus: "PAID",
+      orderStatus: "결제완료",
       buyerName: "구매 회원",
       buyerTel: "010-1111-2222",
       orderAmount: 1500,
@@ -51,7 +51,7 @@ describe("WchanOrderNormalizer", () => {
       }],
       delivery: {
         receiverName: "수령인",
-        deliveryStatus: "PAID"
+        deliveryStatus: "결제완료"
       }
     });
     expect(order?.orderDate?.toISOString()).toBe("2026-06-12T00:00:00.000Z");

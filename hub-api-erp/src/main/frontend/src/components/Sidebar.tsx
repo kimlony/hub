@@ -11,6 +11,7 @@ const nav: NavSection[] = [
   {
     section: '주문수집',
     items: [
+      { label: '수집 주문', to: '/orders', icon: 'R' },
       { label: '작업 목록', to: '/jobs', icon: 'J' },
       { label: '배치 작업', to: '/schedules', icon: 'S' },
     ],

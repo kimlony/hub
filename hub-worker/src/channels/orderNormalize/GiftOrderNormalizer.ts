@@ -1,5 +1,6 @@
 import type { NormalizedOrder, OrderNormalizer, RawOrderContext } from "./types.js";
 import { firstNonBlank, integerValue, numberValue, parseDate, text } from "./normalizeUtils.js";
+import { normalizeOrderStatus } from "./OrderStatusNormalizer.js";
 
 export class GiftOrderNormalizer implements OrderNormalizer {
   supports(channelCd: string): boolean {
@@ -15,7 +16,12 @@ export class GiftOrderNormalizer implements OrderNormalizer {
 
     return {
       channelOrderId,
-      orderStatus: firstNonBlank(text(order, "paymentStatus"), text(order, "receivedStatus"), text(order, "orderDeliveryStatus")),
+      orderStatus: normalizeOrderStatus(
+        text(order, "paymentStatus"),
+        text(order, "receivedStatus"),
+        text(order, "orderDeliveryStatus"),
+        text(order, "deliveryStatus")
+      ),
       orderDate: parseDate(firstNonBlank(text(order, "paidAt"), text(order, "createdAt"))),
       paidAt: parseDate(text(order, "paidAt")),
       buyerName: text(order, "senderFullName"),
@@ -28,7 +34,7 @@ export class GiftOrderNormalizer implements OrderNormalizer {
         productId: text(order, "itemId"),
         productName: firstNonBlank(text(order, "itemName"), text(order, "productName"), text(order, "goodsName")),
         optionName: text(order, "optionName"),
-        itemStatus: firstNonBlank(text(order, "receivedStatus"), text(order, "orderDeliveryStatus")),
+        itemStatus: normalizeOrderStatus(text(order, "receivedStatus"), text(order, "orderDeliveryStatus"), text(order, "deliveryStatus")),
         quantity: integerValue(order, "quantity"),
         unitPrice: numberValue(order, "giftSupplyPrice"),
         itemAmount: numberValue(order, "giftSupplyPrice"),
@@ -41,7 +47,7 @@ export class GiftOrderNormalizer implements OrderNormalizer {
         receiverAddr2: text(order, "recipientAddressDetail"),
         deliveryCompany: text(order, "carrierCode"),
         trackingNumber: text(order, "trackingNumber"),
-        deliveryStatus: text(order, "orderDeliveryStatus"),
+        deliveryStatus: normalizeOrderStatus(text(order, "orderDeliveryStatus"), text(order, "deliveryStatus")),
         rawPayload: order
       }
     };

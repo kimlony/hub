@@ -2,19 +2,19 @@ import type { NormalizedOrder, OrderNormalizer, RawOrderContext } from "./types.
 import { firstNonBlank, integerValue, numberValue, parseDate, text } from "./normalizeUtils.js";
 
 const ORDER_STATUS_NAMES: Record<string, string> = {
-  "1": "PAYMENT_PENDING",
-  "2": "PAID",
-  "3": "ORDER_CONFIRMED",
-  "4": "SHIPPING",
-  "5": "DELIVERED",
-  "6": "CANCEL_REQUESTED",
-  "7": "CANCELLED",
-  "8": "RETURN_REQUESTED",
-  "9": "RETURNED",
-  "10": "EXCHANGE_REQUESTED",
-  "11": "EXCHANGE_SHIPPING",
-  "12": "EXCHANGE_DELIVERED",
-  "13": "PAYMENT_TIMEOUT_CANCELLED"
+  "1": "결제대기",
+  "2": "결제완료",
+  "3": "주문완료",
+  "4": "배송중",
+  "5": "배송완료",
+  "6": "취소접수",
+  "7": "취소완료",
+  "8": "반품접수",
+  "9": "반품완료",
+  "10": "교환접수",
+  "11": "교환중",
+  "12": "교환완료",
+  "13": "미결제취소"
 };
 
 export class WchanOrderNormalizer implements OrderNormalizer {
@@ -30,7 +30,7 @@ export class WchanOrderNormalizer implements OrderNormalizer {
 
     const itemIndex = firstNonBlank(text(order, "rdmg_index"), "0");
     const statusCode = text(order, "rdmg_order_status");
-    const orderStatus = statusCode ? ORDER_STATUS_NAMES[statusCode] ?? statusCode : null;
+    const orderStatus = statusCode ? ORDER_STATUS_NAMES[statusCode] ?? "상태확인필요" : "상태확인필요";
 
     return {
       channelOrderId,

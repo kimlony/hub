@@ -10,6 +10,7 @@ import SchedulePage  from './pages/SchedulePage'
 import NewsPage      from './pages/NewsPage'
 import ExternalApiPage from './pages/ExternalApiPage'
 import LoadTestPage from './pages/LoadTestPage'
+import CollectedOrdersPage from './pages/CollectedOrdersPage'
 
 export default function App() {
   return (
@@ -22,6 +23,9 @@ export default function App() {
           } />
           <Route path="/jobs" element={
             <ProtectedRoute><JobsPage /></ProtectedRoute>
+          } />
+          <Route path="/orders" element={
+            <ProtectedRoute><CollectedOrdersPage /></ProtectedRoute>
           } />
           <Route path="/schedules" element={
             <ProtectedRoute><SchedulePage /></ProtectedRoute>

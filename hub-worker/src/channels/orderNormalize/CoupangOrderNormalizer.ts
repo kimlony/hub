@@ -1,5 +1,6 @@
 import type { NormalizedOrder, OrderNormalizer, RawOrderContext } from "./types.js";
 import { firstNonBlank, integerValue, isRecord, nestedRecord, numberValue, parseDate, text } from "./normalizeUtils.js";
+import { normalizeOrderStatus } from "./OrderStatusNormalizer.js";
 
 export class CoupangOrderNormalizer implements OrderNormalizer {
   supports(channelCd: string): boolean {
@@ -18,7 +19,7 @@ export class CoupangOrderNormalizer implements OrderNormalizer {
 
     return {
       channelOrderId,
-      orderStatus: firstNonBlank(text(order, "status"), text(order, "orderStatus"), text(order, "orderDeliveryStatus")),
+      orderStatus: normalizeOrderStatus(text(order, "status"), text(order, "orderStatus"), text(order, "orderDeliveryStatus")),
       orderDate: parseDate(text(order, "orderedAt")),
       paidAt: parseDate(text(order, "paidAt")),
       buyerName: text(buyer, "name"),
@@ -37,7 +38,7 @@ export class CoupangOrderNormalizer implements OrderNormalizer {
         skuCode: text(item, "vendorItemId"),
         productName: firstNonBlank(text(item, "vendorItemName"), text(item, "sellerProductName"), text(item, "productName")),
         optionName: firstNonBlank(text(item, "optionName"), text(item, "vendorItemName")),
-        itemStatus: firstNonBlank(text(item, "status"), text(order, "status")),
+        itemStatus: normalizeOrderStatus(text(item, "status"), text(order, "status")),
         quantity: integerValue(item, "shippingCount", "quantity"),
         unitPrice: numberValue(item, "salesPrice", "unitPrice"),
         itemAmount: numberValue(item, "orderPrice", "itemAmount"),
@@ -54,7 +55,7 @@ export class CoupangOrderNormalizer implements OrderNormalizer {
         deliveryMemo: text(receiver, "deliveryMemo"),
         deliveryCompany: text(order, "deliveryCompanyName"),
         trackingNumber: text(order, "invoiceNumber"),
-        deliveryStatus: firstNonBlank(text(order, "orderDeliveryStatus"), text(order, "status")),
+        deliveryStatus: normalizeOrderStatus(text(order, "orderDeliveryStatus"), text(order, "status")),
         rawPayload: receiver
       }
     };

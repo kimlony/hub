@@ -24,45 +24,95 @@ public class OrderExportServiceImpl implements OrderExportService {
 
     @Override
     public OrderExportResponse getOrders(String channelCd, String frDt, String toDt, int page, int size) {
-        return getOrdersInternal(null, channelCd, frDt, toDt, page, size);
+        return getOrdersInternal(null, channelCd, null, null, frDt, toDt, page, size);
     }
 
     @Override
     public OrderExportResponse getOrdersForUser(Long userId, String channelCd, String frDt, String toDt, int page, int size) {
+        return getOrdersForUser(userId, channelCd, null, null, frDt, toDt, page, size);
+    }
+
+    @Override
+    public OrderExportResponse getOrdersForUser(
+            Long userId,
+            String channelCd,
+            String orderStatus,
+            String keyword,
+            String frDt,
+            String toDt,
+            int page,
+            int size
+    ) {
         if (userId == null) {
             throw new IllegalArgumentException("userId is required");
         }
-        return getOrdersInternal(userId, channelCd, frDt, toDt, page, size);
+        return getOrdersInternal(userId, channelCd, orderStatus, keyword, frDt, toDt, page, size);
     }
 
-    private OrderExportResponse getOrdersInternal(Long userId, String channelCd, String frDt, String toDt, int page, int size) {
+    private OrderExportResponse getOrdersInternal(
+            Long userId,
+            String channelCd,
+            String orderStatus,
+            String keyword,
+            String frDt,
+            String toDt,
+            int page,
+            int size
+    ) {
         int safePage = Math.max(1, page);
         int safeSize = Math.max(1, Math.min(size, 200));
         int offset = (safePage - 1) * safeSize;
         String channelParam = blankToNull(channelCd);
+        String orderStatusParam = blankToNull(orderStatus);
+        String keywordParam = blankToNull(keyword);
         String frDtParam = blankToNull(frDt);
         String toDtParam = blankToNull(toDt);
 
-        long total = countOrders(userId, channelParam, frDtParam, toDtParam);
-        List<OrderExportItem> orders = selectOrders(userId, channelParam, frDtParam, toDtParam, safeSize, offset);
+        long total = countOrders(userId, channelParam, orderStatusParam, keywordParam, frDtParam, toDtParam);
+        List<OrderExportItem> orders = selectOrders(
+                userId,
+                channelParam,
+                orderStatusParam,
+                keywordParam,
+                frDtParam,
+                toDtParam,
+                safeSize,
+                offset
+        );
 
         return new OrderExportResponse(200, orders, total, safePage, safeSize, generatedAt());
     }
 
-    private long countOrders(Long userId, String channelCd, String frDt, String toDt) {
+    private long countOrders(
+            Long userId,
+            String channelCd,
+            String orderStatus,
+            String keyword,
+            String frDt,
+            String toDt
+    ) {
         List<Object> params = new ArrayList<>();
         String sql = """
                 SELECT COUNT(*)::bigint
                 FROM hub_collected_order o
                 WHERE 1 = 1
                 """;
-        sql += addFilters(userId, channelCd, frDt, toDt, params);
+        sql += addFilters(userId, channelCd, orderStatus, keyword, frDt, toDt, params);
 
         Long count = jdbcTemplate.queryForObject(sql, Long.class, params.toArray());
         return count == null ? 0L : count;
     }
 
-    private List<OrderExportItem> selectOrders(Long userId, String channelCd, String frDt, String toDt, int size, int offset) {
+    private List<OrderExportItem> selectOrders(
+            Long userId,
+            String channelCd,
+            String orderStatus,
+            String keyword,
+            String frDt,
+            String toDt,
+            int size,
+            int offset
+    ) {
         List<Object> params = new ArrayList<>();
         // External clients read the normalized order tables, not hub_job_result.
         // Raw JSON is still included for traceability, but public fields come
@@ -94,7 +144,7 @@ public class OrderExportServiceImpl implements OrderExportService {
                 ) i ON TRUE
                 WHERE 1 = 1
                 """;
-        sql += addFilters(userId, channelCd, frDt, toDt, params);
+        sql += addFilters(userId, channelCd, orderStatus, keyword, frDt, toDt, params);
         sql += """
                 ORDER BY o.order_date DESC NULLS LAST, o.id DESC
                 LIMIT ? OFFSET ?
@@ -126,7 +176,15 @@ public class OrderExportServiceImpl implements OrderExportService {
         );
     }
 
-    private String addFilters(Long userId, String channelCd, String frDt, String toDt, List<Object> params) {
+    private String addFilters(
+            Long userId,
+            String channelCd,
+            String orderStatus,
+            String keyword,
+            String frDt,
+            String toDt,
+            List<Object> params
+    ) {
         StringBuilder sql = new StringBuilder();
         if (userId != null) {
             sql.append(" AND o.corp_id = (SELECT corp_id FROM users WHERE id = ?)\n");
@@ -135,6 +193,35 @@ public class OrderExportServiceImpl implements OrderExportService {
         if (channelCd != null) {
             sql.append(" AND o.channel_cd = ?\n");
             params.add(channelCd);
+        }
+        if (orderStatus != null) {
+            sql.append(" AND UPPER(COALESCE(o.order_status, '')) = UPPER(?)\n");
+            params.add(orderStatus);
+        }
+        if (keyword != null) {
+            String pattern = "%" + keyword + "%";
+            sql.append("""
+                     AND (
+                         o.channel_order_id ILIKE ?
+                         OR COALESCE(o.buyer_name, '') ILIKE ?
+                         OR EXISTS (
+                             SELECT 1
+                             FROM hub_collected_order_item keyword_item
+                             WHERE keyword_item.order_id = o.id
+                               AND COALESCE(keyword_item.product_name, '') ILIKE ?
+                         )
+                         OR EXISTS (
+                             SELECT 1
+                             FROM hub_collected_order_delivery keyword_delivery
+                             WHERE keyword_delivery.order_id = o.id
+                               AND COALESCE(keyword_delivery.receiver_name, '') ILIKE ?
+                         )
+                     )
+                    """);
+            params.add(pattern);
+            params.add(pattern);
+            params.add(pattern);
+            params.add(pattern);
         }
         if (frDt != null) {
             sql.append(" AND o.order_date >= to_date(?, 'YYYYMMDD')\n");

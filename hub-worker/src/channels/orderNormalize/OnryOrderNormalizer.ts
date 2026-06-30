@@ -1,5 +1,6 @@
 import type { NormalizedOrder, OrderNormalizer, RawOrderContext } from "./types.js";
-import { firstNonBlank, integerValue, numberValue, parseDate, text } from "./normalizeUtils.js";
+import { integerValue, numberValue, parseDate, text } from "./normalizeUtils.js";
+import { normalizeOrderStatus } from "./OrderStatusNormalizer.js";
 
 export class OnryOrderNormalizer implements OrderNormalizer {
   supports(channelCd: string): boolean {
@@ -52,7 +53,7 @@ export class OnryOrderNormalizer implements OrderNormalizer {
         deliveryMemo: text(order, "delivery_message"),
         deliveryCompany: text(order, "shipping_company"),
         trackingNumber: text(order, "tracking_number"),
-        deliveryStatus: text(order, "shipping_status"),
+        deliveryStatus: normalizeOrderStatus(text(order, "shipping_status")),
         rawPayload: order
       }
     };
@@ -62,18 +63,15 @@ export class OnryOrderNormalizer implements OrderNormalizer {
 function resolveOrderStatus(order: Record<string, unknown>): string | null {
   const cancelStatus = text(order, "cancel_status");
   if (cancelStatus === "R") {
-    return "CANCEL_REQUESTED";
+    return "취소접수";
   }
   if (cancelStatus === "Y") {
-    return "CANCELLED";
+    return "취소완료";
   }
 
   const complainStatus = text(order, "complain_status");
-  if (complainStatus) {
-    return complainStatus;
-  }
-
-  return firstNonBlank(
+  return normalizeOrderStatus(
+    complainStatus,
     text(order, "order_status"),
     text(order, "shipping_status"),
     text(order, "order_pay_status")

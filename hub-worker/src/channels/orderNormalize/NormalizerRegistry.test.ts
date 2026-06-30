@@ -71,7 +71,7 @@ describe("order normalizers", () => {
     }, { ...context, channelCd: "NSS", mallKey: "NSS" });
 
     expect(order?.channelOrderId).toBe("MOCKNAVERORDER001");
-    expect(order?.orderStatus).toBe("PAYED");
+    expect(order?.orderStatus).toBe("결제완료");
     expect(order?.buyerName).toBe("Naver Buyer");
     expect(order?.paymentMethod).toBe("CARD");
     expect(order?.productAmount).toBe(21000);
@@ -89,7 +89,7 @@ describe("order normalizers", () => {
       receiverName: "Naver Receiver",
       receiverTel: "010-0000-0002",
       receiverAddr1: "Sample City",
-      deliveryStatus: "READY"
+      deliveryStatus: "상품준비중"
     });
   });
 
@@ -152,6 +152,7 @@ describe("order normalizers", () => {
       ordPrtblTel: "010-0000-0011",
       ordPayAmt: 16310,
       ordAmt: 19000,
+      ordStatNm: "결제완료",
       paymentMethod: "CARD",
       rcvrNm: "11ST Receiver",
       rcvrPrtblNo: "010-0000-0012",
@@ -173,6 +174,7 @@ describe("order normalizers", () => {
     expect(order?.buyerName).toBe("11ST Buyer");
     expect(order?.orderAmount).toBe(16310);
     expect(order?.productAmount).toBe(19000);
+    expect(order?.orderStatus).toBe("결제완료");
     expect(order?.items[0]).toMatchObject({
       channelOrderItemId: "1",
       productId: "MOCK11STPRODUCT001",

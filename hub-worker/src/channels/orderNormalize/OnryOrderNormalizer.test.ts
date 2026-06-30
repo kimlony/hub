@@ -49,7 +49,7 @@ describe("OnryOrderNormalizer", () => {
 
     expect(order).toMatchObject({
       channelOrderId: "ORDER-100",
-      orderStatus: "결제완료",
+      orderStatus: "배송중",
       buyerName: "구매자",
       deliveryFee: 3500,
       items: [{
@@ -78,6 +78,6 @@ describe("OnryOrderNormalizer", () => {
       shipping_status: "배송대기"
     }, context);
 
-    expect(order?.orderStatus).toBe("CANCEL_REQUESTED");
+    expect(order?.orderStatus).toBe("취소접수");
   });
 });

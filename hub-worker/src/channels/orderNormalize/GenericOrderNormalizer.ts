@@ -7,6 +7,7 @@ import {
   parseDate,
   text
 } from "./normalizeUtils.js";
+import { normalizeOrderStatus } from "./OrderStatusNormalizer.js";
 
 export class GenericOrderNormalizer implements OrderNormalizer {
   supports(_channelCd: string): boolean {
@@ -30,7 +31,14 @@ export class GenericOrderNormalizer implements OrderNormalizer {
 
     return {
       channelOrderId,
-      orderStatus: firstNonBlank(text(order, "orderStatus"), text(order, "status"), text(order, "ordStatus"), text(order, "productOrderStatus")),
+      orderStatus: normalizeOrderStatus(
+        text(order, "orderStatus"),
+        text(order, "status"),
+        text(order, "ordStatus"),
+        text(order, "ordStatNm"),
+        text(order, "ordStatCd"),
+        text(order, "productOrderStatus")
+      ),
       orderDate: parseDate(firstNonBlank(text(order, "orderedAt"), text(order, "orderDate"), text(order, "orderDt"), text(order, "ordDt"), text(order, "regDt"))),
       paidAt: parseDate(firstNonBlank(text(order, "paidAt"), text(order, "paymentDate"), text(order, "payDt"))),
       buyerName: firstNonBlank(text(order, "buyerName"), text(order, "ordererName"), text(order, "ordNm"), text(order, "orderName")),
@@ -55,7 +63,14 @@ export class GenericOrderNormalizer implements OrderNormalizer {
         skuCode: firstNonBlank(text(item, "skuCode"), text(item, "vendorItemId")),
         productName: firstNonBlank(text(item, "productName"), text(item, "itemName"), text(item, "goodsNm"), text(item, "prdNm")),
         optionName: firstNonBlank(text(item, "optionName"), text(item, "productOption"), text(item, "optionInfo"), text(item, "slctPrdOptNm")),
-        itemStatus: firstNonBlank(text(item, "itemStatus"), text(item, "productOrderStatus"), text(item, "status")),
+        itemStatus: normalizeOrderStatus(
+          text(item, "itemStatus"),
+          text(item, "productOrderStatus"),
+          text(item, "status"),
+          text(item, "statCd"),
+          text(order, "orderStatus"),
+          text(order, "ordStatNm")
+        ),
         quantity: integerValue(item, "quantity", "qty", "orderQty", "ordQty", "goodsCnt"),
         unitPrice: numberValue(item, "unitPrice", "goodsPrice"),
         itemAmount: numberValue(item, "itemAmount", "orderPrice", "totalPaymentAmount", "goodsPrice"),
@@ -72,7 +87,7 @@ export class GenericOrderNormalizer implements OrderNormalizer {
         deliveryMemo: firstNonBlank(text(order, "deliveryMemo"), text(order, "shippingMemo")),
         deliveryCompany: firstNonBlank(text(order, "deliveryCompany"), text(order, "carrierCode")),
         trackingNumber: firstNonBlank(text(order, "trackingNumber"), text(order, "invoiceNo")),
-        deliveryStatus: firstNonBlank(text(order, "deliveryStatus"), text(order, "orderDeliveryStatus")),
+        deliveryStatus: normalizeOrderStatus(text(order, "deliveryStatus"), text(order, "orderDeliveryStatus")),
         rawPayload: order
       }
     };
