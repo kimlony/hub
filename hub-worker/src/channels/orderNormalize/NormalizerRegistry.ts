@@ -3,6 +3,8 @@ import { FlatCommerceOrderNormalizer } from "./FlatCommerceOrderNormalizer.js";
 import { GenericOrderNormalizer } from "./GenericOrderNormalizer.js";
 import { GiftOrderNormalizer } from "./GiftOrderNormalizer.js";
 import { SmartstoreOrderNormalizer } from "./SmartstoreOrderNormalizer.js";
+import { WchanOrderNormalizer } from "./WchanOrderNormalizer.js";
+import { OnryOrderNormalizer } from "./OnryOrderNormalizer.js";
 import type { OrderNormalizer } from "./types.js";
 
 export class NormalizerRegistry {
@@ -12,6 +14,8 @@ export class NormalizerRegistry {
     new SmartstoreOrderNormalizer(),
     new CoupangOrderNormalizer(),
     new GiftOrderNormalizer(),
+    new WchanOrderNormalizer(),
+    new OnryOrderNormalizer(),
     new FlatCommerceOrderNormalizer(),
     new GenericOrderNormalizer()
   ];

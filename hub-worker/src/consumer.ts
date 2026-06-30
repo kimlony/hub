@@ -14,6 +14,8 @@ import {
 } from "./db/postgres.js";
 import { CoupangOrderHandler } from "./channels/coupang/CoupangOrderHandler.js";
 import { GchanOrderHandler } from "./channels/gchan/GchanOrderHandler.js";
+import { WchanOrderHandler } from "./channels/wchan/WchanOrderHandler.js";
+import { OnryOrderHandler } from "./channels/onry/OnryOrderHandler.js";
 import { GodoOrderHandler } from "./channels/godo/GodoOrderHandler.js";
 import { DartCrawlHandler } from "./channels/dart/DartCrawlHandler.js";
 import { ElevenStOrderHandler } from "./channels/elevenst/ElevenStOrderHandler.js";
@@ -52,6 +54,8 @@ let consumerStarted = false;
 const registry = new HandlerRegistry();
 registry.register("ORDER_COLLECT", new ElevenStOrderHandler(), "11ST");
 registry.register("ORDER_COLLECT", new GchanOrderHandler(), "GCHAN");
+registry.register("ORDER_COLLECT", new WchanOrderHandler(), "WCHAN");
+registry.register("ORDER_COLLECT", new OnryOrderHandler(), "ONRY");
 registry.register("ORDER_COLLECT", new GodoOrderHandler(), "GODO");
 registry.register("ORDER_COLLECT", new CoupangOrderHandler(), "COUPANG");
 registry.register("ORDER_COLLECT", new NfaOrderHandler(), "NSS");

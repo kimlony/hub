@@ -4,6 +4,8 @@ import express, { type Request, type Response } from "express";
 import { CollectHandlerRegistry } from "./handlers/CollectHandlerRegistry.js";
 import { ElevenStCollectHandler } from "./channels/elevenst/ElevenStCollectHandler.js";
 import { GchanCollectHandler } from "./channels/gchan/GchanCollectHandler.js";
+import { WchanCollectHandler } from "./channels/wchan/WchanCollectHandler.js";
+import { OnryCollectHandler } from "./channels/onry/OnryCollectHandler.js";
 import { CoupangCollectHandler } from "./channels/coupang/CoupangCollectHandler.js";
 import { NfaCollectHandler } from "./channels/nfa/NfaCollectHandler.js";
 import { MockMallCollectHandler } from "./channels/mockMall/MockMallCollectHandler.js";
@@ -15,6 +17,8 @@ export function createApp(): express.Application {
   const registry = new CollectHandlerRegistry();
   registry.register("11ST", new ElevenStCollectHandler());
   registry.register("GCHAN", new GchanCollectHandler());
+  registry.register("WCHAN", new WchanCollectHandler());
+  registry.register("ONRY", new OnryCollectHandler());
   registry.register("COUPANG", new CoupangCollectHandler());
   registry.register("NSS", new NfaCollectHandler()); // NSS = 네이버 스마트스토어 (nfa folder)
 

@@ -1,6 +1,8 @@
 import { CoupangOrderNormalizer } from "./CoupangOrderNormalizer.js";
 import { FlatCommerceOrderNormalizer } from "./FlatCommerceOrderNormalizer.js";
 import { GiftOrderNormalizer } from "./GiftOrderNormalizer.js";
+import { WchanOrderNormalizer } from "./WchanOrderNormalizer.js";
+import { OnryOrderNormalizer } from "./OnryOrderNormalizer.js";
 import { NormalizerRegistry } from "./NormalizerRegistry.js";
 import { SmartstoreOrderNormalizer } from "./SmartstoreOrderNormalizer.js";
 import type { RawOrderContext } from "./types.js";
@@ -23,6 +25,8 @@ describe("order normalizers", () => {
     expect(registry.get("NSS")).toBeInstanceOf(SmartstoreOrderNormalizer);
     expect(registry.get("COUPANG")).toBeInstanceOf(CoupangOrderNormalizer);
     expect(registry.get("GCHAN")).toBeInstanceOf(GiftOrderNormalizer);
+    expect(registry.get("WCHAN")).toBeInstanceOf(WchanOrderNormalizer);
+    expect(registry.get("ONRY")).toBeInstanceOf(OnryOrderNormalizer);
     expect(registry.get("11ST")).toBeInstanceOf(FlatCommerceOrderNormalizer);
     expect(registry.get("GODO")).toBeInstanceOf(FlatCommerceOrderNormalizer);
   });
