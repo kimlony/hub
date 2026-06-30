@@ -55,6 +55,8 @@ export class OrderNormalizeHandler implements IJobHandler {
       }
 
       const orderId = await upsertNormalizedOrder({
+        corpId: context.corpId,
+        channelAccountId: context.channelAccountId,
         userId: context.userId,
         requestId: context.requestId,
         requestKey: context.requestKey,
@@ -166,7 +168,20 @@ function buildContext(
     throw new Error("channelCd is required for order normalization");
   }
 
+  const corpId = toInteger(message.payload.corpId ?? resultPayload.corpId ?? jobPayload.corpId);
+  if (corpId === null) {
+    throw new Error("corpId is required for order normalization");
+  }
+  const channelAccountId = toInteger(
+    message.payload.channelAccountId ?? resultPayload.channelAccountId ?? jobPayload.channelAccountId
+  );
+  if (channelAccountId === null) {
+    throw new Error("channelAccountId is required for order normalization");
+  }
+
   return {
+    corpId,
+    channelAccountId,
     userId,
     requestId: result.requestId,
     requestKey: result.requestKey,

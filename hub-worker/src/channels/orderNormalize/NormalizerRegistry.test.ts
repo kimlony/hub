@@ -6,6 +6,8 @@ import { SmartstoreOrderNormalizer } from "./SmartstoreOrderNormalizer.js";
 import type { RawOrderContext } from "./types.js";
 
 const context: RawOrderContext = {
+  corpId: 1,
+  channelAccountId: 1,
   userId: 1,
   requestId: "source-001",
   requestKey: "SOURCE_001",

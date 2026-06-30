@@ -32,7 +32,7 @@ class CrawlSchedulerTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     /**
-     * DART ???餓???쎈뻬 ??CRAWL Job????밴쉐??랁?Outbox ??源?紐? 獄쏆뮉六??롫뮉筌왖 野꺜筌앹빜釉??
+     * DART 크롤링 Job을 생성하고 Outbox 이벤트를 저장하는지 검증한다.
      */
     @Test
     void schedulesDartCrawlJobAndEnqueuesOutboxEvent() {
@@ -66,7 +66,7 @@ class CrawlSchedulerTest {
     }
 
     /**
-     * NAVER_RSS ???餓???쎈뻬 ??RSS??requestKey嚥?CRAWL Job??Outbox ??源?紐? ??밴쉐??롫뮉筌왖 野꺜筌앹빜釉??
+     * RSS 크롤링 Job과 Outbox 이벤트가 올바른 요청 키로 생성되는지 검증한다.
      */
     @Test
     void schedulesRssCrawlJobWithRssRequestKeyAndEnqueuesOutboxEvent() {
@@ -94,7 +94,7 @@ class CrawlSchedulerTest {
     }
 
     /**
-     * 揶쏆늿? requestKey????쨌筌?Job????? ??됱몵筌?餓λ쵎??Job ??밴쉐??Outbox 獄쏆뮉六????? ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 동일한 요청 키의 Job이 있으면 중복 생성을 건너뛰는지 검증한다.
      */
     @Test
     void skipsCrawlJobWhenRequestKeyAlreadyExists() {
@@ -114,7 +114,7 @@ class CrawlSchedulerTest {
     }
 
     /**
-     * ???餓?筌ｌ꼶??餓?DB ??살첒揶쎛 獄쏆뮇源??猷???됱뇚揶쎛 獄쏅쉼?앮에??袁る솁??? ??꾪?Outbox 獄쏆뮉六????? ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 크롤링 스케줄 처리 실패가 스케줄러 전체 예외로 전파되지 않는지 검증한다.
      */
     @Test
     void doesNotThrowWhenCrawlSchedulingFails() {
@@ -128,6 +128,9 @@ class CrawlSchedulerTest {
         verify(jobOutboxService, never()).enqueue(any(HubJobEvent.class));
     }
 
+    /**
+     * 크롤링 스케줄러가 비활성화되면 Job을 생성하지 않는지 검증한다.
+     */
     @Test
     void skipsCrawlJobWhenSchedulerIsDisabled() {
         CrawlScheduler scheduler = new CrawlScheduler(

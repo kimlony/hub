@@ -209,8 +209,9 @@ public class CollectScheduleServiceImpl implements CollectScheduleService {
     private void validateRequest(HubUser user, CollectScheduleRequest request) {
         normalizeDateRangeType(request.dateRangeType());
         for (String mallKey : request.mallKeys()) {
-            channelMapper.findActiveByUserIdAndMallKey(user.getId(), mallKey)
-                    .orElseThrow(() -> new ChannelNotFoundException(mallKey + " channel is not active"));
+            if (channelMapper.findActiveByCorpIdAndMallKey(user.getCorpId(), mallKey).isEmpty()) {
+                throw new ChannelNotFoundException(mallKey + " channel has no active account");
+            }
         }
     }
 

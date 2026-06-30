@@ -3,6 +3,7 @@ package hub.support;
 import hub.external.schema.ExternalApiClientSchemaInitializer;
 import hub.order.schema.OrderNormalizeSchemaInitializer;
 import hub.schedule.schema.CollectScheduleSchemaInitializer;
+import hub.tenant.schema.TenantSchemaInitializer;
 import java.sql.Connection;
 import javax.sql.DataSource;
 import org.springframework.core.io.ClassPathResource;
@@ -45,6 +46,15 @@ public final class IntegrationTestDatabase {
     private static void initializeSchema(DataSource dataSource) {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         runScript(dataSource, "db/init-auth.sql");
+        new TenantSchemaInitializer(jdbcTemplate).initialize();
+        jdbcTemplate.update("""
+                INSERT INTO hub_corp (corp_cd, corp_name)
+                VALUES ('TEST-DEFAULT', 'Integration Test Corp')
+                ON CONFLICT (corp_cd) DO NOTHING
+                """);
+        Long defaultCorpId = jdbcTemplate.queryForObject(
+                "SELECT id FROM hub_corp WHERE corp_cd = 'TEST-DEFAULT'", Long.class);
+        jdbcTemplate.execute("ALTER TABLE users ALTER COLUMN corp_id SET DEFAULT " + defaultCorpId);
         new ExternalApiClientSchemaInitializer(jdbcTemplate).initialize();
         new CollectScheduleSchemaInitializer(jdbcTemplate).initialize();
         new OrderNormalizeSchemaInitializer(jdbcTemplate).initialize();

@@ -11,15 +11,19 @@ import org.apache.ibatis.annotations.Param;
 public interface ChannelMapper {
     List<HubChannel>     findAllHubChannels();
     boolean              existsHubChannel(@Param("mallKey") String mallKey);
-    List<ChannelRow>     findAllByUserId(@Param("userId") Long userId);
-    Optional<ChannelRow> findByUserIdAndMallKey(@Param("userId") Long userId,
-                                                @Param("mallKey") String mallKey);
-    Optional<ChannelRow> findActiveByUserIdAndMallKey(@Param("userId") Long userId,
+    List<ChannelRow>     findAllByCorpId(@Param("corpId") Long corpId);
+    Optional<ChannelRow> findByCorpIdAndId(@Param("corpId") Long corpId,
+                                           @Param("id") Long id);
+    Optional<ChannelRow> findActiveByCorpIdAndId(@Param("corpId") Long corpId,
+                                                 @Param("id") Long id);
+    List<ChannelRow>     findActiveByCorpIdAndMallKey(@Param("corpId") Long corpId,
                                                       @Param("mallKey") String mallKey);
+    Optional<ChannelRow> findAnyByCorpIdAndMallKey(@Param("corpId") Long corpId,
+                                                   @Param("mallKey") String mallKey);
     void insert(ChannelRow row);
     void update(ChannelRow row);
-    void delete(@Param("userId") Long userId, @Param("mallKey") String mallKey);
-    void updateUseYn(@Param("userId") Long userId,
-                     @Param("mallKey") String mallKey,
+    void delete(@Param("corpId") Long corpId, @Param("id") Long id);
+    void updateUseYn(@Param("corpId") Long corpId,
+                     @Param("id") Long id,
                      @Param("useYn") String useYn);
 }

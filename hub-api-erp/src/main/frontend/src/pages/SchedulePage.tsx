@@ -85,7 +85,11 @@ export default function SchedulePage() {
   const [error, setError] = useState<string | null>(null)
 
   const activeChannels = useMemo(
-    () => channels.filter((channel) => channel.registered && channel.useYn === 'Y'),
+    () => [...new Map(
+      channels
+        .filter((channel) => channel.registered && channel.useYn === 'Y')
+        .map((channel) => [channel.mallKey, channel]),
+    ).values()],
     [channels],
   )
 

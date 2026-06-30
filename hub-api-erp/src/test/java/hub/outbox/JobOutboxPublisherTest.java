@@ -34,7 +34,7 @@ class JobOutboxPublisherTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * Outbox?癒?퐣 揶쎛?紐꾩궔 ??源?硫? ?類ㅺ맒?怨몄몵嚥?Kafka??獄쏆뮉六??롢늺 SENT ?怨밴묶嚥?癰궰野껋럥由?遺? 野꺜筌앹빜釉??
+     * 선점한 Outbox 이벤트를 발행하고 전송 완료로 변경하는지 검증한다.
      */
     @Test
     void publishesClaimedOutboxEventAndMarksSent() throws Exception {
@@ -64,7 +64,7 @@ class JobOutboxPublisherTest {
     }
 
     /**
-     * Kafka 獄쏆뮉六????쎈솭???筌?筌ㅼ뮆? ???????쏅땾 ?袁⑹뵠筌?RETRY ???怨몄몵嚥???롫즼?귐됰뮉筌왖 野꺜筌앹빜釉??
+     * Kafka 발행 실패가 최대 횟수 전이면 재시도로 변경하는지 검증한다.
      */
     @Test
     void marksRetryWhenKafkaPublishFailsBeforeMaxRetry() throws Exception {
@@ -88,7 +88,7 @@ class JobOutboxPublisherTest {
     }
 
     /**
-     * Kafka 獄쏆뮉六???쎈솭揶쎛 筌ㅼ뮆? ???????쏅땾???袁⑤뼎??롢늺 FAILED ?怨밴묶嚥?癰궰野껋럥由?遺? 野꺜筌앹빜釉??
+     * Kafka 발행 실패가 최대 횟수에 도달하면 최종 실패로 변경하는지 검증한다.
      */
     @Test
     void marksFailedWhenKafkaPublishFailsAtMaxRetry() throws Exception {
@@ -112,7 +112,7 @@ class JobOutboxPublisherTest {
     }
 
     /**
-     * Outbox payload JSON ???뼓????쎈솭??롢늺 Kafka 獄쏆뮉六???곸뵠 RETRY ???怨몄몵嚥???롫즼?귐됰뮉筌왖 野꺜筌앹빜釉??
+     * Outbox payload 파싱 실패 시 재시도로 변경하는지 검증한다.
      */
     @Test
     void marksRetryWhenOutboxPayloadCannotBeParsed() {
@@ -130,7 +130,7 @@ class JobOutboxPublisherTest {
     }
 
     /**
-     * 獄쏆뮉六?????Outbox ??源?硫? ??곸몵筌?Kafka 獄쏆뮉六??援??怨밴묶 癰궰野껋럩????묐뻬??? ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 선점된 Outbox 이벤트가 없으면 발행 작업을 하지 않는지 검증한다.
      */
     @Test
     void doesNothingWhenNoOutboxEventIsClaimed() {

@@ -41,7 +41,7 @@ class JobOutboxClaimSqlIntegrationTest {
     }
 
     /**
-     * next_retry_at??筌왖??PENDING ??源?紐? claim??롢늺 PUBLISHING ?怨밴묶?? locked_by揶쎛 揶쏄퉮???롫뮉筌왖 野꺜筌앹빜釉??
+     * 발행 시각이 된 대기 이벤트를 선점하고 발행 중으로 변경하는지 검증한다.
      */
     @Test
     void claimPendingClaimsDuePendingEventAndMarksPublishing() {
@@ -57,7 +57,7 @@ class JobOutboxClaimSqlIntegrationTest {
     }
 
     /**
-     * next_retry_at??沃섎챶???PENDING ??源?紐껊뮉 ?袁⑹춦 ???????볦퍢???袁⑤빍沃샕嚥?claim??? ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 재시도 시각 전의 대기 이벤트를 선점하지 않는지 검증한다.
      */
     @Test
     void claimPendingDoesNotClaimPendingEventBeforeNextRetryAt() {
@@ -72,7 +72,7 @@ class JobOutboxClaimSqlIntegrationTest {
     }
 
     /**
-     * ??살삋??PUBLISHING ??源?紐껊뮉 stale嚥??癒?뼊????쇰뻻 claim??????덈뮉筌왖 野꺜筌앹빜釉??
+     * 오래 멈춘 발행 중 이벤트를 다시 선점하는지 검증한다.
      */
     @Test
     void claimPendingReclaimsStalePublishingEvent() {
@@ -88,7 +88,7 @@ class JobOutboxClaimSqlIntegrationTest {
     }
 
     /**
-     * 獄쎻뫕??claim??fresh PUBLISHING ??源?紐껊뮉 stale???袁⑤빍沃샕嚥???쇰뻻 claim??? ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 최근 발행 중으로 변경된 이벤트를 다시 선점하지 않는지 검증한다.
      */
     @Test
     void claimPendingDoesNotReclaimFreshPublishingEvent() {
@@ -103,7 +103,7 @@ class JobOutboxClaimSqlIntegrationTest {
     }
 
     /**
-     * ??甕?claim??뤿선 PUBLISHING??????源?紐껊뮉 ??쇱벉 claim?癒?퐣 餓λ쵎???곗쨮 ??レ뿳筌왖 ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 발행 중인 동일 이벤트를 중복 선점하지 않는지 검증한다.
      */
     @Test
     void claimPendingDoesNotClaimSameEventTwiceAfterItBecomesPublishing() {

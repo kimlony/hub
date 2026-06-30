@@ -156,6 +156,27 @@ async function runMockMallLoad() {
   const errorRate = toRate(options.errorRate);
   const timeoutRate = toRate(options.timeoutRate);
   const userId = toPositiveInt(options.userId, 1);
+  const accountResult = await pool.query(
+    `
+      WITH target_user AS (
+        SELECT id, corp_id FROM users WHERE id = $1
+      ), inserted AS (
+        INSERT INTO user_malls (corp_id, user_id, mall_key, account_name, use_yn)
+        SELECT corp_id, id, 'MOCK_MALL', 'Mock Mall Load Test', 'Y'
+        FROM target_user
+        ON CONFLICT (corp_id, mall_key) WHERE mall_key = 'MOCK_MALL'
+        DO UPDATE SET use_yn = 'Y'
+        RETURNING id, corp_id
+      )
+      SELECT id, corp_id FROM inserted
+    `,
+    [userId]
+  );
+  if (accountResult.rows.length === 0) {
+    throw new Error(`Load-test user not found: userId=${userId}`);
+  }
+  const channelAccountId = Number(accountResult.rows[0].id);
+  const corpId = Number(accountResult.rows[0].corp_id);
   const totalPages = Math.ceil(orders / pageSize);
 
   try {
@@ -165,6 +186,8 @@ async function runMockMallLoad() {
       const requestKey = `${runId}_MOCK_MALL_${String(page).padStart(5, "0")}`;
       const payload = {
         userId,
+        corpId,
+        channelAccountId,
         channelCd: "MOCK_MALL",
         mallKey,
         page,

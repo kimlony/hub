@@ -32,7 +32,7 @@ class ExternalApiAuthFilterTest {
     }
 
     /**
-     * ?紐? token 獄쏆뮄??endpoint??Bearer token 野꺜筌??袁り숲????筌왖 ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 토큰 발급 경로에서는 외부 API 인증 필터를 건너뛰는지 검증한다.
      */
     @Test
     void skipsTokenIssueEndpoint() throws Exception {
@@ -49,7 +49,7 @@ class ExternalApiAuthFilterTest {
     }
 
     /**
-     * ??곗뺘 Hub API endpoint??External API ?紐꾩쵄 ?袁り숲揶쎛 筌ｌ꼶???? ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 일반 HUB API 경로에서는 외부 API 인증 필터를 건너뛰는지 검증한다.
      */
     @Test
     void skipsNonExternalApiEndpoint() throws Exception {
@@ -66,7 +66,7 @@ class ExternalApiAuthFilterTest {
     }
 
     /**
-     * Authorization ??삳쐭揶쎛 ??곸몵筌?principal??筌띾슢諭억쭪? ??꾪???쇱벉 ?袁り숲嚥???띾┛?遺? 野꺜筌앹빜釉??
+     * Authorization 헤더가 없으면 인증 주체를 만들지 않는지 검증한다.
      */
     @Test
     void doesNotCreatePrincipalWhenAuthorizationHeaderIsMissing() throws Exception {
@@ -83,7 +83,7 @@ class ExternalApiAuthFilterTest {
     }
 
     /**
-     * Bearer token???醫륁뒞??? ??놁몵筌?claims????? ??꾪?principal??筌띾슢諭억쭪? ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 유효하지 않은 토큰으로 인증 주체를 만들지 않는지 검증한다.
      */
     @Test
     void doesNotCreatePrincipalWhenTokenIsInvalid() throws Exception {
@@ -104,7 +104,7 @@ class ExternalApiAuthFilterTest {
     }
 
     /**
-     * JWT揶쎛 ?醫륁뒞??猷?type??EXTERNAL???袁⑤빍筌??紐? API principal??筌띾슢諭억쭪? ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 외부 API용이 아닌 JWT로 인증 주체를 만들지 않는지 검증한다.
      */
     @Test
     void doesNotCreatePrincipalWhenJwtTypeIsNotExternal() throws Exception {
@@ -126,7 +126,7 @@ class ExternalApiAuthFilterTest {
     }
 
     /**
-     * ?醫륁뒞??EXTERNAL token????userId, clientId, scopes??揶쎛筌?ExternalApiPrincipal??SecurityContext?????館釉?遺? 野꺜筌앹빜釉??
+     * 유효한 외부 API 토큰으로 인증 주체를 생성하는지 검증한다.
      */
     @Test
     void createsExternalPrincipalWhenTokenIsValidExternalToken() throws Exception {

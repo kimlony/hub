@@ -2,10 +2,12 @@ package hub.order.schema;
 
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
+@DependsOn("tenantSchemaInitializer")
 @RequiredArgsConstructor
 public class OrderNormalizeSchemaInitializer {
 
@@ -16,6 +18,8 @@ public class OrderNormalizeSchemaInitializer {
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS hub_collected_order (
                     id BIGSERIAL PRIMARY KEY,
+                    corp_id BIGINT NOT NULL REFERENCES hub_corp(id),
+                    channel_account_id BIGINT NOT NULL REFERENCES user_malls(id),
                     user_id BIGINT NOT NULL REFERENCES users(id),
                     request_id VARCHAR(36),
                     request_key VARCHAR(200),
@@ -44,9 +48,73 @@ public class OrderNormalizeSchemaInitializer {
                 )
                 """);
         jdbcTemplate.execute("ALTER TABLE hub_collected_order ADD COLUMN IF NOT EXISTS user_id BIGINT");
+        jdbcTemplate.execute("ALTER TABLE hub_collected_order ADD COLUMN IF NOT EXISTS corp_id BIGINT");
+        jdbcTemplate.execute("ALTER TABLE hub_collected_order ADD COLUMN IF NOT EXISTS channel_account_id BIGINT");
         jdbcTemplate.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS uidx_hub_collected_order_channel_order
-                ON hub_collected_order(channel_cd, channel_order_id)
+                INSERT INTO user_malls (corp_id, user_id, mall_key, account_name, use_yn)
+                SELECT DISTINCT u.corp_id, o.user_id, o.mall_key, o.mall_key || '-legacy', 'Y'
+                FROM hub_collected_order o
+                JOIN users u ON u.id = o.user_id
+                WHERE o.channel_account_id IS NULL
+                  AND o.mall_key IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM user_malls m
+                      WHERE m.user_id = o.user_id
+                        AND m.mall_key = o.mall_key
+                  )
+                """);
+        jdbcTemplate.execute("""
+                UPDATE hub_collected_order o
+                SET corp_id = u.corp_id,
+                    channel_account_id = (
+                        SELECT m.id
+                        FROM user_malls m
+                        WHERE m.user_id = o.user_id
+                          AND m.mall_key = o.mall_key
+                        ORDER BY m.id
+                        LIMIT 1
+                    )
+                FROM users u
+                WHERE o.user_id = u.id
+                  AND (o.corp_id IS NULL OR o.channel_account_id IS NULL)
+                """);
+        jdbcTemplate.execute("ALTER TABLE hub_collected_order ALTER COLUMN corp_id SET NOT NULL");
+        jdbcTemplate.execute("ALTER TABLE hub_collected_order ALTER COLUMN channel_account_id SET NOT NULL");
+        jdbcTemplate.execute("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname IN ('fk_hub_collected_order_corp', 'hub_collected_order_corp_id_fkey')
+                          AND conrelid = 'hub_collected_order'::regclass
+                    ) THEN
+                        ALTER TABLE hub_collected_order
+                        ADD CONSTRAINT fk_hub_collected_order_corp
+                        FOREIGN KEY (corp_id) REFERENCES hub_corp(id);
+                    END IF;
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname IN (
+                            'fk_hub_collected_order_channel_account',
+                            'hub_collected_order_channel_account_id_fkey'
+                        )
+                          AND conrelid = 'hub_collected_order'::regclass
+                    ) THEN
+                        ALTER TABLE hub_collected_order
+                        ADD CONSTRAINT fk_hub_collected_order_channel_account
+                        FOREIGN KEY (channel_account_id) REFERENCES user_malls(id);
+                    END IF;
+                END $$
+                """);
+        jdbcTemplate.execute("DROP INDEX IF EXISTS uidx_hub_collected_order_channel_order");
+        jdbcTemplate.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uidx_hub_collected_order_account_order
+                ON hub_collected_order(channel_account_id, channel_order_id)
+                """);
+        jdbcTemplate.execute("""
+                CREATE INDEX IF NOT EXISTS idx_hub_collected_order_corp_date
+                ON hub_collected_order(corp_id, order_date DESC)
                 """);
         jdbcTemplate.execute("""
                 CREATE INDEX IF NOT EXISTS idx_hub_collected_order_user_date

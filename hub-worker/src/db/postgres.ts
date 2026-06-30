@@ -103,6 +103,89 @@ export async function ensurePostgresSchema(): Promise<void> {
 
 async function ensurePostgresSchemaUnlocked(): Promise<void> {
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_corp (
+      id BIGSERIAL PRIMARY KEY,
+      corp_cd VARCHAR(50) UNIQUE NOT NULL,
+      corp_name VARCHAR(200) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS corp_id BIGINT`);
+  await pool.query(`
+    INSERT INTO hub_corp (corp_cd, corp_name)
+    SELECT 'LEGACY-' || id, username
+    FROM users
+    WHERE corp_id IS NULL
+    ON CONFLICT (corp_cd) DO NOTHING
+  `);
+  await pool.query(`
+    UPDATE users u
+    SET corp_id = c.id
+    FROM hub_corp c
+    WHERE u.corp_id IS NULL
+      AND c.corp_cd = 'LEGACY-' || u.id
+  `);
+  await pool.query(`ALTER TABLE users ALTER COLUMN corp_id SET NOT NULL`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_malls (
+      id BIGSERIAL PRIMARY KEY,
+      corp_id BIGINT NOT NULL REFERENCES hub_corp(id),
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      mall_key VARCHAR(20) NOT NULL,
+      account_name VARCHAR(100) NOT NULL,
+      key VARCHAR(500),
+      key2 VARCHAR(500),
+      auth_key VARCHAR(500),
+      mall_id VARCHAR(255),
+      mall_pw VARCHAR(500),
+      use_yn CHAR(1) NOT NULL DEFAULT 'Y',
+      vendor_id VARCHAR(500)
+    )
+  `);
+  await pool.query(`ALTER TABLE user_malls ADD COLUMN IF NOT EXISTS id BIGSERIAL`);
+  await pool.query(`ALTER TABLE user_malls ADD COLUMN IF NOT EXISTS corp_id BIGINT`);
+  await pool.query(`ALTER TABLE user_malls ADD COLUMN IF NOT EXISTS account_name VARCHAR(100)`);
+  await pool.query(`
+    UPDATE user_malls m
+    SET corp_id = u.corp_id
+    FROM users u
+    WHERE m.user_id = u.id AND m.corp_id IS NULL
+  `);
+  await pool.query(`
+    UPDATE user_malls
+    SET account_name = mall_key || '-' || id
+    WHERE account_name IS NULL OR BTRIM(account_name) = ''
+  `);
+  await pool.query(`ALTER TABLE user_malls ALTER COLUMN corp_id SET NOT NULL`);
+  await pool.query(`ALTER TABLE user_malls ALTER COLUMN account_name SET NOT NULL`);
+  await pool.query(`
+    DO $$
+    DECLARE
+      id_attnum SMALLINT;
+      current_key SMALLINT[];
+    BEGIN
+      SELECT attnum INTO id_attnum
+      FROM pg_attribute
+      WHERE attrelid = 'user_malls'::regclass AND attname = 'id';
+
+      SELECT conkey INTO current_key
+      FROM pg_constraint
+      WHERE conrelid = 'user_malls'::regclass AND contype = 'p';
+
+      IF current_key IS DISTINCT FROM ARRAY[id_attnum] THEN
+        ALTER TABLE user_malls DROP CONSTRAINT IF EXISTS user_malls_pkey;
+        ALTER TABLE user_malls ADD CONSTRAINT user_malls_pkey PRIMARY KEY (id);
+      END IF;
+    END $$
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_malls_corp ON user_malls(corp_id, mall_key, use_yn)`);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uidx_user_malls_mock_corp
+    ON user_malls(corp_id, mall_key)
+    WHERE mall_key = 'MOCK_MALL'
+  `);
+  await pool.query(`
     DO $$
     BEGIN
       IF to_regclass('public.hub_job') IS NOT NULL THEN
@@ -142,6 +225,8 @@ async function ensurePostgresSchemaUnlocked(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS hub_collected_order (
       id BIGSERIAL PRIMARY KEY,
+      corp_id BIGINT NOT NULL REFERENCES hub_corp(id),
+      channel_account_id BIGINT NOT NULL REFERENCES user_malls(id),
       user_id BIGINT NOT NULL REFERENCES users(id),
       request_id VARCHAR(36),
       request_key VARCHAR(200),
@@ -174,9 +259,41 @@ async function ensurePostgresSchemaUnlocked(): Promise<void> {
     ADD COLUMN IF NOT EXISTS user_id BIGINT
   `);
   await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS uidx_hub_collected_order_channel_order
-    ON hub_collected_order(channel_cd, channel_order_id)
+    ALTER TABLE hub_collected_order ADD COLUMN IF NOT EXISTS corp_id BIGINT;
+    ALTER TABLE hub_collected_order ADD COLUMN IF NOT EXISTS channel_account_id BIGINT
   `);
+  await pool.query(`
+    INSERT INTO user_malls (corp_id, user_id, mall_key, account_name, use_yn)
+    SELECT DISTINCT u.corp_id, o.user_id, o.mall_key, o.mall_key || '-legacy', 'Y'
+    FROM hub_collected_order o
+    JOIN users u ON u.id = o.user_id
+    WHERE o.channel_account_id IS NULL
+      AND o.mall_key IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM user_malls m
+        WHERE m.user_id = o.user_id AND m.mall_key = o.mall_key
+      )
+  `);
+  await pool.query(`
+    UPDATE hub_collected_order o
+    SET corp_id = u.corp_id,
+        channel_account_id = (
+          SELECT m.id FROM user_malls m
+          WHERE m.user_id = o.user_id AND m.mall_key = o.mall_key
+          ORDER BY m.id LIMIT 1
+        )
+    FROM users u
+    WHERE o.user_id = u.id
+      AND (o.corp_id IS NULL OR o.channel_account_id IS NULL)
+  `);
+  await pool.query(`ALTER TABLE hub_collected_order ALTER COLUMN corp_id SET NOT NULL`);
+  await pool.query(`ALTER TABLE hub_collected_order ALTER COLUMN channel_account_id SET NOT NULL`);
+  await pool.query(`DROP INDEX IF EXISTS uidx_hub_collected_order_channel_order`);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uidx_hub_collected_order_account_order
+    ON hub_collected_order(channel_account_id, channel_order_id)
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_hub_collected_order_corp_date ON hub_collected_order(corp_id, order_date DESC)`);
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_hub_collected_order_user_date
     ON hub_collected_order(user_id, order_date DESC)
@@ -575,6 +692,8 @@ export async function saveNormalizeCheckpoint(input: {
 }
 
 export async function upsertNormalizedOrder(input: {
+  corpId: number;
+  channelAccountId: number;
   userId: number;
   requestId: string;
   requestKey: string;
@@ -598,6 +717,8 @@ export async function upsertNormalizedOrder(input: {
   const result = await pool.query<{ id: number }>(
     `
       INSERT INTO hub_collected_order (
+        corp_id,
+        channel_account_id,
         user_id,
         request_id,
         request_key,
@@ -618,9 +739,9 @@ export async function upsertNormalizedOrder(input: {
         discount_amount,
         raw_payload
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::jsonb
       )
-      ON CONFLICT (channel_cd, channel_order_id) DO UPDATE
+      ON CONFLICT (channel_account_id, channel_order_id) DO UPDATE
         SET user_id = EXCLUDED.user_id,
             request_id = EXCLUDED.request_id,
             request_key = EXCLUDED.request_key,
@@ -642,6 +763,8 @@ export async function upsertNormalizedOrder(input: {
       RETURNING id
     `,
     [
+      input.corpId,
+      input.channelAccountId,
       input.userId,
       input.requestId,
       input.requestKey,
@@ -902,8 +1025,8 @@ export async function saveNews(items: NewsItemInput[]): Promise<{ inserted: numb
 }
 
 export async function findActiveChannelCredentials(
-  userId: number,
-  mallKey: string
+  corpId: number,
+  channelAccountId: number
 ): Promise<Record<string, string | null>> {
   const result = await pool.query<{
     key: string | null;
@@ -916,21 +1039,21 @@ export async function findActiveChannelCredentials(
     `
       SELECT key, key2, auth_key, mall_id, mall_pw, vendor_id
       FROM user_malls
-      WHERE user_id = $1
-        AND mall_key = $2
+      WHERE corp_id = $1
+        AND id = $2
         AND use_yn = 'Y'
     `,
-    [userId, mallKey]
+    [corpId, channelAccountId]
   );
 
   const row = result.rows[0];
   if (!row) {
     logger.warn({
       event: "CHANNEL_CREDENTIAL_NOT_FOUND",
-      userId,
-      mallKey
+      corpId,
+      channelAccountId
     }, "Active channel credential not found");
-    throw new Error(`Active channel credential not found: userId=${userId}, mallKey=${mallKey}`);
+    throw new Error(`Active channel credential not found: corpId=${corpId}, channelAccountId=${channelAccountId}`);
   }
 
   return {
@@ -940,6 +1063,33 @@ export async function findActiveChannelCredentials(
     mallId: decryptAes(row.mall_id),
     mallPw: decryptAes(row.mall_pw),
     vendorId: decryptAes(row.vendor_id)
+  };
+}
+
+export async function findActiveChannelAccountIdentity(
+  userId: number,
+  mallKey: string
+): Promise<{ corpId: number; channelAccountId: number }> {
+  const result = await pool.query<{ corp_id: string; id: string }>(
+    `
+      SELECT m.corp_id, m.id
+      FROM user_malls m
+      JOIN users u ON u.corp_id = m.corp_id
+      WHERE u.id = $1
+        AND m.mall_key = $2
+        AND m.use_yn = 'Y'
+      ORDER BY m.id
+      LIMIT 1
+    `,
+    [userId, mallKey]
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error(`Active channel account not found: userId=${userId}, mallKey=${mallKey}`);
+  }
+  return {
+    corpId: Number(row.corp_id),
+    channelAccountId: Number(row.id)
   };
 }
 

@@ -46,7 +46,7 @@ class CollectScheduleServiceImplTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * claim????륁춿 ???餓κ쑴????쎈뻬??run log??筌띾슢諭얏?Job ??밴쉐 ?源껊궗 ???源껊궗 ?怨밴묶嚥?疫꿸퀡以??롫뮉筌왖 野꺜筌앹빜釉??
+     * 선점한 수집 스케줄을 실행하고 성공 상태로 기록하는지 검증한다.
      */
     @Test
     void runDueSchedulesExecutesClaimedScheduleAndMarksSuccess() {
@@ -80,7 +80,7 @@ class CollectScheduleServiceImplTest {
     }
 
     /**
-     * ???餓???쎈뻬 餓?Job ??밴쉐????쎈솭??롢늺 run log?? schedule????쎈솭 ?怨밴묶嚥?疫꿸퀡以??롫뮉筌왖 野꺜筌앹빜釉??
+     * 수집 Job 생성 실패 시 스케줄 실행 이력을 실패로 기록하는지 검증한다.
      */
     @Test
     void runDueSchedulesMarksFailedWhenJobCreationFails() {
@@ -101,7 +101,7 @@ class CollectScheduleServiceImplTest {
     }
 
     /**
-     * ??쎈뻬 ???????餓κ쑴????곸몵筌?Job ??밴쉐??援?run log ???關????묐뻬??? ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 선점된 스케줄이 없으면 아무 작업도 하지 않는지 검증한다.
      */
     @Test
     void runDueSchedulesDoesNothingWhenNoScheduleIsClaimed() {

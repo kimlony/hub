@@ -7,7 +7,7 @@ import java.util.List;
 public interface ChannelService {
     List<ChannelResponse> getChannels(String username);
     void register(String username, String mallKey, ChannelRequest request);
-    void update(String username, String mallKey, ChannelRequest request);
-    void delete(String username, String mallKey);
-    void toggleUseYn(String username, String mallKey);
+    void update(String username, Long channelAccountId, ChannelRequest request);
+    void delete(String username, Long channelAccountId);
+    void toggleUseYn(String username, Long channelAccountId);
 }

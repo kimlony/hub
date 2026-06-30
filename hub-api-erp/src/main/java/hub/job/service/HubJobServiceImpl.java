@@ -7,6 +7,7 @@ import hub.auth.AuthException;
 import hub.auth.domain.HubUser;
 import hub.auth.mapper.UserMapper;
 import hub.channel.ChannelNotFoundException;
+import hub.channel.domain.ChannelRow;
 import hub.channel.mapper.ChannelMapper;
 import hub.exception.HubJobNotFoundException;
 import hub.job.domain.HubJob;
@@ -29,6 +30,7 @@ import hub.outbox.service.JobOutboxService;
 import hub.port.JobEventPort;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -59,9 +61,9 @@ public class HubJobServiceImpl implements HubJobService {
     public HubJobBatchResponse createBatchJobs(String username, HubJobBatchRequest request) {
         HubUser user = findUserByUsername(username);
 
-        List<HubJobBatchResponse.JobResult> jobs = request.mallKeys()
+        List<HubJobBatchResponse.JobResult> jobs = resolveChannelAccounts(user, request)
                 .stream()
-                .map(mallKey -> createBatchJob(user, mallKey, request, TriggerType.MANUAL, null))
+                .map(account -> createBatchJob(user, account, request, TriggerType.MANUAL, null))
                 .collect(Collectors.toList());
 
         return new HubJobBatchResponse(jobs);
@@ -71,9 +73,9 @@ public class HubJobServiceImpl implements HubJobService {
     public HubJobBatchResponse createScheduledBatchJobs(String username, Long scheduleRunId, HubJobBatchRequest request) {
         HubUser user = findUserByUsername(username);
 
-        List<HubJobBatchResponse.JobResult> jobs = request.mallKeys()
+        List<HubJobBatchResponse.JobResult> jobs = resolveChannelAccounts(user, request)
                 .stream()
-                .map(mallKey -> createBatchJob(user, mallKey, request, TriggerType.SCHEDULE, scheduleRunId))
+                .map(account -> createBatchJob(user, account, request, TriggerType.SCHEDULE, scheduleRunId))
                 .collect(Collectors.toList());
 
         return new HubJobBatchResponse(jobs);
@@ -91,24 +93,21 @@ public class HubJobServiceImpl implements HubJobService {
 
     private HubJobBatchResponse.JobResult createBatchJob(
             HubUser user,
-            String mallKey,
+            ChannelRow account,
             HubJobBatchRequest request,
             TriggerType triggerType,
             Long scheduleRunId
     ) {
-        if (!isMockMall(mallKey)) {
-            channelMapper.findActiveByUserIdAndMallKey(user.getId(), mallKey)
-                    .orElseThrow(() -> new ChannelNotFoundException(mallKey + " channel is not active"));
-        }
+        String mallKey = account.getMallKey();
 
-        String requestKey = buildRequestKey(mallKey, request, user, triggerType, scheduleRunId);
+        String requestKey = buildRequestKey(account, request, triggerType, scheduleRunId);
         HubJob existing = hubJobMapper.selectByRequestKey(requestKey);
 
         String requestId;
         String status;
 
         if (existing == null) {
-            HubJob newJob = buildNewJob(requestKey, mallKey, request, user, triggerType, scheduleRunId);
+            HubJob newJob = buildNewJob(requestKey, account, request, user, triggerType, scheduleRunId);
 
             // requestKey unique index makes concurrent duplicate requests idempotent.
             int inserted = hubJobMapper.insertJobIfAbsent(newJob);
@@ -131,7 +130,7 @@ public class HubJobServiceImpl implements HubJobService {
             requestId = existing.getRequestId();
             status = existing.getStatus().name();
         } else {
-            String latestPayload = serializePayload(mallKey, request, user, triggerType, scheduleRunId);
+            String latestPayload = serializePayload(account, request, user, triggerType, scheduleRunId);
             existing.setPayload(latestPayload);
             existing.setStatus(HubJobStatus.QUEUED);
             int updated = hubJobMapper.updateStatusToReset(requestKey, latestPayload);
@@ -148,7 +147,7 @@ public class HubJobServiceImpl implements HubJobService {
 
     private HubJob buildNewJob(
             String requestKey,
-            String mallKey,
+            ChannelRow account,
             HubJobBatchRequest request,
             HubUser user,
             TriggerType triggerType,
@@ -159,20 +158,21 @@ public class HubJobServiceImpl implements HubJobService {
                 .requestKey(requestKey)
                 .jobType("ORDER_COLLECT")
                 .sourceErp("HUB")
-                .channelCd(mallKey)
+                .channelCd(account.getMallKey())
                 .status(HubJobStatus.QUEUED)
-                .payload(serializePayload(mallKey, request, user, triggerType, scheduleRunId))
+                .payload(serializePayload(account, request, user, triggerType, scheduleRunId))
                 .retryCount(0)
                 .build();
     }
 
     private String buildRequestKey(
-            String mallKey,
+            ChannelRow account,
             HubJobBatchRequest request,
-            HubUser user,
             TriggerType triggerType,
             Long scheduleRunId
     ) {
+        String mallKey = account.getMallKey();
+        String accountId = String.valueOf(account.getId());
         if (triggerType == TriggerType.SCHEDULE) {
             if (scheduleRunId == null) {
                 throw new IllegalArgumentException("scheduleRunId is required for scheduled job");
@@ -180,27 +180,27 @@ public class HubJobServiceImpl implements HubJobService {
             return String.join("_",
                     "SCHEDULE",
                     String.valueOf(scheduleRunId),
+                    accountId,
                     mallKey,
                     request.frDt(),
-                    request.toDt(),
-                    user.getUsername()
+                    request.toDt()
             );
         }
         if (isMockMall(mallKey) && request.mockPage() != null) {
             return String.join("_",
                     nullToDefault(request.loadTestRunId(), "MOCK_MALL"),
+                    accountId,
                     mallKey,
                     String.valueOf(request.mockPage()),
                     request.frDt(),
-                    request.toDt(),
-                    user.getUsername()
+                    request.toDt()
             );
         }
-        return String.join("_", mallKey, request.frDt(), request.toDt(), user.getUsername());
+        return String.join("_", accountId, mallKey, request.frDt(), request.toDt());
     }
 
     private String serializePayload(
-            String mallKey,
+            ChannelRow account,
             HubJobBatchRequest request,
             HubUser user,
             TriggerType triggerType,
@@ -208,6 +208,9 @@ public class HubJobServiceImpl implements HubJobService {
     ) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("userId", user.getId());
+        payload.put("corpId", user.getCorpId());
+        payload.put("channelAccountId", account.getId());
+        String mallKey = account.getMallKey();
         payload.put("mallKey", mallKey);
         payload.put("channelCd", mallKey);
         payload.put("frDt", request.frDt());
@@ -232,6 +235,54 @@ public class HubJobServiceImpl implements HubJobService {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("failed to serialize payload", e);
         }
+    }
+
+    private List<ChannelRow> resolveChannelAccounts(HubUser user, HubJobBatchRequest request) {
+        Map<Long, ChannelRow> resolved = new LinkedHashMap<>();
+
+        if (request.channelAccountIds() != null) {
+            request.channelAccountIds().forEach(channelAccountId -> {
+                ChannelRow account = channelMapper.findActiveByCorpIdAndId(user.getCorpId(), channelAccountId)
+                        .orElseThrow(() -> new ChannelNotFoundException(
+                                "channel account is not active: " + channelAccountId));
+                resolved.put(account.getId(), account);
+            });
+        }
+
+        if (request.mallKeys() != null) {
+            request.mallKeys().forEach(mallKey -> {
+                if (isMockMall(mallKey)) {
+                    ChannelRow account = ensureMockChannelAccount(user);
+                    resolved.put(account.getId(), account);
+                    return;
+                }
+                List<ChannelRow> accounts = channelMapper.findActiveByCorpIdAndMallKey(user.getCorpId(), mallKey);
+                if (accounts.isEmpty()) {
+                    throw new ChannelNotFoundException(mallKey + " channel has no active account");
+                }
+                accounts.forEach(account -> resolved.put(account.getId(), account));
+            });
+        }
+
+        if (resolved.isEmpty()) {
+            throw new IllegalArgumentException("mallKeys or channelAccountIds must not be empty");
+        }
+        return new ArrayList<>(resolved.values());
+    }
+
+    private ChannelRow ensureMockChannelAccount(HubUser user) {
+        return channelMapper.findAnyByCorpIdAndMallKey(user.getCorpId(), "MOCK_MALL")
+                .orElseGet(() -> {
+                    ChannelRow account = ChannelRow.builder()
+                            .corpId(user.getCorpId())
+                            .userId(user.getId())
+                            .mallKey("MOCK_MALL")
+                            .accountName("Mock Mall")
+                            .useYn("Y")
+                            .build();
+                    channelMapper.insert(account);
+                    return account;
+                });
     }
 
     private void publishEvent(HubJob job) {
@@ -344,8 +395,20 @@ public class HubJobServiceImpl implements HubJobService {
 
             HubUser user = userMapper.findById(userId)
                     .orElseThrow(() -> new AuthException("user not found"));
+            ChannelRow account;
+            if (payloadMap.containsKey("channelAccountId")) {
+                Long channelAccountId = toLong(payloadMap.get("channelAccountId"));
+                account = channelMapper.findByCorpIdAndId(user.getCorpId(), channelAccountId)
+                        .orElseThrow(() -> new ChannelNotFoundException(
+                                "channel account not found: " + channelAccountId));
+            } else {
+                account = channelMapper.findActiveByCorpIdAndMallKey(user.getCorpId(), mallKey)
+                        .stream()
+                        .findFirst()
+                        .orElseThrow(() -> new ChannelNotFoundException(mallKey + " channel has no active account"));
+            }
             return serializePayload(
-                    mallKey,
+                    account,
                     new HubJobBatchRequest(frDt, toDt, List.of(mallKey)),
                     user,
                     triggerType,

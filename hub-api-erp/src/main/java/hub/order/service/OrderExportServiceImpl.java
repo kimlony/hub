@@ -129,7 +129,7 @@ public class OrderExportServiceImpl implements OrderExportService {
     private String addFilters(Long userId, String channelCd, String frDt, String toDt, List<Object> params) {
         StringBuilder sql = new StringBuilder();
         if (userId != null) {
-            sql.append(" AND o.user_id = ?\n");
+            sql.append(" AND o.corp_id = (SELECT corp_id FROM users WHERE id = ?)\n");
             params.add(userId);
         }
         if (channelCd != null) {

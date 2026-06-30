@@ -3,6 +3,7 @@ import { Kafka, type Consumer, type EachMessagePayload } from "kafkajs";
 import {
   createNormalizeJobForResult,
   deferJobForLockConflict,
+  findActiveChannelAccountIdentity,
   findActiveChannelCredentials,
   releaseJobLock,
   retryOrFailJob,
@@ -495,14 +496,11 @@ function requiresJobLock(jobMessage: HubJobMessage): boolean {
 }
 
 function buildJobLockKey(jobMessage: HubJobMessage): string {
-  const userId = getUserId(jobMessage.payload.userId);
-  const mallKey = getRequiredString(jobMessage.payload.mallKey, "mallKey");
-
-  if (userId === null) {
-    throw new Error("userId is required for job lock");
+  const channelAccountId = getUserId(jobMessage.payload.channelAccountId);
+  if (channelAccountId === null) {
+    throw new Error("channelAccountId is required for job lock");
   }
-
-  return `${jobMessage.jobType}:${userId}:${mallKey}`;
+  return `${jobMessage.jobType}:${channelAccountId}`;
 }
 
 async function enrichWithChannelCredentials(jobMessage: HubJobMessage): Promise<HubJobMessage> {
@@ -533,19 +531,29 @@ async function enrichWithChannelCredentials(jobMessage: HubJobMessage): Promise<
     return jobMessage;
   }
 
+  const payloadCorpId = getUserId(jobMessage.payload.corpId);
+  const payloadChannelAccountId = getUserId(jobMessage.payload.channelAccountId);
+  const identity = payloadCorpId !== null && payloadChannelAccountId !== null
+    ? { corpId: payloadCorpId, channelAccountId: payloadChannelAccountId }
+    : await findActiveChannelAccountIdentity(userId, mallKey);
+
   logger.info({
     event: "CHANNEL_CREDENTIAL_LOOKUP_STARTED",
     requestId: jobMessage.requestId,
     userId,
+    corpId: identity.corpId,
+    channelAccountId: identity.channelAccountId,
     mallKey,
     channelCd: getChannelCd(jobMessage)
   }, "Channel credential lookup started");
 
-  const credentials = await findActiveChannelCredentials(userId, mallKey);
+  const credentials = await findActiveChannelCredentials(identity.corpId, identity.channelAccountId);
   logger.info({
     event: "CHANNEL_CREDENTIAL_LOOKUP_SUCCESS",
     requestId: jobMessage.requestId,
     userId,
+    corpId: identity.corpId,
+    channelAccountId: identity.channelAccountId,
     mallKey,
     channelCd: getChannelCd(jobMessage),
     hasKey: Boolean(credentials.key),
@@ -567,6 +575,8 @@ async function enrichWithChannelCredentials(jobMessage: HubJobMessage): Promise<
     mallKey,
     detail: {
       userId,
+      corpId: identity.corpId,
+      channelAccountId: identity.channelAccountId,
       hasKey: Boolean(credentials.key),
       hasKey2: Boolean(credentials.key2),
       hasAuthKey: Boolean(credentials.authKey),
@@ -580,6 +590,8 @@ async function enrichWithChannelCredentials(jobMessage: HubJobMessage): Promise<
     ...jobMessage,
     payload: {
       ...jobMessage.payload,
+      corpId: identity.corpId,
+      channelAccountId: identity.channelAccountId,
       ...credentials
     }
   };

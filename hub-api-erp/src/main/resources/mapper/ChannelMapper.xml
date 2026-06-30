@@ -16,56 +16,76 @@
         WHERE mall_key = #{mallKey}
     </select>
 
-    <select id="findAllByUserId" resultType="hub.channel.domain.ChannelRow">
-        SELECT user_id, mall_key, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
+    <select id="findAllByCorpId" resultType="hub.channel.domain.ChannelRow">
+        SELECT id, corp_id, user_id, mall_key, account_name, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
         FROM user_malls
-        WHERE user_id = #{userId}
-        ORDER BY mall_key
+        WHERE corp_id = #{corpId}
+        ORDER BY mall_key, id
     </select>
 
-    <select id="findByUserIdAndMallKey" resultType="hub.channel.domain.ChannelRow">
-        SELECT user_id, mall_key, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
+    <select id="findByCorpIdAndId" resultType="hub.channel.domain.ChannelRow">
+        SELECT id, corp_id, user_id, mall_key, account_name, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
         FROM user_malls
-        WHERE user_id = #{userId}
-          AND mall_key = #{mallKey}
+        WHERE corp_id = #{corpId}
+          AND id = #{id}
     </select>
 
-    <select id="findActiveByUserIdAndMallKey" resultType="hub.channel.domain.ChannelRow">
-        SELECT user_id, mall_key, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
+    <select id="findActiveByCorpIdAndId" resultType="hub.channel.domain.ChannelRow">
+        SELECT id, corp_id, user_id, mall_key, account_name, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
         FROM user_malls
-        WHERE user_id = #{userId}
-          AND mall_key = #{mallKey}
+        WHERE corp_id = #{corpId}
+          AND id = #{id}
           AND use_yn = 'Y'
     </select>
 
-    <insert id="insert" parameterType="hub.channel.domain.ChannelRow">
-        INSERT INTO user_malls (user_id, mall_key, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id)
-        VALUES (#{userId}, #{mallKey}, #{key}, #{key2}, #{authKey}, #{mallId}, #{mallPw}, #{useYn}, #{vendorId})
+    <select id="findActiveByCorpIdAndMallKey" resultType="hub.channel.domain.ChannelRow">
+        SELECT id, corp_id, user_id, mall_key, account_name, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
+        FROM user_malls
+        WHERE corp_id = #{corpId}
+          AND mall_key = #{mallKey}
+          AND use_yn = 'Y'
+        ORDER BY id
+    </select>
+
+    <select id="findAnyByCorpIdAndMallKey" resultType="hub.channel.domain.ChannelRow">
+        SELECT id, corp_id, user_id, mall_key, account_name, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id
+        FROM user_malls
+        WHERE corp_id = #{corpId}
+          AND mall_key = #{mallKey}
+        ORDER BY id
+        LIMIT 1
+    </select>
+
+    <insert id="insert" parameterType="hub.channel.domain.ChannelRow" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO user_malls (corp_id, user_id, mall_key, account_name, key, key2, auth_key, mall_id, mall_pw, use_yn, vendor_id)
+        VALUES (#{corpId}, #{userId}, #{mallKey}, #{accountName}, #{key}, #{key2}, #{authKey}, #{mallId}, #{mallPw}, #{useYn}, #{vendorId})
     </insert>
 
     <update id="update" parameterType="hub.channel.domain.ChannelRow">
         UPDATE user_malls
-        SET key       = #{key},
+        SET account_name = #{accountName},
+            key       = #{key},
             key2      = #{key2},
             auth_key  = #{authKey},
             mall_id   = #{mallId},
             mall_pw   = #{mallPw},
             vendor_id = #{vendorId}
-        WHERE user_id = #{userId}
-          AND mall_key = #{mallKey}
+        WHERE corp_id = #{corpId}
+          AND id = #{id}
     </update>
 
     <delete id="delete">
-        DELETE FROM user_malls
-        WHERE user_id = #{userId}
-          AND mall_key = #{mallKey}
+        UPDATE user_malls
+        SET use_yn = 'N'
+        WHERE corp_id = #{corpId}
+          AND id = #{id}
     </delete>
 
     <update id="updateUseYn">
         UPDATE user_malls
         SET use_yn = #{useYn}
-        WHERE user_id = #{userId}
-          AND mall_key = #{mallKey}
+        WHERE corp_id = #{corpId}
+          AND id = #{id}
     </update>
 
 </mapper>

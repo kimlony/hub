@@ -12,8 +12,11 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ChannelRow {
+    private Long   id;
+    private Long   corpId;
     private Long   userId;
     private String mallKey;
+    private String accountName;
     private String key;
     private String key2;
     private String authKey;

@@ -5,22 +5,26 @@
 <mapper namespace="hub.auth.mapper.UserMapper">
 
     <select id="findById" resultType="hub.auth.domain.HubUser">
-        SELECT id, username, password
-        FROM users
-        WHERE id = #{id}
+        SELECT u.id, u.corp_id, c.corp_cd, u.username, u.password
+        FROM users u
+        JOIN hub_corp c ON c.id = u.corp_id
+        WHERE u.id = #{id}
     </select>
 
     <select id="findByUsername" resultType="hub.auth.domain.HubUser">
-        SELECT id, username, password
-        FROM users
-        WHERE username = #{username}
+        SELECT u.id, u.corp_id, c.corp_cd, u.username, u.password
+        FROM users u
+        JOIN hub_corp c ON c.id = u.corp_id
+        WHERE u.username = #{username}
     </select>
 
     <select id="findMallKeysByUserId" resultType="string">
         SELECT mall_key
-        FROM user_malls
-        WHERE user_id = #{userId}
+        FROM user_malls m
+        JOIN users u ON u.corp_id = m.corp_id
+        WHERE u.id = #{userId}
           AND use_yn = 'Y'
+        GROUP BY mall_key
         ORDER BY mall_key
     </select>
 

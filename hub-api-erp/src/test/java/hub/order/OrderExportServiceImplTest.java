@@ -25,7 +25,7 @@ class OrderExportServiceImplTest {
     private JdbcTemplate jdbcTemplate;
 
     /**
-     * ?紐? 雅뚯눖揆 鈺곌퀬???userId揶쎛 ?袁⑸땾???嚥?userId揶쎛 ??곸몵筌???됱뇚 筌ｌ꼶???롫뮉筌왖 野꺜筌앹빜釉??
+     * 사용자 ID가 없으면 주문 조회를 거부하는지 검증한다.
      */
     @Test
     void getOrdersForUserRejectsNullUserId() {
@@ -37,7 +37,7 @@ class OrderExportServiceImplTest {
     }
 
     /**
-     * page/size ?遺욧퍕揶쏅?????됱읈??甕곕뗄?욄에?癰귣똻???랁?userId?? 疫꿸퀗而?鈺곌퀗援??곗쨮 ?類?뇣??雅뚯눖揆??鈺곌퀬???롫뮉筌왖 野꺜筌앹빜釉??
+     * 페이지 값을 보정하고 정규화된 주문 응답을 반환하는지 검증한다.
      */
     @Test
     void getOrdersForUserClampsPageAndSizeAndReturnsNormalizedResponse() {

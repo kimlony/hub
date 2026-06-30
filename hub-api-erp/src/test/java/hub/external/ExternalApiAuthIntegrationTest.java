@@ -88,7 +88,7 @@ class ExternalApiAuthIntegrationTest {
     }
 
     /**
-     * ?類ㅺ맒 clientId, timestamp, HMAC signature嚥??醫뤾쿃??獄쏆뮄???랁? 域??醫뤾쿃??곗쨮 /api/external/orders ?遺욧퍕 ??ExternalApiPrincipal????밴쉐??롫뮉筌왖 野꺜筌앹빜鍮??덈뼄.
+     * 정상 서명 클라이언트의 토큰 발급부터 인증 주체 생성까지 검증한다.
      */
     @Test
     void issueTokenAndFilterCreatesExternalPrincipalForValidSignedClient() {
@@ -126,7 +126,7 @@ class ExternalApiAuthIntegrationTest {
     }
 
     /**
-     * DB?????貫留??酉???secret 疫꿸퀣???곗쨮 ??뺤구??筌띿쉸? ??놁몵筌??醫뤾쿃 獄쏆뮄???椰꾧퀡???롫뮉筌왖 野꺜筌앹빜鍮??덈뼄.
+     * DB 암호화 비밀키와 일치하지 않는 서명을 거부하는지 검증한다.
      */
     @Test
     void issueTokenRejectsInvalidSignatureAgainstStoredEncryptedSecret() {
@@ -141,7 +141,7 @@ class ExternalApiAuthIntegrationTest {
     }
 
     /**
-     * DB???紐? API ?????곷섧???怨밴묶揶쎛 DISABLED??????而?몴???뺤구??癰귣?沅???醫뤾쿃 獄쏆뮄???椰꾧퀡???롫뮉筌왖 野꺜筌앹빜鍮??덈뼄.
+     * DB에서 비활성화된 클라이언트의 토큰 발급을 거부하는지 검증한다.
      */
     @Test
     void issueTokenRejectsInactiveClientFromDatabase() {
@@ -158,7 +158,7 @@ class ExternalApiAuthIntegrationTest {
     }
 
     /**
-     * 筌띾슢利??EXTERNAL JWT???袁り숲揶쎛 principal??筌띾슢諭억쭪? ??낅뮉筌왖 野꺜筌앹빜鍮??덈뼄.
+     * 만료된 외부 API 토큰을 인증 필터가 거부하는지 검증한다.
      */
     @Test
     void issuedTokenIsNotAcceptedByExternalFilterAfterExpiration() {

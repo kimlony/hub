@@ -37,20 +37,19 @@ public class JobOutboxServiceImpl implements JobOutboxService {
     }
 
     private String buildPartitionKey(HubJobEvent event) {
-        Object userId = event.payload().get("userId");
-        Object mallKey = event.payload().get("mallKey");
+        Object channelAccountId = event.payload().get("channelAccountId");
         Object channelCd = event.payload().get("channelCd");
         Object page = event.payload().get("page");
 
-        if (userId == null || mallKey == null) {
+        if (channelAccountId == null) {
             return event.requestId();
         }
 
         if ("MOCK_MALL".equals(channelCd) && page != null) {
-            return event.jobType() + ":" + userId + ":" + mallKey + ":" + page;
+            return event.jobType() + ":" + channelAccountId + ":" + page;
         }
 
-        return event.jobType() + ":" + userId + ":" + mallKey;
+        return event.jobType() + ":" + channelAccountId;
     }
 
     private String toJson(HubJobEvent event) {

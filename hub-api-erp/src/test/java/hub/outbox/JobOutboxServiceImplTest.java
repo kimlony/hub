@@ -30,7 +30,7 @@ class JobOutboxServiceImplTest {
     private ObjectMapper objectMapper;
 
     /**
-     * 雅뚯눖揆??륁춿 ??源?紐? Outbox?????館釉???PENDING ?怨밴묶?? ?④쑴????μ맄 partition key揶쎛 ??而?몴?우쓺 ??밴쉐??롫뮉筌왖 野꺜筌앹빜釉??
+     * 채널 계정 파티션 키를 사용한 대기 상태 Outbox 이벤트를 생성하는지 검증한다.
      */
     @Test
     void enqueueCreatesPendingOutboxWithAccountPartitionKey() throws Exception {
@@ -42,6 +42,8 @@ class JobOutboxServiceImplTest {
                 "GODO_20260618_20260618_admin",
                 Map.of(
                         "userId", 1,
+                        "corpId", 100,
+                        "channelAccountId", 10,
                         "mallKey", "GODO",
                         "channelCd", "GODO"
                 )
@@ -56,7 +58,7 @@ class JobOutboxServiceImplTest {
         assertThat(outbox.getRequestId()).isEqualTo("request-001");
         assertThat(outbox.getEventType()).isEqualTo("ORDER_COLLECT");
         assertThat(outbox.getTopic()).isEqualTo("hub.jobs");
-        assertThat(outbox.getPartitionKey()).isEqualTo("ORDER_COLLECT:1:GODO");
+        assertThat(outbox.getPartitionKey()).isEqualTo("ORDER_COLLECT:10");
         assertThat(outbox.getStatus()).isEqualTo(JobOutboxStatus.PENDING);
         assertThat(outbox.getRetryCount()).isZero();
         assertThat(outbox.getMaxRetryCount()).isEqualTo(5);
@@ -64,7 +66,7 @@ class JobOutboxServiceImplTest {
     }
 
     /**
-     * userId/mallKey揶쎛 ??용뮉 CRAWL ??源?紐껊뮉 ?④쑴????μ맄 key??筌띾슢諭?????곸몵沃샕嚥?requestId??partition key嚥??????롫뮉筌왖 野꺜筌앹빜釉??
+     * 채널 계정 키가 없으면 요청 ID를 파티션 키로 사용하는지 검증한다.
      */
     @Test
     void enqueueFallsBackToRequestIdWhenPayloadHasNoAccountKey() {
@@ -89,7 +91,7 @@ class JobOutboxServiceImplTest {
     }
 
     /**
-     * Outbox payload 筌욊낮??遺용퓠 ??쎈솭??롢늺 ??롢걵????源?紐? ???館釉?쭪? ??꾪???됱뇚 筌ｌ꼶???롫뮉筌왖 野꺜筌앹빜釉??
+     * Outbox payload 직렬화 실패 시 예외를 발생시키는지 검증한다.
      */
     @Test
     void enqueueThrowsWhenPayloadSerializationFails() throws Exception {

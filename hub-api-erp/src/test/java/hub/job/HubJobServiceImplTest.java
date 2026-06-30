@@ -52,7 +52,8 @@ class HubJobServiceImplTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * 揶쏆늿? 雅뚯눖揆??륁춿 ?遺욧퍕??椰꾧퀣????덈뻻????쇰선?遺우뱽 ??     * 餓λ쵎??Job????밴쉐??? ??꾪?Outbox/Kafka 獄쏆뮉六??餓λ쵎???? ??놁몵筌롫똻苑?     * 疫꿸퀣??Job????됱젟?怨몄몵嚥?獄쏆꼹???롫뮉筌왖 ?類ㅼ뵥??롫뮉 ???뮞??     */
+     * 동시 요청으로 이미 생성된 Job이 있으면 기존 Job을 반환하고 발행하지 않는지 검증한다.
+     */
     @Test
     void createBatchJobsReturnsExistingJobWithoutPublishingWhenConcurrentInsertAlreadyCreatedJob() {
         HubJobServiceImpl service = new HubJobServiceImpl(
@@ -64,7 +65,7 @@ class HubJobServiceImplTest {
                 jdbcTemplate
         );
         HubUser user = user(1L, "admin");
-        String requestKey = "GODO_20260618_20260618_admin";
+        String requestKey = "10_GODO_20260618_20260618";
         HubJob duplicatedJob = HubJob.builder()
                 .requestId("existing-request-id")
                 .requestKey(requestKey)
@@ -77,8 +78,10 @@ class HubJobServiceImplTest {
                 .build();
 
         when(userMapper.findByUsername("admin")).thenReturn(Optional.of(user));
-        when(channelMapper.findActiveByUserIdAndMallKey(1L, "GODO"))
-                .thenReturn(Optional.of(ChannelRow.builder()
+        when(channelMapper.findActiveByCorpIdAndMallKey(100L, "GODO"))
+                .thenReturn(List.of(ChannelRow.builder()
+                        .id(10L)
+                        .corpId(100L)
                         .userId(1L)
                         .mallKey("GODO")
                         .useYn("Y")
@@ -103,12 +106,8 @@ class HubJobServiceImplTest {
         verify(hubJobMapper, times(2)).selectByRequestKey(eq(requestKey));
     }
     /**
-     * ?醫됲뇣 雅뚯눖揆??륁춿 ?遺욧퍕?癒?퐣 requestKey 疫꿸퀣? 疫꿸퀣??Job????얩?insert揶쎛 ?源껊궗??野껋럩??
-     * Outbox ??源?硫? ?類ㅺ맒 ??밴쉐??롫뮉筌왖 ??μ맄 ???뮞?紐껋쨮 野꺜筌앹빜六??щ빍??
-     * ??? ???퉸 Job ??밴쉐??Worker 筌ｌ꼶????源??獄쏆뮉六????ｍ뜞 ?怨뚭퍙??롫뮉 ?類ㅺ맒 ?癒?カ??癰귣똻???랁?
-     * 餓λ쵎???遺욧퍕 獄쎻뫗堉?嚥≪뮇彛끾??醫됲뇣 ??밴쉐 嚥≪뮇彛??揶쏄낫而????뮞?紐껋쨮 ?브쑬???筌롪퉭踰?筌ｌ꼶????臾믡걹 ?브쑨由곁몴?野꺜筌앹빜六??щ빍??
+     * 신규 Job 저장 성공 시 Outbox 이벤트를 생성하는지 검증한다.
      */
-
     @Test
     void createBatchJobsPublishesOutboxEventWhenNewJobInsertSucceeds() {
         HubJobServiceImpl service = new HubJobServiceImpl(
@@ -120,11 +119,13 @@ class HubJobServiceImplTest {
                 jdbcTemplate
         );
         HubUser user = user(1L, "admin");
-        String requestKey = "GODO_20260618_20260618_admin";
+        String requestKey = "10_GODO_20260618_20260618";
 
         when(userMapper.findByUsername("admin")).thenReturn(Optional.of(user));
-        when(channelMapper.findActiveByUserIdAndMallKey(1L, "GODO"))
-                .thenReturn(Optional.of(ChannelRow.builder()
+        when(channelMapper.findActiveByCorpIdAndMallKey(100L, "GODO"))
+                .thenReturn(List.of(ChannelRow.builder()
+                        .id(10L)
+                        .corpId(100L)
                         .userId(1L)
                         .mallKey("GODO")
                         .useYn("Y")
@@ -159,6 +160,8 @@ class HubJobServiceImplTest {
         assertThat(event.requestKey()).isEqualTo(requestKey);
         assertThat(event.payload())
                 .containsEntry("userId", 1)
+                .containsEntry("corpId", 100)
+                .containsEntry("channelAccountId", 10)
                 .containsEntry("mallKey", "GODO")
                 .containsEntry("channelCd", "GODO")
                 .containsEntry("frDt", "20260618")
@@ -172,13 +175,13 @@ class HubJobServiceImplTest {
     }
 
     /**
-     * ??? QUEUED ?怨밴묶??Job????됱몵筌?餓λ쵎????밴쉐??援???而????곸뵠 疫꿸퀣??Job??獄쏆꼹???롫뮉筌왖 野꺜筌앹빜釉??
+     * 이미 대기 중인 Job은 초기화하지 않고 그대로 반환하는지 검증한다.
      */
     @Test
     void createBatchJobsReturnsExistingJobWithoutResetWhenJobIsAlreadyQueued() {
         HubJobServiceImpl service = service();
         HubUser user = user(1L, "admin");
-        String requestKey = "GODO_20260618_20260618_admin";
+        String requestKey = "10_GODO_20260618_20260618";
         HubJob existingJob = HubJob.builder()
                 .requestId("queued-request-id")
                 .requestKey(requestKey)
@@ -187,7 +190,7 @@ class HubJobServiceImplTest {
                 .build();
 
         when(userMapper.findByUsername("admin")).thenReturn(Optional.of(user));
-        when(channelMapper.findActiveByUserIdAndMallKey(1L, "GODO")).thenReturn(Optional.of(activeChannel()));
+        when(channelMapper.findActiveByCorpIdAndMallKey(100L, "GODO")).thenReturn(List.of(activeChannel()));
         when(hubJobMapper.selectByRequestKey(requestKey)).thenReturn(existingJob);
 
         HubJobBatchResponse response = service.createBatchJobs(
@@ -204,13 +207,13 @@ class HubJobServiceImplTest {
     }
 
     /**
-     * ?袁⑥┷??SUCCESS Job????쇰뻻 ?遺욧퍕??롢늺 疫꿸퀣??Job??QUEUED嚥??λ뜃由?酉釉??Outbox ??源?紐? 獄쏆뮉六??롫뮉筌왖 野꺜筌앹빜釉??
+     * 완료된 Job을 재요청하면 대기 상태로 초기화하고 Outbox 이벤트를 생성하는지 검증한다.
      */
     @Test
     void createBatchJobsResetsCompletedJobAndPublishesOutboxEvent() {
         HubJobServiceImpl service = service();
         HubUser user = user(1L, "admin");
-        String requestKey = "GODO_20260618_20260618_admin";
+        String requestKey = "10_GODO_20260618_20260618";
         HubJob existingJob = HubJob.builder()
                 .requestId("completed-request-id")
                 .requestKey(requestKey)
@@ -223,7 +226,7 @@ class HubJobServiceImplTest {
                 .build();
 
         when(userMapper.findByUsername("admin")).thenReturn(Optional.of(user));
-        when(channelMapper.findActiveByUserIdAndMallKey(1L, "GODO")).thenReturn(Optional.of(activeChannel()));
+        when(channelMapper.findActiveByCorpIdAndMallKey(100L, "GODO")).thenReturn(List.of(activeChannel()));
         when(hubJobMapper.selectByRequestKey(requestKey)).thenReturn(existingJob);
         when(hubJobMapper.updateStatusToReset(eq(requestKey), any(String.class))).thenReturn(1);
 
@@ -250,13 +253,13 @@ class HubJobServiceImplTest {
     }
 
     /**
-     * ?袁⑥┷ Job ?λ뜃由?遺? ??쎈솭(rowCount 0)??롢늺 Outbox ??源?紐? 獄쏆뮉六??? ??꾪???됱뇚 筌ｌ꼶???롫뮉筌왖 野꺜筌앹빜釉??
+     * 완료 Job 초기화가 실패하면 Outbox 이벤트를 생성하지 않는지 검증한다.
      */
     @Test
     void createBatchJobsDoesNotPublishWhenCompletedJobResetIsSkipped() {
         HubJobServiceImpl service = service();
         HubUser user = user(1L, "admin");
-        String requestKey = "GODO_20260618_20260618_admin";
+        String requestKey = "10_GODO_20260618_20260618";
         HubJob existingJob = HubJob.builder()
                 .requestId("completed-request-id")
                 .requestKey(requestKey)
@@ -269,7 +272,7 @@ class HubJobServiceImplTest {
                 .build();
 
         when(userMapper.findByUsername("admin")).thenReturn(Optional.of(user));
-        when(channelMapper.findActiveByUserIdAndMallKey(1L, "GODO")).thenReturn(Optional.of(activeChannel()));
+        when(channelMapper.findActiveByCorpIdAndMallKey(100L, "GODO")).thenReturn(List.of(activeChannel()));
         when(hubJobMapper.selectByRequestKey(requestKey)).thenReturn(existingJob);
         when(hubJobMapper.updateStatusToReset(eq(requestKey), any(String.class))).thenReturn(0);
 
@@ -284,7 +287,7 @@ class HubJobServiceImplTest {
     }
 
     /**
-     * ??쑵???筌?쑬瑗????Job 鈺곌퀬????밴쉐/Outbox 獄쏆뮉六???곸뵠 ??됱뇚 筌ｌ꼶???롫뮉筌왖 野꺜筌앹빜釉??
+     * 활성 채널 계정이 없으면 Job 생성을 거부하는지 검증한다.
      */
     @Test
     void createBatchJobsThrowsWhenChannelIsNotActive() {
@@ -292,28 +295,29 @@ class HubJobServiceImplTest {
         HubUser user = user(1L, "admin");
 
         when(userMapper.findByUsername("admin")).thenReturn(Optional.of(user));
-        when(channelMapper.findActiveByUserIdAndMallKey(1L, "GODO")).thenReturn(Optional.empty());
+        when(channelMapper.findActiveByCorpIdAndMallKey(100L, "GODO")).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.createBatchJobs(
                 "admin",
                 new HubJobBatchRequest("20260618", "20260618", List.of("GODO"))
         ))
                 .isInstanceOf(hub.channel.ChannelNotFoundException.class)
-                .hasMessage("GODO channel is not active");
+                .hasMessage("GODO channel has no active account");
 
         verify(hubJobMapper, never()).selectByRequestKey(any(String.class));
         verify(jobOutboxService, never()).enqueue(any(HubJobEvent.class));
     }
 
     /**
-     * FAILED ?怨밴묶??Job??????袁る막 ??Job???λ뜃由?酉釉??Outbox ??源?紐? ??쇰뻻 獄쏆뮉六??롫뮉筌왖 野꺜筌앹빜釉??     */
+     * 실패한 Job을 재시도 상태로 초기화하고 Outbox 이벤트를 생성하는지 검증한다.
+     */
     @Test
     void retryJobResetsFailedJobAndPublishesOutboxEvent() {
         HubJobServiceImpl service = service();
         HubUser user = user(1L, "admin");
         HubJob failedJob = HubJob.builder()
                 .requestId("failed-request-id")
-                .requestKey("GODO_20260618_20260618_admin")
+                .requestKey("10_GODO_20260618_20260618")
                 .jobType("ORDER_COLLECT")
                 .sourceErp("HUB")
                 .channelCd("GODO")
@@ -324,6 +328,7 @@ class HubJobServiceImplTest {
 
         when(hubJobMapper.selectByRequestId("failed-request-id")).thenReturn(failedJob);
         when(userMapper.findById(1L)).thenReturn(Optional.of(user));
+        when(channelMapper.findByCorpIdAndId(100L, 10L)).thenReturn(Optional.of(activeChannel()));
         when(hubJobMapper.resetFailedJobForRetry(eq(failedJob.getRequestKey()), any(String.class))).thenReturn(1);
 
         service.retryJob("failed-request-id");
@@ -337,14 +342,14 @@ class HubJobServiceImplTest {
     }
 
     /**
-     * FAILED Job ??????λ뜃由?遺? ??쎈솭(rowCount 0)??롢늺 Outbox ??源?紐? 獄쏆뮉六??? ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 실패 상태가 아닌 Job의 수동 재시도를 거부하는지 검증한다.
      */
     @Test
     void retryJobRejectsJobThatIsNotFailed() {
         HubJobServiceImpl service = service();
         HubJob processingJob = HubJob.builder()
                 .requestId("processing-request-id")
-                .requestKey("GODO_20260618_20260618_admin")
+                .requestKey("10_GODO_20260618_20260618")
                 .status(HubJobStatus.PROCESSING)
                 .build();
 
@@ -358,13 +363,16 @@ class HubJobServiceImplTest {
         verify(jobOutboxService, never()).enqueue(any(HubJobEvent.class));
     }
 
+    /**
+     * 재시도 초기화가 실패하면 Outbox 이벤트를 생성하지 않는지 검증한다.
+     */
     @Test
     void retryJobDoesNotPublishWhenResetIsSkipped() {
         HubJobServiceImpl service = service();
         HubUser user = user(1L, "admin");
         HubJob failedJob = HubJob.builder()
                 .requestId("failed-request-id")
-                .requestKey("GODO_20260618_20260618_admin")
+                .requestKey("10_GODO_20260618_20260618")
                 .jobType("ORDER_COLLECT")
                 .sourceErp("HUB")
                 .channelCd("GODO")
@@ -375,6 +383,7 @@ class HubJobServiceImplTest {
 
         when(hubJobMapper.selectByRequestId("failed-request-id")).thenReturn(failedJob);
         when(userMapper.findById(1L)).thenReturn(Optional.of(user));
+        when(channelMapper.findByCorpIdAndId(100L, 10L)).thenReturn(Optional.of(activeChannel()));
         when(hubJobMapper.resetFailedJobForRetry(eq(failedJob.getRequestKey()), any(String.class))).thenReturn(0);
 
         assertThatThrownBy(() -> service.retryJob("failed-request-id"))
@@ -397,6 +406,8 @@ class HubJobServiceImplTest {
 
     private ChannelRow activeChannel() {
         return ChannelRow.builder()
+                .id(10L)
+                .corpId(100L)
                 .userId(1L)
                 .mallKey("GODO")
                 .useYn("Y")
@@ -405,13 +416,15 @@ class HubJobServiceImplTest {
 
     private String payload() {
         return """
-                {"userId":1,"mallKey":"GODO","channelCd":"GODO","frDt":"20260618","toDt":"20260618","triggerType":"MANUAL"}
+                {"userId":1,"corpId":100,"channelAccountId":10,"mallKey":"GODO","channelCd":"GODO","frDt":"20260618","toDt":"20260618","triggerType":"MANUAL"}
                 """;
     }
 
     private HubUser user(Long id, String username) {
         HubUser user = new HubUser();
         user.setId(id);
+        user.setCorpId(100L);
+        user.setCorpCd("TEST-CORP");
         user.setUsername(username);
         return user;
     }

@@ -37,34 +37,33 @@ public class KafkaJobEventAdapter implements JobEventPort {
             );
         } catch (Exception exception) {
             throw new IllegalStateException(
-                    "Kafka ?꾩룇裕됵쭛?????덉넮???곕????덈펲. requestId=" + event.requestId(),
+                    "Kafka 발행을 실패했습니다. requestId=" + event.requestId(),
                     exception
             );
         }
     }
 
     private String buildPartitionKey(HubJobEvent event) {
-        Object userId = event.payload().get("userId");
-        Object mallKey = event.payload().get("mallKey");
+        Object channelAccountId = event.payload().get("channelAccountId");
         Object channelCd = event.payload().get("channelCd");
         Object page = event.payload().get("page");
 
-        if (userId == null || mallKey == null) {
+        if (channelAccountId == null) {
             return event.requestId();
         }
 
         if ("MOCK_MALL".equals(channelCd) && page != null) {
-            return event.jobType() + ":" + userId + ":" + mallKey + ":" + page;
+            return event.jobType() + ":" + channelAccountId + ":" + page;
         }
 
-        return event.jobType() + ":" + userId + ":" + mallKey;
+        return event.jobType() + ":" + channelAccountId;
     }
 
     private String toJson(HubJobEvent event) {
         try {
             return objectMapper.writeValueAsString(event);
         } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("failed to serialize hub job event", exception);
+            throw new IllegalStateException("Kafka 발행을 실패했습니다. requestId=" + event.requestId(), exception);
         }
     }
 }

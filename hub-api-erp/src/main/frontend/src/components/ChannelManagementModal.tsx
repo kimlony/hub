@@ -1,30 +1,42 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAuthenticatedFetch } from '../hooks/useAuthenticatedFetch'
 
 interface ChannelInfo {
-  mallKey:    string
-  mallName:   string
+  channelAccountId: number | null
+  corpId: number
+  mallKey: string
+  mallName: string
+  accountName: string | null
   registered: boolean
-  useYn:      string | null
-  mallId:     string | null
-  mallPw:     string | null
-  vendorId:   string | null
-  key:        string | null
-  key2:       string | null
-  authKey:    string | null
+  useYn: string | null
+  mallId: string | null
+  mallPw: string | null
+  vendorId: string | null
+  key: string | null
+  key2: string | null
+  authKey: string | null
 }
 
 interface FormState {
-  key:      string
-  key2:     string
-  authKey:  string
-  mallId:   string
-  mallPw:   string
+  accountName: string
+  key: string
+  key2: string
+  authKey: string
+  mallId: string
+  mallPw: string
   vendorId: string
 }
 
-const EMPTY_FORM: FormState = { key: '', key2: '', authKey: '', mallId: '', mallPw: '', vendorId: '' }
+const EMPTY_FORM: FormState = {
+  accountName: '',
+  key: '',
+  key2: '',
+  authKey: '',
+  mallId: '',
+  mallPw: '',
+  vendorId: '',
+}
 
 interface Props {
   onClose: () => void
@@ -32,162 +44,155 @@ interface Props {
 
 export default function ChannelManagementModal({ onClose }: Props) {
   const authenticatedFetch = useAuthenticatedFetch()
-  const [channels,  setChannels]  = useState<ChannelInfo[]>([])
-  const [loading,   setLoading]   = useState(true)
-  const [expanded,  setExpanded]  = useState<string | null>(null)
-  const [form,      setForm]      = useState<FormState>(EMPTY_FORM)
-  const [saving,    setSaving]    = useState(false)
+  const [channels, setChannels] = useState<ChannelInfo[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    authenticatedFetch('/api/channels')
-      .then(r => r.json())
-      .then(setChannels)
-      .finally(() => setLoading(false))
-  }, [authenticatedFetch])
+    void reload().finally(() => setLoading(false))
+  }, [])
 
-  function openForm(mallKey: string) {
-    setExpanded(mallKey)
-    setForm(EMPTY_FORM)
+  async function reload() {
+    const response = await authenticatedFetch('/api/channels')
+    if (!response.ok) throw new Error('채널 정보를 불러오지 못했습니다.')
+    setChannels(await response.json() as ChannelInfo[])
+  }
+
+  function rowKey(channel: ChannelInfo) {
+    return channel.registered
+      ? `account-${channel.channelAccountId}`
+      : `new-${channel.mallKey}`
+  }
+
+  function openForm(channel: ChannelInfo) {
+    setExpanded(rowKey(channel))
+    setError(null)
+    setForm({
+      ...EMPTY_FORM,
+      accountName: channel.registered ? channel.accountName ?? '' : '',
+    })
   }
 
   function closeForm() {
     setExpanded(null)
     setForm(EMPTY_FORM)
+    setError(null)
   }
 
-  async function reload() {
-    const data = await authenticatedFetch('/api/channels').then(r => r.json())
-    setChannels(data)
-  }
-
-  async function handleSave(ch: ChannelInfo) {
+  async function handleSave(channel: ChannelInfo) {
     setSaving(true)
-    const method = ch.registered ? 'PUT' : 'POST'
-    await authenticatedFetch(`/api/channels/${ch.mallKey}`, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
-    })
-    await reload()
-    closeForm()
-    setSaving(false)
+    setError(null)
+    try {
+      const url = channel.registered
+        ? `/api/channels/accounts/${channel.channelAccountId}`
+        : `/api/channels/${channel.mallKey}`
+      const response = await authenticatedFetch(url, {
+        method: channel.registered ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      if (!response.ok) throw new Error('채널 계정을 저장하지 못했습니다.')
+      await reload()
+      closeForm()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '채널 계정 저장 중 오류가 발생했습니다.')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  async function handleDelete(mallKey: string) {
-    if (!confirm(`${mallKey} 채널을 삭제하시겠습니까?`)) return
-    await authenticatedFetch(`/api/channels/${mallKey}`, { method: 'DELETE' })
+  async function handleDelete(channel: ChannelInfo) {
+    if (channel.channelAccountId === null) return
+    if (!confirm(`${channel.accountName ?? channel.mallName} 계정을 삭제하시겠습니까?`)) return
+    await authenticatedFetch(`/api/channels/accounts/${channel.channelAccountId}`, { method: 'DELETE' })
     await reload()
   }
 
-  async function handleToggle(mallKey: string) {
-    await authenticatedFetch(`/api/channels/${mallKey}/active`, { method: 'PATCH' })
+  async function handleToggle(channel: ChannelInfo) {
+    if (channel.channelAccountId === null) return
+    await authenticatedFetch(`/api/channels/accounts/${channel.channelAccountId}/active`, { method: 'PATCH' })
     await reload()
   }
+
+  const fields: Array<{ label: string; field: keyof FormState; type: string }> = [
+    { label: '계정 이름', field: 'accountName', type: 'text' },
+    { label: 'mall_id', field: 'mallId', type: 'text' },
+    { label: 'mall_pw', field: 'mallPw', type: 'password' },
+    { label: 'vendor_id', field: 'vendorId', type: 'text' },
+    { label: 'key1', field: 'key', type: 'text' },
+    { label: 'key2', field: 'key2', type: 'text' },
+    { label: 'auth_key', field: 'authKey', type: 'text' },
+  ]
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative w-[500px] max-h-[80vh] bg-white rounded-2xl shadow-xl flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
-          <h2 className="text-[16px] font-extrabold text-[#191F28]">채널 관리</h2>
-          <button onClick={onClose} className="text-[#8B95A1] hover:text-[#4E5968] text-[20px] leading-none">×</button>
+      <div className="relative flex max-h-[82vh] w-[560px] flex-col overflow-hidden rounded-lg bg-white shadow-xl">
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-100 px-6 py-4">
+          <h2 className="text-[16px] font-extrabold text-[#191F28]">채널 계정 관리</h2>
+          <button onClick={onClose} className="text-[20px] leading-none text-[#8B95A1] hover:text-[#4E5968]" aria-label="닫기">×</button>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+        <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
           {loading ? (
             <div className="py-10 text-center text-[13px] text-[#8B95A1]">불러오는 중...</div>
-          ) : channels.map(ch => (
-            <div key={ch.mallKey} className="border border-slate-200 rounded-xl overflow-hidden">
-              {/* Channel row */}
-              <div className="flex items-center gap-3 px-4 py-3 bg-[#FAFAFA]">
-                <div className="flex-1">
-                  <span className="text-[13px] font-bold text-[#191F28]">{ch.mallName}</span>
-                  <span className="ml-2 text-[11px] font-bold text-[#8B95A1]">{ch.mallKey}</span>
-                </div>
-                {ch.registered ? (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleToggle(ch.mallKey)}
-                      className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-colors ${
-                        ch.useYn === 'Y'
-                          ? 'bg-[#E8FAF0] text-[#00C073]'
-                          : 'bg-[#F2F4F6] text-[#8B95A1]'
-                      }`}
-                    >
-                      {ch.useYn === 'Y' ? '활성' : '비활성'}
-                    </button>
-                    <button
-                      onClick={() => expanded === ch.mallKey ? closeForm() : openForm(ch.mallKey)}
-                      className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-[#F2F4F6] text-[#4E5968] hover:bg-slate-200"
-                    >
-                      수정
-                    </button>
-                    <button
-                      onClick={() => handleDelete(ch.mallKey)}
-                      className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-red-50 text-[#FF6B6B] hover:bg-red-100"
-                    >
-                      삭제
-                    </button>
+          ) : channels.map((channel) => {
+            const key = rowKey(channel)
+            return (
+              <div key={key} className="overflow-hidden rounded-lg border border-slate-200">
+                <div className="flex items-center gap-3 bg-[#FAFAFA] px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[13px] font-bold text-[#191F28]">{channel.mallName}</span>
+                    <span className="ml-2 text-[11px] font-bold text-[#8B95A1]">{channel.mallKey}</span>
+                    {channel.registered && (
+                      <p className="mt-1 truncate text-[12px] text-[#4E5968]">{channel.accountName}</p>
+                    )}
                   </div>
-                ) : (
-                  <button
-                    onClick={() => expanded === ch.mallKey ? closeForm() : openForm(ch.mallKey)}
-                    className="px-3 py-1 text-[11px] font-bold rounded-lg bg-[#3182F6] text-white hover:bg-blue-600"
-                  >
-                    등록
-                  </button>
+                  {channel.registered ? (
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => void handleToggle(channel)} className="px-2.5 py-1 text-[11px] font-bold text-[#3182F6]">
+                        {channel.useYn === 'Y' ? '사용 중' : '중지됨'}
+                      </button>
+                      <button onClick={() => expanded === key ? closeForm() : openForm(channel)} className="px-2.5 py-1 text-[11px] font-semibold text-[#4E5968]">수정</button>
+                      <button onClick={() => void handleDelete(channel)} className="px-2.5 py-1 text-[11px] font-semibold text-red-600">삭제</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => expanded === key ? closeForm() : openForm(channel)} className="px-3 py-1 text-[11px] font-bold text-[#3182F6]">계정 추가</button>
+                  )}
+                </div>
+
+                {expanded === key && (
+                  <div className="space-y-3 border-t border-slate-100 px-4 py-4">
+                    {fields.map(({ label, field, type }) => (
+                      <div key={field} className="flex items-center gap-3">
+                        <label className="w-24 flex-shrink-0 text-[12px] font-semibold text-[#8B95A1]">{label}</label>
+                        <input
+                          type={type}
+                          value={form[field]}
+                          placeholder={channel.registered && field !== 'accountName' ? '변경할 때만 입력' : ''}
+                          onChange={(event) => setForm((previous) => ({ ...previous, [field]: event.target.value }))}
+                          className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] focus:outline-none focus:ring-2 focus:ring-[#3182F6]/30"
+                        />
+                      </div>
+                    ))}
+                    {error && <p className="text-[12px] text-red-500">{error}</p>}
+                    <div className="flex justify-end gap-2 pt-1">
+                      <button onClick={closeForm} className="px-3 py-1.5 text-[12px] font-semibold text-[#4E5968]">취소</button>
+                      <button onClick={() => void handleSave(channel)} disabled={saving} className="rounded-lg bg-[#3182F6] px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-40">
+                        {saving ? '저장 중...' : '저장'}
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
-
-              {/* 폼 (펼쳐질 때) */}
-              {expanded === ch.mallKey && (
-                <div className="px-4 py-4 border-t border-slate-100 space-y-3">
-                  {([
-                    { label: 'mall_id',   field: 'mallId'   as keyof FormState, type: 'text'     },
-                    { label: 'mall_pw',   field: 'mallPw'   as keyof FormState, type: 'password' },
-                    { label: 'vendor_id', field: 'vendorId' as keyof FormState, type: 'text'     },
-                    { label: 'key1',      field: 'key'      as keyof FormState, type: 'text'     },
-                    { label: 'key2',      field: 'key2'     as keyof FormState, type: 'text'     },
-                  ]).map(({ label, field, type }) => (
-                    <div key={field} className="flex items-center gap-3">
-                      <label className="w-20 text-[12px] font-semibold text-[#8B95A1] flex-shrink-0">{label}</label>
-                      <input
-                        type={type}
-                        value={form[field]}
-                        placeholder={ch.registered ? '변경 시에만 입력 (빈칸 = 기존값 유지)' : ''}
-                        onChange={e => setForm(prev => ({ ...prev, [field]: e.target.value }))}
-                        className="flex-1 px-3 py-1.5 text-[12px] border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3182F6]/30"
-                      />
-                    </div>
-                  ))}
-                  <div className="flex justify-end gap-2 pt-1">
-                    <button onClick={closeForm} className="px-3 py-1.5 text-[12px] font-semibold rounded-lg bg-[#F2F4F6] text-[#4E5968] hover:bg-slate-200">
-                      취소
-                    </button>
-                    <button
-                      onClick={() => handleSave(ch)}
-                      disabled={saving}
-                      className="px-3 py-1.5 text-[12px] font-bold rounded-lg bg-[#3182F6] text-white hover:bg-blue-600 disabled:opacity-40"
-                    >
-                      {saving ? '저장 중...' : '저장'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-100 flex-shrink-0">
-          <button onClick={onClose} className="w-full px-4 py-2 text-[13px] font-semibold rounded-xl bg-[#F2F4F6] text-[#4E5968] hover:bg-slate-200">
-            닫기
-          </button>
+            )
+          })}
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   )
 }

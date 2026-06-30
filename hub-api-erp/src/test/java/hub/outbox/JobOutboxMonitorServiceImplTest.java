@@ -22,7 +22,7 @@ class JobOutboxMonitorServiceImplTest {
     private JobOutboxMapper jobOutboxMapper;
 
     /**
-     * status ?袁り숲??trim/???얜챷?꾣에??類?뇣?酉釉??stale ?癒?뼊 疫꿸퀣? ?λ뜄? mapper???袁⑤뼎??롫뮉筌왖 野꺜筌앹빜釉??
+     * 조회 상태를 정규화하고 설정된 정체 기준으로 모니터 정보를 반환하는지 검증한다.
      */
     @Test
     void returnsMonitorWithNormalizedStatusAndConfiguredStaleSeconds() {
@@ -44,7 +44,7 @@ class JobOutboxMonitorServiceImplTest {
     }
 
     /**
-     * status揶쎛 ?⑤벉媛?????袁⑷퍥 鈺곌퀬?뜹첎? ??롫즲嚥?null status嚥?癰궰??묐릭?遺? 野꺜筌앹빜釉??
+     * 상태 검색값이 비어 있으면 전체 상태 조회로 처리하는지 검증한다.
      */
     @Test
     void usesNullStatusWhenStatusIsBlank() {
@@ -62,7 +62,7 @@ class JobOutboxMonitorServiceImplTest {
     }
 
     /**
-     * ?遺욧퍕 limit??1癰귣????臾믪몵筌?筌ㅼ뮇?쇔첎?1嚥?癰귣똻???롫뮉筌왖 野꺜筌앹빜釉??
+     * 조회 제한값이 너무 작으면 1로 보정하는지 검증한다.
      */
     @Test
     void clampsLimitToOneWhenRequestedLimitIsTooSmall() {
@@ -78,7 +78,7 @@ class JobOutboxMonitorServiceImplTest {
     }
 
     /**
-     * ?遺욧퍕 limit??100癰귣???????筌ㅼ뮆?揶?100嚥?癰귣똻???롫뮉筌왖 野꺜筌앹빜釉??
+     * 조회 제한값이 너무 크면 100으로 보정하는지 검증한다.
      */
     @Test
     void clampsLimitToOneHundredWhenRequestedLimitIsTooLarge() {

@@ -588,13 +588,20 @@ public class KafkaMonitorService {
         JsonNode payload = job.path("payload");
         String jobType = text(job, "jobType");
         String channelCd = text(payload, "channelCd");
+        String channelAccountId = text(payload, "channelAccountId");
         String userId = text(payload, "userId");
         String mallKey = text(payload, "mallKey");
         String page = text(payload, "page");
         String requestId = text(job, "requestId");
 
         if ("MOCK_MALL".equals(channelCd) && !page.isBlank()) {
+            if (!channelAccountId.isBlank()) {
+                return String.join(":", jobType, channelAccountId, page);
+            }
             return String.join(":", jobType, userId, mallKey, page);
+        }
+        if (!channelAccountId.isBlank()) {
+            return String.join(":", jobType, channelAccountId);
         }
         if (!userId.isBlank() && !mallKey.isBlank()) {
             return String.join(":", jobType, userId, mallKey);

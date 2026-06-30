@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import { useAuthenticatedFetch } from '../hooks/useAuthenticatedFetch'
 
 interface ChannelInfo {
+  channelAccountId: number | null
+  accountName: string | null
   mallKey:    string
   mallName:   string
   registered: boolean
@@ -20,7 +22,7 @@ export default function CollectRequestModal({ onClose }: Props) {
   const [startDate,  setStartDate]  = useState(today)
   const [endDate,    setEndDate]    = useState(today)
   const [channels,   setChannels]   = useState<ChannelInfo[]>([])
-  const [selected,   setSelected]   = useState<Set<string>>(new Set())
+  const [selected,   setSelected]   = useState<Set<number>>(new Set())
   const [loading,    setLoading]    = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error,      setError]      = useState<string | null>(null)
@@ -42,10 +44,12 @@ export default function CollectRequestModal({ onClose }: Props) {
   }, [someChecked])
 
   function toggleAll() {
-    setSelected(allChecked ? new Set() : new Set(activeMalls.map(c => c.mallKey)))
+    setSelected(allChecked
+      ? new Set()
+      : new Set(activeMalls.flatMap(c => c.channelAccountId === null ? [] : [c.channelAccountId])))
   }
 
-  function toggleMall(key: string) {
+  function toggleMall(key: number) {
     setSelected(prev => {
       const next = new Set(prev)
       next.has(key) ? next.delete(key) : next.add(key)
@@ -70,7 +74,7 @@ export default function CollectRequestModal({ onClose }: Props) {
         body: JSON.stringify({
           frDt:     formatDate(startDate),
           toDt:     formatDate(endDate),
-          mallKeys: [...selected],
+          channelAccountIds: [...selected],
         }),
       })
       if (!res.ok) {
@@ -125,12 +129,12 @@ export default function CollectRequestModal({ onClose }: Props) {
                   <span className="text-[13px] font-bold text-[#191F28]">전체 선택</span>
                   <span className="ml-auto text-[12px] text-[#8B95A1]">{selected.size} / {activeMalls.length}</span>
                 </label>
-                {activeMalls.map(ch => (
-                  <label key={ch.mallKey} className="flex items-center gap-3 px-4 py-3 border-b border-slate-50 last:border-0 cursor-pointer hover:bg-slate-50">
-                    <input type="checkbox" checked={selected.has(ch.mallKey)} onChange={() => toggleMall(ch.mallKey)}
+                {activeMalls.map(ch => ch.channelAccountId !== null && (
+                  <label key={ch.channelAccountId} className="flex items-center gap-3 px-4 py-3 border-b border-slate-50 last:border-0 cursor-pointer hover:bg-slate-50">
+                    <input type="checkbox" checked={selected.has(ch.channelAccountId)} onChange={() => toggleMall(ch.channelAccountId!)}
                       className="w-4 h-4 accent-[#3182F6]" />
                     <span className="text-[13px] text-[#4E5968]">{ch.mallName}</span>
-                    <span className="ml-auto text-[11px] font-bold text-[#8B95A1]">{ch.mallKey}</span>
+                    <span className="ml-auto text-[11px] font-bold text-[#8B95A1]">{ch.accountName ?? ch.mallKey}</span>
                   </label>
                 ))}
               </div>

@@ -38,7 +38,7 @@ class ExternalApiAuthServiceImplTest {
     private AesEncryptor aesEncryptor;
 
     /**
-     * clientId, timestamp, signature 餓??袁⑸땾 ?紐꾩쵄揶쏅?????쑴堉???됱몵筌?token 獄쏆뮄???椰꾧퀡???롫뮉筌왖 野꺜筌앹빜釉??
+     * 토큰 발급 필수 헤더가 없으면 요청을 거부하는지 검증한다.
      */
     @Test
     void issueTokenRejectsMissingRequiredHeaders() {
@@ -49,7 +49,7 @@ class ExternalApiAuthServiceImplTest {
     }
 
     /**
-     * ?源낆쨯??? ??? clientId????token 獄쏆뮄???椰꾧퀡???랁?secret 癰귣벏??遺얜즲 ??? ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 등록되지 않은 클라이언트의 토큰 발급을 거부하는지 검증한다.
      */
     @Test
     void issueTokenRejectsUnknownClientId() {
@@ -64,7 +64,7 @@ class ExternalApiAuthServiceImplTest {
     }
 
     /**
-     * ??쑵???client????token 獄쏆뮄???椰꾧퀡???랁?secret 癰귣벏??遺얜즲 ??? ??낅뮉筌왖 野꺜筌앹빜釉??
+     * 비활성 클라이언트의 토큰 발급을 거부하는지 검증한다.
      */
     @Test
     void issueTokenRejectsInactiveClient() {
@@ -81,7 +81,7 @@ class ExternalApiAuthServiceImplTest {
     }
 
     /**
-     * timestamp ?類ㅻ뻼????而?몴?? ??놁몵筌?token 獄쏆뮄???椰꾧퀡???롫뮉筌왖 野꺜筌앹빜釉??
+     * 타임스탬프 형식이 잘못되면 토큰 발급을 거부하는지 검증한다.
      */
     @Test
     void issueTokenRejectsInvalidTimestampFormat() {
@@ -96,7 +96,7 @@ class ExternalApiAuthServiceImplTest {
     }
 
     /**
-     * timestamp ??됱뒠 ??볦퍢??筌왖??롢늺 replay ?⑤벀爰?獄쎻뫗????袁る퉸 token 獄쏆뮄???椰꾧퀡???롫뮉筌왖 野꺜筌앹빜釉??
+     * 유효 시간이 지난 요청의 토큰 발급을 거부하는지 검증한다.
      */
     @Test
     void issueTokenRejectsExpiredTimestamp() {
@@ -114,7 +114,7 @@ class ExternalApiAuthServiceImplTest {
     }
 
     /**
-     * HMAC signature揶쎛 ??깊뒄??? ??놁몵筌?token 獄쏆뮄???椰꾧퀡???롫뮉筌왖 野꺜筌앹빜釉??
+     * HMAC 서명이 올바르지 않으면 토큰 발급을 거부하는지 검증한다.
      */
     @Test
     void issueTokenRejectsInvalidSignature() {
@@ -129,7 +129,7 @@ class ExternalApiAuthServiceImplTest {
     }
 
     /**
-     * ?類ㅺ맒 clientId, timestamp, HMAC signature????Bearer token??scope 筌뤴뫖以??獄쏆꼹???롫뮉筌왖 野꺜筌앹빜釉??
+     * HMAC 서명이 유효하면 Bearer 토큰을 발급하는지 검증한다.
      */
     @Test
     void issueTokenReturnsBearerTokenWhenSignatureIsValid() {

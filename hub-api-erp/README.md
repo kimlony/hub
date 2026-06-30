@@ -1,22 +1,83 @@
 # hub-api-erp
 
-Spring Boot 3.3 + Java 17 based HUB API.
+Spring Boot 3.3 + Java 17 기반 Easy Hub API입니다.
 
-The API receives order collection requests from ERP, stores one job per channel in PostgreSQL, and publishes each job to Kafka topic `hub.jobs`.
+API는 화면 또는 외부 요청으로부터 주문 수집 Job을 생성하고, PostgreSQL에 상태를 저장한 뒤 Outbox 패턴으로 Kafka에 발행합니다. Worker가 처리한 결과는 정규화 테이블로 저장되고, 화면에서는 Job/Kafka/DLQ/Worker 상태를 확인할 수 있습니다.
 
 ## Stack
 
 - Java 17
 - Spring Boot 3.3.5
+- MyBatis
 - PostgreSQL 16
-- Apache Kafka 3.7.2
-- Spring Data JPA
+- Apache Kafka
+- React + Vite + TypeScript frontend
+
+## Main class
+
+패키지 리팩토링 후 main class는 다음 값입니다.
+
+```text
+hub.BizbeeHubApplication
+```
+
+IntelliJ Run Configuration에서 기존 `com.bizbee.hub.BizbeeHubApplication`을 사용하면 실행 클래스를 찾지 못합니다.
+
+로컬 설정을 읽으려면 Active profiles에 `local`을 지정합니다.
+
+```text
+Active profiles: local
+```
+
+## Package structure
+
+```text
+hub
+  ├─ job
+  │  ├─ controller
+  │  ├─ service
+  │  ├─ mapper
+  │  ├─ domain
+  │  ├─ event
+  │  └─ dto
+  │     ├─ request
+  │     └─ response
+  ├─ outbox
+  ├─ kafka
+  ├─ loadtest
+  ├─ schedule
+  ├─ worker
+  ├─ channel
+  ├─ external
+  ├─ order
+  ├─ auth
+  ├─ config
+  └─ exception
+```
+
+MyBatis 설정:
+
+```yaml
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: hub
+```
+
+## Core flow
+
+```text
+POST /api/hub/jobs/batch
+  -> HubJobService
+  -> hub_job INSERT
+  -> hub_job_outbox INSERT
+  -> JobOutboxPublisher
+  -> Kafka hub.jobs
+  -> Worker
+```
 
 ## APIs
 
-UI/API endpoints use JWT authentication after login. External order export endpoints use a separate external API token issued through the HMAC-based client flow.
-
-### Create Batch Jobs
+### Create batch jobs
 
 ```http
 POST /api/hub/jobs/batch
@@ -27,9 +88,9 @@ Request:
 
 ```json
 {
-  "frDt": "20260512",
-  "toDt": "20260513",
-  "mallKeys": ["11ST", "GODO"]
+  "frDt": "20260618",
+  "toDt": "20260618",
+  "mallKeys": ["GODO", "11ST"]
 }
 ```
 
@@ -40,72 +101,91 @@ Response:
   "jobs": [
     {
       "requestId": "uuid",
-      "channelCd": "11ST",
+      "channelCd": "GODO",
       "status": "QUEUED"
     }
   ]
 }
 ```
 
-Each channel creates one `hub_job`.
-
-Request key format:
-
-```text
-{mallKey}_{frDt}_{toDt}_{username}
-```
-
-Duplicate `requestKey` requests return the existing job.
-
-### Get Job
+### Job list/detail/logs
 
 ```http
+GET /api/hub/jobs
 GET /api/hub/jobs/{requestId}
+GET /api/hub/jobs/{requestId}/logs
+POST /api/hub/jobs/{requestId}/retry
 ```
 
-Response:
+### Kafka monitor / DLQ
 
-```json
-{
-  "requestId": "uuid",
-  "sourceErp": "HUB_BATCH",
-  "jobType": "ORDER_COLLECT",
-  "requestKey": "ORDER_COLLECT_A001_11ST_shop_001_20260512_20260513",
-  "status": "QUEUED",
-  "retryCount": 0,
-  "errorMessage": null,
-  "createdAt": "2026-05-13T10:00:00",
-  "updatedAt": "2026-05-13T10:00:00"
-}
+```http
+GET /api/hub/kafka/monitor
+GET /api/hub/kafka/job-distribution
+GET /api/hub/kafka/dlq
+POST /api/hub/kafka/dlq/replay
 ```
 
-## Local Run
+DLQ replay는 DLQ 원본 메시지에서 Job payload를 추출해 `hub.jobs` topic으로 다시 발행합니다.
 
-```bash
-cp .env.example .env
+### Mock Mall load test
+
+```http
+POST /api/hub/load-tests/mock-mall
+GET /api/hub/load-tests
+GET /api/hub/load-tests/{runId}
 ```
 
-Run shared infrastructure from the repository root:
+## Local run
 
-```bash
+인프라 실행:
+
+```powershell
+cd C:\Users\Scrap-2\bizbee-hub
 docker compose up -d
 ```
 
-Then start the API server:
+API 실행:
 
-```bash
-./gradlew bootRun
+```powershell
+cd C:\Users\Scrap-2\bizbee-hub\hub-api-erp
+.\gradlew.bat bootRun --args='--spring.profiles.active=local'
 ```
 
-Local services:
+IntelliJ 실행 시:
 
-- PostgreSQL: `localhost:5432`
-- Kafka: `localhost:9092`
+```text
+Main class: hub.BizbeeHubApplication
+Active profiles: local
+```
+
+`HUB_AES_SECRET`은 정확히 32 bytes여야 합니다. `application-local.yml` 또는 환경변수에서 설정합니다.
 
 Frontend:
 
-```bash
-cd src/main/frontend
+```powershell
+cd C:\Users\Scrap-2\bizbee-hub\hub-api-erp\src\main\frontend
 npm install
 npm run dev
+```
+
+## Verification
+
+Java compile:
+
+```powershell
+.\gradlew.bat compileJava
+```
+
+Test compile:
+
+```powershell
+.\gradlew.bat compileTestJava
+```
+
+전체 빠른 검증은 저장소 루트에서 실행합니다.
+
+```powershell
+cd C:\Users\Scrap-2\bizbee-hub
+powershell -ExecutionPolicy Bypass -File scripts/test-fast.ps1
 ```

@@ -3,16 +3,14 @@ package hub.channel.service;
 import hub.auth.AuthException;
 import hub.auth.domain.HubUser;
 import hub.auth.mapper.UserMapper;
-import hub.channel.ChannelConflictException;
 import hub.channel.ChannelNotFoundException;
 import hub.channel.domain.ChannelRow;
 import hub.channel.dto.request.ChannelRequest;
 import hub.channel.dto.response.ChannelResponse;
 import hub.channel.mapper.ChannelMapper;
 import hub.config.AesEncryptor;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,40 +21,28 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChannelServiceImpl implements ChannelService {
 
     private final ChannelMapper channelMapper;
-    private final UserMapper    userMapper;
-    private final AesEncryptor  aesEncryptor;
+    private final UserMapper userMapper;
+    private final AesEncryptor aesEncryptor;
 
     @Override
     public List<ChannelResponse> getChannels(String username) {
         HubUser user = findUser(username);
-        Map<String, ChannelRow> rowMap = channelMapper.findAllByUserId(user.getId())
-                .stream().collect(Collectors.toMap(ChannelRow::getMallKey, r -> r));
+        List<ChannelRow> accounts = channelMapper.findAllByCorpId(user.getCorpId());
+        List<ChannelResponse> responses = new ArrayList<>();
 
-        return channelMapper.findAllHubChannels()
-                .stream()
-                .map(mall -> {
-                    ChannelRow row = rowMap.get(mall.getMallKey());
-                    if (row == null) {
-                        return ChannelResponse.builder()
-                                .mallKey(mall.getMallKey())
-                                .mallName(mall.getMallName())
-                                .registered(false)
-                                .build();
-                    }
-                    return ChannelResponse.builder()
-                            .mallKey(mall.getMallKey())
-                            .mallName(mall.getMallName())
-                            .registered(true)
-                            .useYn(row.getUseYn())
-                            .mallId(mask(row.getMallId()))
-                            .mallPw(mask(row.getMallPw()))
-                            .vendorId(mask(row.getVendorId()))
-                            .key(mask(row.getKey()))
-                            .key2(mask(row.getKey2()))
-                            .authKey(mask(row.getAuthKey()))
-                            .build();
-                })
-                .collect(Collectors.toList());
+        channelMapper.findAllHubChannels().forEach(mall -> {
+            List<ChannelRow> mallAccounts = accounts.stream()
+                    .filter(row -> mall.getMallKey().equals(row.getMallKey()))
+                    .toList();
+            mallAccounts.forEach(row -> responses.add(toResponse(mall.getMallName(), row)));
+            responses.add(ChannelResponse.builder()
+                    .corpId(user.getCorpId())
+                    .mallKey(mall.getMallKey())
+                    .mallName(mall.getMallName())
+                    .registered(false)
+                    .build());
+        });
+        return responses;
     }
 
     @Override
@@ -64,12 +50,11 @@ public class ChannelServiceImpl implements ChannelService {
     public void register(String username, String mallKey, ChannelRequest request) {
         validateMallKey(mallKey);
         HubUser user = findUser(username);
-        if (channelMapper.findByUserIdAndMallKey(user.getId(), mallKey).isPresent()) {
-            throw new ChannelConflictException(mallKey + " 嶺??х몭?????? ?繹먮굞夷??琉우꽑 ???곕????덈펲.");
-        }
         channelMapper.insert(ChannelRow.builder()
+                .corpId(user.getCorpId())
                 .userId(user.getId())
                 .mallKey(mallKey)
+                .accountName(defaultAccountName(request.getAccountName(), mallKey))
                 .key(aesEncryptor.encrypt(request.getKey()))
                 .key2(aesEncryptor.encrypt(request.getKey2()))
                 .authKey(aesEncryptor.encrypt(request.getAuthKey()))
@@ -82,14 +67,15 @@ public class ChannelServiceImpl implements ChannelService {
 
     @Override
     @Transactional
-    public void update(String username, String mallKey, ChannelRequest request) {
-        validateMallKey(mallKey);
+    public void update(String username, Long channelAccountId, ChannelRequest request) {
         HubUser user = findUser(username);
-        ChannelRow existing = channelMapper.findByUserIdAndMallKey(user.getId(), mallKey)
-                .orElseThrow(() -> new ChannelNotFoundException(mallKey + " 嶺??х몭???繹먮굞夷??? ???용┃???鍮??"));
+        ChannelRow existing = findChannelAccount(user.getCorpId(), channelAccountId);
         channelMapper.update(ChannelRow.builder()
+                .id(existing.getId())
+                .corpId(user.getCorpId())
                 .userId(user.getId())
-                .mallKey(mallKey)
+                .mallKey(existing.getMallKey())
+                .accountName(defaultAccountName(request.getAccountName(), existing.getAccountName()))
                 .key(encryptOrKeep(request.getKey(), existing.getKey()))
                 .key2(encryptOrKeep(request.getKey2(), existing.getKey2()))
                 .authKey(encryptOrKeep(request.getAuthKey(), existing.getAuthKey()))
@@ -101,34 +87,57 @@ public class ChannelServiceImpl implements ChannelService {
 
     @Override
     @Transactional
-    public void delete(String username, String mallKey) {
-        validateMallKey(mallKey);
+    public void delete(String username, Long channelAccountId) {
         HubUser user = findUser(username);
-        channelMapper.findByUserIdAndMallKey(user.getId(), mallKey)
-                .orElseThrow(() -> new ChannelNotFoundException(mallKey + " 嶺??х몭???繹먮굞夷??? ???용┃???鍮??"));
-        channelMapper.delete(user.getId(), mallKey);
+        findChannelAccount(user.getCorpId(), channelAccountId);
+        channelMapper.delete(user.getCorpId(), channelAccountId);
     }
 
     @Override
     @Transactional
-    public void toggleUseYn(String username, String mallKey) {
-        validateMallKey(mallKey);
+    public void toggleUseYn(String username, Long channelAccountId) {
         HubUser user = findUser(username);
-        ChannelRow existing = channelMapper.findByUserIdAndMallKey(user.getId(), mallKey)
-                .orElseThrow(() -> new ChannelNotFoundException(mallKey + " 嶺??х몭???繹먮굞夷??? ???용┃???鍮??"));
+        ChannelRow existing = findChannelAccount(user.getCorpId(), channelAccountId);
         String newUseYn = "Y".equals(existing.getUseYn()) ? "N" : "Y";
-        channelMapper.updateUseYn(user.getId(), mallKey, newUseYn);
+        channelMapper.updateUseYn(user.getCorpId(), channelAccountId, newUseYn);
     }
 
     private HubUser findUser(String username) {
         return userMapper.findByUsername(username)
-                .orElseThrow(() -> new AuthException("?????? 嶺뚢돦堉??????怨룸????덈펲."));
+                .orElseThrow(() -> new AuthException("user not found"));
+    }
+
+    private ChannelRow findChannelAccount(Long corpId, Long channelAccountId) {
+        return channelMapper.findByCorpIdAndId(corpId, channelAccountId)
+                .orElseThrow(() -> new ChannelNotFoundException("channel account not found: " + channelAccountId));
     }
 
     private void validateMallKey(String mallKey) {
         if (!channelMapper.existsHubChannel(mallKey)) {
-            throw new ChannelNotFoundException("嶺뚯솘???믨퀡由?춯?뼿 ???낅츎 嶺??х몭???낅퉵?? " + mallKey);
+            throw new ChannelNotFoundException("unsupported channel: " + mallKey);
         }
+    }
+
+    private ChannelResponse toResponse(String mallName, ChannelRow row) {
+        return ChannelResponse.builder()
+                .channelAccountId(row.getId())
+                .corpId(row.getCorpId())
+                .mallKey(row.getMallKey())
+                .mallName(mallName)
+                .accountName(row.getAccountName())
+                .registered(true)
+                .useYn(row.getUseYn())
+                .mallId(mask(row.getMallId()))
+                .mallPw(mask(row.getMallPw()))
+                .vendorId(mask(row.getVendorId()))
+                .key(mask(row.getKey()))
+                .key2(mask(row.getKey2()))
+                .authKey(mask(row.getAuthKey()))
+                .build();
+    }
+
+    private String defaultAccountName(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
     }
 
     private String mask(String value) {
@@ -136,7 +145,7 @@ public class ChannelServiceImpl implements ChannelService {
     }
 
     private String encryptOrKeep(String newValue, String existingEncrypted) {
-        return (newValue != null && !newValue.isBlank())
+        return newValue != null && !newValue.isBlank()
                 ? aesEncryptor.encrypt(newValue)
                 : existingEncrypted;
     }

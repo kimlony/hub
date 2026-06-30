@@ -1,4 +1,6 @@
 export type RawOrderContext = {
+  corpId: number;
+  channelAccountId: number;
   userId: number;
   requestId: string;
   requestKey: string;

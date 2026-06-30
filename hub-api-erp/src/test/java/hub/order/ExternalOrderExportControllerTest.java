@@ -24,7 +24,7 @@ class ExternalOrderExportControllerTest {
     private OrderExportService orderExportService;
 
     /**
-     * ?紐? API ?醫뤾쿃????곸몵筌?雅뚯눖揆 鈺곌퀬????뺥돩??? ?紐꾪뀱??? ??꾪?401 ?臾먮뼗??獄쏆꼹???롫뮉筌왖 野꺜筌앹빜釉??
+     * 외부 API 인증 정보가 없으면 주문 조회를 거부하는지 검증한다.
      */
     @Test
     void rejectsRequestWhenExternalTokenIsMissing() {
@@ -38,7 +38,7 @@ class ExternalOrderExportControllerTest {
     }
 
     /**
-     * token?? ???筌?orders:read 亦낅슦釉????곸몵筌?雅뚯눖揆 鈺곌퀬????뺥돩??? ?紐꾪뀱??? ??꾪?403 ?臾먮뼗??獄쏆꼹???롫뮉筌왖 野꺜筌앹빜釉??
+     * 주문 조회 권한이 없는 외부 인증 주체의 요청을 거부하는지 검증한다.
      */
     @Test
     void rejectsRequestWhenPrincipalHasNoOrdersReadScope() {
@@ -53,7 +53,7 @@ class ExternalOrderExportControllerTest {
     }
 
     /**
-     * orders:read 亦낅슦釉????덈뮉 ?紐? client???類?뇣??雅뚯눖揆 鈺곌퀬????뺥돩??? ?紐꾪뀱??랁?200 ?臾먮뼗??獄쏆룆?쀯쭪? 野꺜筌앹빜釉??
+     * 주문 조회 권한이 있으면 주문 데이터를 반환하는지 검증한다.
      */
     @Test
     void returnsOrdersWhenPrincipalHasOrdersReadScope() {

@@ -78,8 +78,7 @@ class MyBatisTypeMappingIntegrationTest {
     }
 
     /**
-     * hub_external_api_client??scopes, allowed_ips 揶쏆늿? jsonb ?뚎됱쓥??created_at, updated_at, secret_rotated_at
-     * 揶쏆늿? TIMESTAMPTZ ?뚎됱쓥??ExternalApiClientMapper?癒?퐣 ?얜챷???以???됱읈??띿쓺 筌띲끋釉??롫뮉筌왖 野꺜筌앹빜鍮??덈뼄.
+     * 외부 API 클라이언트의 JSONB와 시간 컬럼을 올바르게 매핑하는지 검증한다.
      */
     @Test
     void externalApiClientMapperMapsJsonbAndTimestamptzColumnsAsStrings() {
@@ -99,8 +98,7 @@ class MyBatisTypeMappingIntegrationTest {
     }
 
     /**
-     * hub_collect_schedule, hub_collect_schedule_run_log??mall_keys,
-     * request_ids JSONB?? ??쎈뻬 ??볦퍢 ?뚎됱쓥??쇱뵠 to_char(... AT TIME ZONE 'Asia/Seoul') 野껉퀗?득에???됱읈??띿쓺 ?????삳뮉筌왖 野꺜筌앹빜鍮??덈뼄.
+     * 수집 스케줄의 JSONB와 시간 컬럼을 올바르게 매핑하는지 검증한다.
      */
     @Test
     void collectScheduleMapperMapsJsonbAndTimestamptzColumnsAsStrings() {
@@ -127,7 +125,7 @@ class MyBatisTypeMappingIntegrationTest {
     }
 
     /**
-     * hub_job_outbox??payload jsonb???얜챷???以? next_retry_at, created_at, updated_at, locked_at?? OffsetDateTime??곗쨮 ?類ㅺ맒 筌띲끋釉??롫뮉筌왖 野꺜筌앹빜鍮??덈뼄.
+     * Outbox JSONB와 시간 컬럼을 OffsetDateTime으로 매핑하는지 검증한다.
      */
     @Test
     void jobOutboxMapperMapsJsonbPayloadAndTimestamptzColumnsToOffsetDateTime() {

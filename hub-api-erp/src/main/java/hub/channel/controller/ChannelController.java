@@ -31,28 +31,28 @@ public class ChannelController {
         return ResponseEntity.ok().build();
     }
 
-    @PutMapping("/{mallKey}")
+    @PutMapping("/accounts/{channelAccountId}")
     public ResponseEntity<Void> update(
             @AuthenticationPrincipal String username,
-            @PathVariable String mallKey,
+            @PathVariable Long channelAccountId,
             @RequestBody ChannelRequest request) {
-        channelService.update(username, mallKey, request);
+        channelService.update(username, channelAccountId, request);
         return ResponseEntity.ok().build();
     }
 
-    @DeleteMapping("/{mallKey}")
+    @DeleteMapping("/accounts/{channelAccountId}")
     public ResponseEntity<Void> delete(
             @AuthenticationPrincipal String username,
-            @PathVariable String mallKey) {
-        channelService.delete(username, mallKey);
+            @PathVariable Long channelAccountId) {
+        channelService.delete(username, channelAccountId);
         return ResponseEntity.noContent().build();
     }
 
-    @PatchMapping("/{mallKey}/active")
+    @PatchMapping("/accounts/{channelAccountId}/active")
     public ResponseEntity<Void> toggleUseYn(
             @AuthenticationPrincipal String username,
-            @PathVariable String mallKey) {
-        channelService.toggleUseYn(username, mallKey);
+            @PathVariable Long channelAccountId) {
+        channelService.toggleUseYn(username, channelAccountId);
         return ResponseEntity.ok().build();
     }
 }

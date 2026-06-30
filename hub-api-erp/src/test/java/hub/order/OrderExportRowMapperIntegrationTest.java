@@ -52,7 +52,7 @@ class OrderExportRowMapperIntegrationTest {
     }
 
     /**
-     * ?낅슣?뽪룇, ?꾩룄???룹??, ???嫄???⑥щ턄??? ???깅굵 ??OrderExportItem???낅슣?뽪룇?뺢퀡??? ??⑤객臾? ?낅슣?뽪룇??源낅뻣, ??濡?／?? ??⑤갭?嶺? ??濡?럸, ?낅슣?뽪룇?ル?녽뇡? raw JSON???筌먦끆留?嶺뚮씞?뗩뇡??濡ル츎嶺뚯솘? ?롪틵?嶺뚯빘鍮쒒뜮????덈펲.
+     * 정규화 주문과 배송지 및 상품 정보가 조회 응답으로 매핑되는지 검증한다.
      */
     @Test
     void getOrdersForUserMapsNormalizedOrderWithDeliveryAndFirstItem() {
@@ -111,7 +111,7 @@ class OrderExportRowMapperIntegrationTest {
     }
 
     /**
-     * ?꾩룄??????嫄?????섑깴???ル?녽뇡???濡?럸??null????????쒖굣??????裕?null?????깆쓧???우벟 ?????泥???? ?롪틵?嶺뚯빘鍮쒒뜮????덈펲.
+     * 선택 정보와 금액이 없어도 주문 조회 결과를 안전하게 매핑하는지 검증한다.
      */
     @Test
     void getOrdersForUserMapsNullableNumericAndMissingJoinValuesSafely() {
@@ -151,7 +151,7 @@ class OrderExportRowMapperIntegrationTest {
     }
 
     /**
-     * ?筌? API?띠럾? ?熬곣뫗??????? 嶺??х몭? ?リ옇?쀨??브퀗?쀦뤃??怨쀬Ŧ嶺??낅슣?뽪룇???브퀗????濡ル츎嶺뚯솘? ?롪틵?嶺뚯빘鍮쒒뜮????덈펲. ???섎?????????섎?嶺??х몭??リ옇?쀨????낅슣?뽪룇????濡?턄嶺뚯솘? ???낅츎嶺뚯솘? ?곌랜??????裕?筌뤾쑴援??
+     * 회사와 채널 및 날짜 조건에 해당하는 주문만 조회하는지 검증한다.
      */
     @Test
     void getOrdersForUserFiltersByUserChannelAndDateRange() {
@@ -181,7 +181,45 @@ class OrderExportRowMapperIntegrationTest {
     }
 
     /**
-     * ???????縕ワ쭕???瑜곸뗄????⑥щ턄??? ???깅굵 ??嶺뚣끉裕????⑤객臾?????????怨뺣츎嶺뚯솘? ???裕??     */
+     * 같은 회사 사용자가 동일한 회사 주문을 조회할 수 있는지 검증한다.
+     */
+    @Test
+    void usersInSameCorpCanReadTheSameOrders() {
+        inRollbackTransaction(() -> {
+            long ownerUserId = insertUser();
+            Long corpId = jdbcTemplate.queryForObject(
+                    "SELECT corp_id FROM users WHERE id = ?", Long.class, ownerUserId);
+            long colleagueUserId = insertUser(corpId);
+            insertOrder(
+                    ownerUserId,
+                    "GODO",
+                    orderPrefix + "-shared-corp",
+                    "PAID",
+                    "2026-06-18 12:00:00+09",
+                    "15000.00",
+                    "{}"
+            );
+
+            OrderExportResponse response = orderExportService.getOrdersForUser(
+                    colleagueUserId,
+                    "GODO",
+                    "20260618",
+                    "20260618",
+                    1,
+                    50
+            );
+
+            assertThat(response.total()).isEqualTo(1);
+            assertThat(response.orders())
+                    .extracting(OrderExportItem::orderNo)
+                    .containsExactly(orderPrefix + "-shared-corp");
+            return null;
+        });
+    }
+
+    /**
+     * 동일 주문이 갱신되면 최신 상태와 금액을 반환하는지 검증한다.
+     */
     @Test
     void getOrdersForUserReturnsLatestStatusWhenSameOrderIsUpdated() {
         inRollbackTransaction(() -> {
@@ -244,14 +282,40 @@ class OrderExportRowMapperIntegrationTest {
     }
 
     private long insertUser() {
+        String suffix = shortId();
         Long id = jdbcTemplate.queryForObject(
-                "INSERT INTO users (username, password) VALUES (?, ?) RETURNING id",
+                """
+                        WITH inserted_corp AS (
+                            INSERT INTO hub_corp (corp_cd, corp_name)
+                            VALUES (?, ?)
+                            RETURNING id
+                        )
+                        INSERT INTO users (corp_id, username, password)
+                        SELECT id, ?, ? FROM inserted_corp
+                        RETURNING id
+                        """,
                 Long.class,
-                userPrefix + "-" + shortId(),
+                "IT-CORP-" + suffix,
+                "Integration Corp " + suffix,
+                userPrefix + "-" + suffix,
                 "integration-test-password"
         );
         if (id == null) {
             throw new IllegalStateException("failed to insert test user");
+        }
+        return id;
+    }
+
+    private long insertUser(long corpId) {
+        Long id = jdbcTemplate.queryForObject(
+                "INSERT INTO users (corp_id, username, password) VALUES (?, ?, ?) RETURNING id",
+                Long.class,
+                corpId,
+                userPrefix + "-" + shortId(),
+                "integration-test-password"
+        );
+        if (id == null) {
+            throw new IllegalStateException("failed to insert test user in corp");
         }
         return id;
     }
@@ -265,9 +329,33 @@ class OrderExportRowMapperIntegrationTest {
             String orderAmount,
             String rawPayload
     ) {
+        Long corpId = jdbcTemplate.queryForObject(
+                "SELECT corp_id FROM users WHERE id = ?", Long.class, userId);
+        Long channelAccountId = jdbcTemplate.query(
+                "SELECT id FROM user_malls WHERE user_id = ? AND mall_key = ? ORDER BY id LIMIT 1",
+                rs -> rs.next() ? rs.getLong(1) : null,
+                userId,
+                channelCd
+        );
+        if (channelAccountId == null) {
+            channelAccountId = jdbcTemplate.queryForObject(
+                    """
+                            INSERT INTO user_malls (corp_id, user_id, mall_key, account_name, use_yn)
+                            VALUES (?, ?, ?, ?, 'Y')
+                            RETURNING id
+                            """,
+                    Long.class,
+                    corpId,
+                    userId,
+                    channelCd,
+                    channelCd + " integration account"
+            );
+        }
         Long id = jdbcTemplate.queryForObject(
                 """
                         INSERT INTO hub_collected_order (
+                            corp_id,
+                            channel_account_id,
                             user_id,
                             request_id,
                             request_key,
@@ -286,6 +374,8 @@ class OrderExportRowMapperIntegrationTest {
                             ?,
                             ?,
                             ?,
+                            ?,
+                            ?,
                             'HUB',
                             ?,
                             ?,
@@ -299,8 +389,10 @@ class OrderExportRowMapperIntegrationTest {
                             NOW()
                         )
                         RETURNING id
-                        """,
+                """,
                 Long.class,
+                corpId,
+                channelAccountId,
                 userId,
                 UUID.randomUUID().toString(),
                 requestPrefix + "-" + shortId(),
