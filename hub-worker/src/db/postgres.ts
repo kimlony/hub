@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createDecipheriv, randomUUID } from "node:crypto";
 import pg from "pg";
 import { logger } from "../logger.js";
@@ -41,6 +42,17 @@ export type RetryDecision = {
 
 export type SaveJobResultStatus = "INSERTED" | "SKIPPED";
 
+type CapturedJobResult = {
+  requestId: string;
+  resultPayload?: Record<string, unknown>;
+};
+
+export type CompleteOrderCollectResult = {
+  succeeded: boolean;
+  normalizeJob: NormalizeJobInput | null;
+  outboxCreated: boolean;
+};
+
 export type JobLogLevel = "INFO" | "WARN" | "ERROR";
 
 export type NewsItemInput = {
@@ -81,6 +93,7 @@ const RETRY_BACKOFF_MS = parseRetryBackoffMs();
 const AES_SECRET = requiredEnv("HUB_AES_SECRET");
 const LOCK_TTL_MINUTES = Number(process.env.JOB_LOCK_TTL_MINUTES ?? 30);
 const WORKER_ID = getWorkerId();
+const jobResultCapture = new AsyncLocalStorage<CapturedJobResult>();
 const SCHEMA_INIT_LOCK_KEY = 2026060201;
 
 const { Pool } = pg;
@@ -252,6 +265,30 @@ async function ensurePostgresSchemaUnlocked(): Promise<void> {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_hub_job_result_request_key
     ON hub_job_result (request_key)
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_job_outbox (
+      id BIGSERIAL PRIMARY KEY,
+      request_id VARCHAR(100) NOT NULL,
+      event_type VARCHAR(50) NOT NULL,
+      topic VARCHAR(120) NOT NULL,
+      partition_key VARCHAR(200) NOT NULL,
+      payload JSONB NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+      retry_count INT NOT NULL DEFAULT 0,
+      max_retry_count INT NOT NULL DEFAULT 5,
+      next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      locked_by VARCHAR(120),
+      locked_at TIMESTAMPTZ,
+      last_error TEXT,
+      published_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_hub_job_outbox_status_retry
+    ON hub_job_outbox (status, next_retry_at)
   `);
   // 기존 테이블에 컬럼이 없을 경우 안전하게 추가
   await pool.query(`
@@ -512,6 +549,12 @@ export async function saveJobResult(
   message: HubJobMessage,
   resultPayload: Record<string, unknown>
 ): Promise<SaveJobResultStatus> {
+  const capture = jobResultCapture.getStore();
+  if (capture?.requestId === message.requestId) {
+    capture.resultPayload = resultPayload;
+    return "INSERTED";
+  }
+
   const result = await pool.query(
     `
       INSERT INTO hub_job_result (
@@ -566,123 +609,193 @@ export async function saveJobResult(
   return saveStatus;
 }
 
-export async function createNormalizeJobForResult(message: HubJobMessage): Promise<NormalizeJobInput | null> {
+export async function captureOrderCollectResult(
+  message: HubJobMessage,
+  work: () => Promise<void>
+): Promise<Record<string, unknown>> {
+  const capture: CapturedJobResult = { requestId: message.requestId };
+  await jobResultCapture.run(capture, work);
+  if (!capture.resultPayload) {
+    throw new Error(`ORDER_COLLECT handler did not provide a job result: ${message.requestId}`);
+  }
+  return capture.resultPayload;
+}
+
+export async function completeOrderCollectWithNormalize(
+  message: HubJobMessage,
+  resultPayload: Record<string, unknown>
+): Promise<CompleteOrderCollectResult> {
   if (message.jobType !== "ORDER_COLLECT") {
+    throw new Error(`Expected ORDER_COLLECT but received ${message.jobType}`);
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const parentResult = await client.query<{
+      request_id: string;
+      request_key: string;
+      source_erp: string;
+      correlation_id: string;
+    }>(
+      `
+        SELECT request_id, request_key, source_erp, correlation_id
+        FROM hub_job
+        WHERE request_id = $1
+          AND status = 'PROCESSING'
+        FOR UPDATE
+      `,
+      [message.requestId]
+    );
+    const parent = parentResult.rows[0];
+    if (!parent) {
+      await client.query("ROLLBACK");
+      return { succeeded: false, normalizeJob: null, outboxCreated: false };
+    }
+
+    await client.query(
+      `
+        INSERT INTO hub_job_result (
+          request_id, request_key, job_type, source_erp, result_payload, saved_at
+        ) VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
+        ON CONFLICT (request_id) DO UPDATE
+        SET request_key = EXCLUDED.request_key,
+            job_type = EXCLUDED.job_type,
+            source_erp = EXCLUDED.source_erp,
+            result_payload = EXCLUDED.result_payload,
+            saved_at = NOW()
+      `,
+      [message.requestId, parent.request_key, message.jobType, parent.source_erp, JSON.stringify(resultPayload)]
+    );
+
+    const normalizeJob = await createNormalizeChild(client, message, parent, resultPayload);
+    let outboxCreated = false;
+    if (normalizeJob) {
+      const outboxPayload = {
+        requestId: normalizeJob.requestId,
+        requestKey: normalizeJob.requestKey,
+        jobType: normalizeJob.jobType,
+        status: "QUEUED",
+        sourceErp: normalizeJob.sourceErp,
+        channelCd: String(normalizeJob.payload.channelCd ?? "ORDER"),
+        parentJobId: normalizeJob.parentJobId,
+        correlationId: normalizeJob.correlationId,
+        causationId: normalizeJob.causationId,
+        schemaVersion: normalizeJob.schemaVersion,
+        payloadVersion: normalizeJob.payloadVersion,
+        payload: normalizeJob.payload
+      };
+      const outboxResult = await client.query(
+        `
+          INSERT INTO hub_job_outbox (
+            request_id, event_type, topic, partition_key, payload, status,
+            retry_count, max_retry_count, next_retry_at, created_at, updated_at
+          )
+          SELECT $1, 'ORDER_NORMALIZE', $2, $3, $4::jsonb, 'PENDING', 0, 5, NOW(), NOW(), NOW()
+          WHERE NOT EXISTS (
+            SELECT 1 FROM hub_job_outbox
+            WHERE request_id = $1 AND event_type = 'ORDER_NORMALIZE'
+          )
+        `,
+        [normalizeJob.requestId, process.env.KAFKA_TOPIC ?? "hub.jobs", message.requestId, JSON.stringify(outboxPayload)]
+      );
+      outboxCreated = outboxResult.rowCount === 1;
+    }
+
+    const successResult = await client.query(
+      `
+        UPDATE hub_job
+        SET status = 'SUCCESS', error_message = NULL, next_retry_at = NULL,
+            completed_at = NOW(), updated_at = NOW()
+        WHERE request_id = $1 AND status = 'PROCESSING'
+      `,
+      [message.requestId]
+    );
+    if (successResult.rowCount !== 1) {
+      throw new Error(`ORDER_COLLECT success transition failed: ${message.requestId}`);
+    }
+
+    await client.query("COMMIT");
+    return { succeeded: true, normalizeJob, outboxCreated };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function createNormalizeChild(
+  client: pg.PoolClient,
+  message: HubJobMessage,
+  parent: { request_id: string; request_key: string; source_erp: string; correlation_id: string },
+  resultPayload: Record<string, unknown>
+): Promise<NormalizeJobInput | null> {
+  const orders = Array.isArray(resultPayload.orders) ? resultPayload.orders : [];
+  if (orders.length === 0) {
     return null;
   }
 
-  // Empty collection results are intentionally not normalized. This keeps the
-  // worker queue focused on useful downstream work while preserving raw results.
-  const result = await pool.query<{
-    request_id: string;
-    request_key: string;
-    source_erp: string;
-    correlation_id: string;
-    result_payload: Record<string, unknown>;
-  }>(
-    `
-      SELECT r.request_id, r.request_key, r.source_erp, j.correlation_id, r.result_payload
-      FROM hub_job_result r
-      JOIN hub_job j ON j.request_id = r.request_id
-      WHERE r.request_id = $1
-        AND jsonb_typeof(r.result_payload -> 'orders') = 'array'
-        AND jsonb_array_length(r.result_payload -> 'orders') > 0
-    `,
-    [message.requestId]
-  );
-
-  const row = result.rows[0];
-  if (!row) {
-    logger.info({
-      event: "ORDER_NORMALIZE_JOB_SKIPPED",
-      requestId: message.requestId,
-      reason: "orders_empty_or_missing"
-    }, "Order normalize job skipped");
-    return null;
-  }
-
-  const requestId = randomUUID();
   const requestKey = `NORMALIZE_${message.requestId}`;
   const payload = {
     sourceRequestId: message.requestId,
-    sourceRequestKey: row.request_key,
+    sourceRequestKey: parent.request_key,
     userId: message.payload?.userId,
-    channelCd: message.payload?.channelCd ?? row.result_payload?.channelCd,
-    mallKey: message.payload?.mallKey ?? row.result_payload?.mallKey,
-    frDt: message.payload?.frDt ?? row.result_payload?.frDt,
-    toDt: message.payload?.toDt ?? row.result_payload?.toDt
+    corpId: message.payload?.corpId,
+    channelAccountId: message.payload?.channelAccountId,
+    channelCd: message.payload?.channelCd ?? resultPayload.channelCd,
+    mallKey: message.payload?.mallKey ?? resultPayload.mallKey,
+    frDt: message.payload?.frDt ?? resultPayload.frDt,
+    toDt: message.payload?.toDt ?? resultPayload.toDt
   };
-
-  const insertResult = await pool.query<{
-    request_id: string;
-    request_key: string;
-    source_erp: string;
-    job_type: string;
-    parent_job_id: string | null;
-    correlation_id: string;
-    causation_id: string | null;
-    schema_version: string;
-    payload_version: string;
-    payload: Record<string, unknown>;
-  }>(
+  await client.query<{ request_id: string }>(
     `
       INSERT INTO hub_job (
-        request_id,
-        request_key,
-        channel_cd,
-        status,
-        payload,
-        retry_count,
-        job_type,
-        source_erp,
-        parent_job_id,
-        correlation_id,
-        causation_id,
-        schema_version,
-        payload_version,
-        created_at,
-        updated_at
+        request_id, request_key, channel_cd, status, payload, retry_count,
+        job_type, source_erp, parent_job_id, correlation_id, causation_id,
+        schema_version, payload_version, created_at, updated_at
       ) VALUES (
         $1, $2, $3, 'QUEUED', $4::jsonb, 0, 'ORDER_NORMALIZE', 'HUB',
         $5, $6, $5, '1.0', '1.0', NOW(), NOW()
       )
       ON CONFLICT (request_key) DO NOTHING
-      RETURNING request_id, request_key, source_erp, job_type,
-                parent_job_id, correlation_id, causation_id,
-                schema_version, payload_version, payload
+      RETURNING request_id
     `,
-    [
-      requestId,
-      requestKey,
-      String(payload.channelCd ?? "ORDER"),
-      JSON.stringify(payload),
-      message.requestId,
-      row.correlation_id
-    ]
+    [randomUUID(), requestKey, String(payload.channelCd ?? "ORDER"), JSON.stringify(payload), message.requestId, parent.correlation_id]
   );
 
-  const inserted = insertResult.rows[0];
-  if (!inserted) {
-    logger.info({
-      event: "ORDER_NORMALIZE_JOB_SKIPPED",
-      requestId: message.requestId,
-      requestKey,
-      reason: "already_exists"
-    }, "Order normalize job skipped");
-    return null;
+  const child = await client.query<{
+    request_id: string; request_key: string; source_erp: string; job_type: string;
+    parent_job_id: string | null; correlation_id: string; causation_id: string | null;
+    schema_version: string; payload_version: string; payload: Record<string, unknown>;
+  }>(
+    `
+      SELECT request_id, request_key, source_erp, job_type, parent_job_id,
+             correlation_id, causation_id, schema_version, payload_version, payload
+      FROM hub_job
+      WHERE request_key = $1
+    `,
+    [requestKey]
+  );
+  const row = child.rows[0];
+  if (!row) {
+    throw new Error(`ORDER_NORMALIZE child was not found after insert: ${requestKey}`);
+  }
+  if (row.parent_job_id !== message.requestId || row.correlation_id !== parent.correlation_id) {
+    throw new Error(`Existing ORDER_NORMALIZE child relationship mismatch: ${requestKey}`);
   }
 
   return {
-    requestId: inserted.request_id,
-    requestKey: inserted.request_key,
-    sourceErp: inserted.source_erp,
-    jobType: inserted.job_type,
-    parentJobId: inserted.parent_job_id,
-    correlationId: inserted.correlation_id,
-    causationId: inserted.causation_id,
-    schemaVersion: inserted.schema_version,
-    payloadVersion: inserted.payload_version,
-    payload: inserted.payload
+    requestId: row.request_id,
+    requestKey: row.request_key,
+    sourceErp: row.source_erp,
+    jobType: row.job_type,
+    parentJobId: row.parent_job_id,
+    correlationId: row.correlation_id,
+    causationId: row.causation_id,
+    schemaVersion: row.schema_version,
+    payloadVersion: row.payload_version,
+    payload: row.payload
   };
 }
 
@@ -1624,6 +1737,30 @@ export async function claimStuckQueuedJobs(): Promise<HubJobRow[]> {
     payloadVersion: row.payload_version,
     payload: row.payload
   }));
+}
+
+export async function findQueuedNormalizeJobsWithoutOutbox(limit = 20): Promise<Array<{
+  requestId: string;
+  requestKey: string;
+}>> {
+  const result = await pool.query<{ request_id: string; request_key: string }>(
+    `
+      SELECT j.request_id, j.request_key
+      FROM hub_job j
+      WHERE j.job_type = 'ORDER_NORMALIZE'
+        AND j.status = 'QUEUED'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM hub_job_outbox o
+          WHERE o.request_id = j.request_id
+            AND o.event_type = 'ORDER_NORMALIZE'
+        )
+      ORDER BY j.created_at ASC
+      LIMIT $1
+    `,
+    [limit]
+  );
+  return result.rows.map((row) => ({ requestId: row.request_id, requestKey: row.request_key }));
 }
 
 export async function claimZombieProcessingJobs(): Promise<HubJobRow[]> {

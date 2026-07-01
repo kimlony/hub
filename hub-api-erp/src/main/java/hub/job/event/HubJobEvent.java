@@ -1,7 +1,9 @@
 package hub.job.event;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.Map;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record HubJobEvent(
         String requestId,
         String sourceErp,

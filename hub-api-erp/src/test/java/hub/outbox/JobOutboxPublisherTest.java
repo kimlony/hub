@@ -52,7 +52,7 @@ class JobOutboxPublisherTest {
         publisher.publishPendingEvents();
 
         ArgumentCaptor<HubJobEvent> eventCaptor = ArgumentCaptor.forClass(HubJobEvent.class);
-        verify(jobEventPort).publish(eventCaptor.capture());
+        verify(jobEventPort).publish(eventCaptor.capture(), eq("ORDER_COLLECT:1:GODO"));
         verify(jobOutboxMapper).markSent(10L);
         verify(jobOutboxMapper, never()).markRetry(any(Long.class), any(String.class), any(Integer.class));
         verify(jobOutboxMapper, never()).markFailed(any(Long.class), any(String.class));
@@ -78,13 +78,56 @@ class JobOutboxPublisherTest {
 
         when(jobOutboxMapper.claimPending(eq(2), any(String.class), eq(60)))
                 .thenReturn(List.of(outbox));
-        doThrow(new RuntimeException("kafka down")).when(jobEventPort).publish(any(HubJobEvent.class));
+        doThrow(new RuntimeException("kafka down")).when(jobEventPort)
+                .publish(any(HubJobEvent.class), any(String.class));
 
         publisher.publishPendingEvents();
 
         verify(jobOutboxMapper).markRetry(11L, "kafka down", 10);
         verify(jobOutboxMapper, never()).markSent(any(Long.class));
         verify(jobOutboxMapper, never()).markFailed(any(Long.class), any(String.class));
+    }
+
+    @Test
+    void publishesOrderNormalizeOutboxUsingPersistedPartitionKey() throws Exception {
+        JobOutboxPublisher publisher = publisher();
+        String payload = """
+                {
+                  "requestId":"normalize-001",
+                  "requestKey":"NORMALIZE_collect-001",
+                  "jobType":"ORDER_NORMALIZE",
+                  "status":"QUEUED",
+                  "sourceErp":"HUB",
+                  "channelCd":"GODO",
+                  "parentJobId":"collect-001",
+                  "correlationId":"correlation-001",
+                  "causationId":"collect-001",
+                  "schemaVersion":"1.0",
+                  "payloadVersion":"1.0",
+                  "payload":{"sourceRequestId":"collect-001","channelCd":"GODO"}
+                }
+                """;
+        JobOutbox outbox = JobOutbox.builder()
+                .id(20L)
+                .requestId("normalize-001")
+                .eventType("ORDER_NORMALIZE")
+                .topic("hub.jobs")
+                .partitionKey("collect-001")
+                .payload(payload)
+                .status(JobOutboxStatus.PUBLISHING)
+                .retryCount(0)
+                .maxRetryCount(5)
+                .build();
+        when(jobOutboxMapper.claimPending(eq(2), any(String.class), eq(60)))
+                .thenReturn(List.of(outbox));
+
+        publisher.publishPendingEvents();
+
+        ArgumentCaptor<HubJobEvent> eventCaptor = ArgumentCaptor.forClass(HubJobEvent.class);
+        verify(jobEventPort).publish(eventCaptor.capture(), eq("collect-001"));
+        verify(jobOutboxMapper).markSent(20L);
+        assertThat(eventCaptor.getValue().jobType()).isEqualTo("ORDER_NORMALIZE");
+        assertThat(eventCaptor.getValue().correlationId()).isEqualTo("correlation-001");
     }
 
     /**
@@ -102,7 +145,8 @@ class JobOutboxPublisherTest {
 
         when(jobOutboxMapper.claimPending(eq(2), any(String.class), eq(60)))
                 .thenReturn(List.of(outbox));
-        doThrow(new RuntimeException("kafka down")).when(jobEventPort).publish(any(HubJobEvent.class));
+        doThrow(new RuntimeException("kafka down")).when(jobEventPort)
+                .publish(any(HubJobEvent.class), any(String.class));
 
         publisher.publishPendingEvents();
 
@@ -124,7 +168,7 @@ class JobOutboxPublisherTest {
 
         publisher.publishPendingEvents();
 
-        verify(jobEventPort, never()).publish(any(HubJobEvent.class));
+        verify(jobEventPort, never()).publish(any(HubJobEvent.class), any(String.class));
         verify(jobOutboxMapper).markRetry(eq(13L), any(String.class), eq(30));
         verify(jobOutboxMapper, never()).markSent(any(Long.class));
     }
@@ -141,7 +185,7 @@ class JobOutboxPublisherTest {
 
         publisher.publishPendingEvents();
 
-        verify(jobEventPort, never()).publish(any(HubJobEvent.class));
+        verify(jobEventPort, never()).publish(any(HubJobEvent.class), any(String.class));
         verify(jobOutboxMapper, never()).markSent(any(Long.class));
         verify(jobOutboxMapper, never()).markRetry(any(Long.class), any(String.class), any(Integer.class));
         verify(jobOutboxMapper, never()).markFailed(any(Long.class), any(String.class));

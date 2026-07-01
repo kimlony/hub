@@ -1,6 +1,7 @@
 import {
   claimZombieProcessingJobs,
   claimStuckQueuedJobs,
+  findQueuedNormalizeJobsWithoutOutbox,
   type HubJobRow
 } from "./db/postgres.js";
 import { processJobMessage } from "./consumer.js";
@@ -62,6 +63,17 @@ export async function scanAndProcess(): Promise<void> {
   running = true;
 
   try {
+    const normalizeJobsWithoutOutbox = await findQueuedNormalizeJobsWithoutOutbox();
+    if (normalizeJobsWithoutOutbox.length > 0) {
+      // Detection only for now. A later repair command can recreate an outbox
+      // record after validating the stored child envelope and partition key.
+      logger.error({
+        event: "RECOVERY_NORMALIZE_OUTBOX_MISSING",
+        jobCount: normalizeJobsWithoutOutbox.length,
+        jobs: normalizeJobsWithoutOutbox
+      }, "Queued ORDER_NORMALIZE jobs without outbox records found");
+    }
+
     const jobs = await claimStuckQueuedJobs();
 
     if (jobs.length > 0) {

@@ -49,7 +49,9 @@ public class JobOutboxPublisher {
         try {
             HubJobEvent event = objectMapper.readValue(outbox.getPayload(), HubJobEvent.class);
 
-            jobEventPort.publish(event);
+            // The producer of the outbox record owns ordering semantics. Reusing
+            // the persisted key also keeps retries and replays on one partition.
+            jobEventPort.publish(event, outbox.getPartitionKey());
 
             jobOutboxMapper.markSent(outbox.getId());
 

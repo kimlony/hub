@@ -1,7 +1,8 @@
 import "dotenv/config";
 import { Kafka, type Consumer, type EachMessagePayload } from "kafkajs";
 import {
-  createNormalizeJobForResult,
+  captureOrderCollectResult,
+  completeOrderCollectWithNormalize,
   deferJobForLockConflict,
   findActiveChannelAccountIdentity,
   findActiveChannelCredentials,
@@ -28,7 +29,6 @@ import { HandlerRegistry } from "./handlers/HandlerRegistry.js";
 import type { JobHandlerMessage } from "./handlers/IJobHandler.js";
 import { publishDlq } from "./dlq.js";
 import { classifyRetry } from "./errors/retryPolicy.js";
-import { closeJobPublisher, publishNormalizeJob } from "./jobPublisher.js";
 import { logger } from "./logger.js";
 import { HubJobMessageSchema } from "./schemas.js";
 import { getKafkaClientId, getWorkerId } from "./workerIdentity.js";
@@ -96,7 +96,6 @@ export async function stopConsumer(): Promise<void> {
   await consumer.stop();
   await waitForActiveJobs();
   await consumer.disconnect();
-  await closeJobPublisher();
   consumerStarted = false;
 
   logger.info({
@@ -261,8 +260,6 @@ export async function processJobMessage(
       return;
     }
 
-    await publishFollowUpJobs(handledMessage);
-
     logger.info({
       event: "JOB_STATUS_SUCCESS",
       requestId,
@@ -421,36 +418,6 @@ export async function processJobMessage(
   }
 }
 
-async function publishFollowUpJobs(jobMessage: HubJobMessage): Promise<void> {
-  if (jobMessage.jobType !== "ORDER_COLLECT") {
-    return;
-  }
-
-  // Order collection and normalization are separated so raw results survive even
-  // when channel-specific mapping fails and needs retry/DLQ handling.
-  const normalizeJob = await createNormalizeJobForResult(jobMessage);
-  if (!normalizeJob) {
-    return;
-  }
-
-  await publishNormalizeJob(normalizeJob);
-  await saveJobLog({
-    requestId: jobMessage.requestId,
-    eventType: "ORDER_NORMALIZE_JOB_PUBLISHED",
-    level: "INFO",
-    message: "Order normalize job published",
-    jobType: jobMessage.jobType,
-    sourceErp: jobMessage.sourceErp,
-    requestKey: jobMessage.requestKey,
-    channelCd: getChannelCd(jobMessage),
-    mallKey: getMallKey(jobMessage),
-    detail: {
-      normalizeRequestId: normalizeJob.requestId,
-      normalizeRequestKey: normalizeJob.requestKey
-    }
-  });
-}
-
 function getChannelCd(jobMessage: HubJobMessage): string | undefined {
   return getRequiredString(jobMessage.payload.channelCd, "channelCd");
 }
@@ -469,9 +436,7 @@ async function prepareJobMessage(jobMessage: HubJobMessage): Promise<HubJobMessa
 
 async function runRegisteredHandler(jobMessage: HubJobMessage, requestId: string): Promise<boolean | null> {
   if (!requiresJobLock(jobMessage)) {
-    const handler = registry.get(jobMessage.jobType, getChannelCd(jobMessage));
-    await handler.handle(jobMessage);
-    return succeedJob(requestId);
+    return executeRegisteredHandler(jobMessage, requestId);
   }
 
   const lockKey = buildJobLockKey(jobMessage);
@@ -483,12 +448,61 @@ async function runRegisteredHandler(jobMessage: HubJobMessage, requestId: string
   }
 
   try {
-    const handler = registry.get(jobMessage.jobType, getChannelCd(jobMessage));
-    await handler.handle(jobMessage);
-    return await succeedJob(requestId);
+    return await executeRegisteredHandler(jobMessage, requestId);
   } finally {
     await releaseJobLock(lockKey, requestId);
   }
+}
+
+async function executeRegisteredHandler(jobMessage: HubJobMessage, requestId: string): Promise<boolean> {
+  const handler = registry.get(jobMessage.jobType, getChannelCd(jobMessage));
+  if (jobMessage.jobType !== "ORDER_COLLECT") {
+    await handler.handle(jobMessage);
+    return succeedJob(requestId);
+  }
+
+  const resultPayload = await captureOrderCollectResult(jobMessage, () => handler.handle(jobMessage));
+  const completion = await completeOrderCollectWithNormalize(jobMessage, resultPayload);
+  if (completion.succeeded) {
+    await saveJobLog({
+      requestId: jobMessage.requestId,
+      eventType: "ORDER_COLLECT_TRANSACTION_COMMITTED",
+      level: "INFO",
+      message: "Order collection completion transaction committed",
+      jobType: jobMessage.jobType,
+      sourceErp: jobMessage.sourceErp,
+      requestKey: jobMessage.requestKey,
+      channelCd: getChannelCd(jobMessage),
+      mallKey: getMallKey(jobMessage),
+      detail: {
+        normalizeCreated: completion.normalizeJob !== null,
+        outboxCreated: completion.outboxCreated
+      }
+    });
+  }
+  if (completion.normalizeJob) {
+    await saveJobLog({
+      requestId: jobMessage.requestId,
+      eventType: completion.outboxCreated
+        ? "ORDER_NORMALIZE_OUTBOX_CREATED"
+        : "ORDER_NORMALIZE_OUTBOX_ALREADY_EXISTS",
+      level: "INFO",
+      message: completion.outboxCreated
+        ? "Order normalize job and outbox created"
+        : "Order normalize job already has an outbox event",
+      jobType: jobMessage.jobType,
+      sourceErp: jobMessage.sourceErp,
+      requestKey: jobMessage.requestKey,
+      channelCd: getChannelCd(jobMessage),
+      mallKey: getMallKey(jobMessage),
+      detail: {
+        normalizeRequestId: completion.normalizeJob.requestId,
+        normalizeRequestKey: completion.normalizeJob.requestKey,
+        correlationId: completion.normalizeJob.correlationId
+      }
+    });
+  }
+  return completion.succeeded;
 }
 
 function requiresChannelCredentials(jobMessage: HubJobMessage): boolean {

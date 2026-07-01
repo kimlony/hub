@@ -23,7 +23,11 @@ public class KafkaJobEventAdapter implements JobEventPort {
 
     @Override
     public void publish(HubJobEvent event) {
-        String partitionKey = buildPartitionKey(event);
+        publish(event, buildPartitionKey(event));
+    }
+
+    @Override
+    public void publish(HubJobEvent event, String partitionKey) {
         try {
             var result = kafkaTemplate.send(jobsTopic, partitionKey, toJson(event)).get();
 
