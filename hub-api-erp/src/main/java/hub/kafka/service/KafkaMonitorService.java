@@ -14,6 +14,12 @@ import hub.kafka.dto.response.KafkaMonitorStats;
 import hub.kafka.KafkaBrokerInfo;
 import hub.kafka.KafkaPartitionInfo;
 import hub.kafka.KafkaTopicInfo;
+import hub.job.domain.HubJob;
+import hub.job.domain.HubJobStatus;
+import hub.job.event.HubJobEvent;
+import hub.job.mapper.HubJobMapper;
+import hub.job.service.JobPayloadValidator;
+import hub.outbox.service.JobOutboxService;
 import java.time.format.DateTimeFormatter;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -53,8 +59,8 @@ import org.apache.kafka.common.TopicPartition;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaAdmin;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -68,7 +74,9 @@ public class KafkaMonitorService {
     private final KafkaAdmin kafkaAdmin;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
-    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final HubJobMapper hubJobMapper;
+    private final JobOutboxService jobOutboxService;
+    private final JobPayloadValidator jobPayloadValidator;
 
     @Value("${hub.kafka.topics.jobs}")
     private String jobsTopic;
@@ -203,6 +211,7 @@ public class KafkaMonitorService {
         }
     }
 
+    @Transactional
     public KafkaDlqReplayResponse replayDlqMessage(KafkaDlqReplayRequest request) {
         if (request == null || request.rawMessage() == null || request.rawMessage().isBlank()) {
             throw new IllegalArgumentException("rawMessage is required");
@@ -220,29 +229,42 @@ public class KafkaMonitorService {
                 throw new IllegalArgumentException("DLQ job requestId is required");
             }
 
-            String jobMessage = objectMapper.writeValueAsString(job);
-            String partitionKey = buildReplayPartitionKey(job);
+            HubJob storedJob = hubJobMapper.selectByRequestId(requestId);
+            if (storedJob == null || storedJob.getStatus() != HubJobStatus.FAILED) {
+                throw new IllegalStateException("DLQ replay requires a FAILED hub_job: " + requestId);
+            }
+            String dlqJobType = text(job, "jobType");
+            if (!dlqJobType.isBlank() && !storedJob.getJobType().equals(dlqJobType)) {
+                throw new IllegalArgumentException("DLQ jobType does not match stored job: " + requestId);
+            }
 
-            int updated = jdbcTemplate.update(
-                    """
-                            UPDATE hub_job
-                            SET status = 'QUEUED',
-                                retry_count = 0,
-                                error_message = 'Requeued from DLQ',
-                                next_retry_at = NULL,
-                                completed_at = NULL,
-                                updated_at = NOW()
-                            WHERE request_id = ?
-                              AND status = 'FAILED'
-                            """,
-                    requestId
+            Map<String, Object> originalPayload = jobPayloadValidator.validate(storedJob);
+            String partitionKey = jobOutboxService.findLatestPartitionKey(requestId);
+            HubJobEvent replayEvent = new HubJobEvent(
+                    storedJob.getRequestId(),
+                    storedJob.getSourceErp(),
+                    storedJob.getJobType(),
+                    storedJob.getRequestKey(),
+                    storedJob.getParentJobId(),
+                    storedJob.getCorrelationId(),
+                    storedJob.getCausationId(),
+                    storedJob.getSchemaVersion(),
+                    storedJob.getPayloadVersion(),
+                    originalPayload
             );
+
+            int updated = hubJobMapper.resetFailedJobForRetry(
+                    storedJob.getRequestKey(), storedJob.getPayload());
 
             if (updated != 1) {
                 throw new IllegalStateException("DLQ replay requires a FAILED hub_job: " + requestId);
             }
-
-            kafkaTemplate.send(jobsTopic, partitionKey, jobMessage).get(ADMIN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (partitionKey == null || partitionKey.isBlank()) {
+                partitionKey = jobOutboxService.resolvePartitionKey(replayEvent);
+                jobOutboxService.enqueue(replayEvent);
+            } else {
+                jobOutboxService.enqueue(replayEvent, partitionKey);
+            }
 
             jdbcTemplate.update(
                     """
@@ -258,16 +280,16 @@ public class KafkaMonitorService {
                                 mall_key,
                                 detail
                             ) VALUES (
-                                ?, 'JOB_DLQ_REPLAYED', 'INFO', 'DLQ message replayed to jobs topic',
+                                ?, 'JOB_DLQ_REPLAY_QUEUED', 'INFO', 'DLQ replay queued through outbox',
                                 ?, ?, ?, ?, ?, ?::jsonb
                             )
                             """,
                     requestId,
-                    text(job, "jobType"),
-                    text(job, "sourceErp"),
-                    text(job, "requestKey"),
-                    text(job.path("payload"), "channelCd"),
-                    text(job.path("payload"), "mallKey"),
+                    storedJob.getJobType(),
+                    storedJob.getSourceErp(),
+                    storedJob.getRequestKey(),
+                    text(objectMapper.valueToTree(originalPayload), "channelCd"),
+                    text(objectMapper.valueToTree(originalPayload), "mallKey"),
                     objectMapper.writeValueAsString(Map.of(
                             "topic", jobsTopic,
                             "partitionKey", partitionKey,
@@ -281,7 +303,7 @@ public class KafkaMonitorService {
                     requestId,
                     jobsTopic,
                     partitionKey,
-                    "REPLAYED",
+                    "QUEUED",
                     LocalDateTime.now()
             );
         } catch (IllegalArgumentException | IllegalStateException exception) {
@@ -582,31 +604,6 @@ public class KafkaMonitorService {
                 payload.isMissingNode() || payload.isNull() ? "" : payload.toString(),
                 record.value()
         );
-    }
-
-    private String buildReplayPartitionKey(JsonNode job) {
-        JsonNode payload = job.path("payload");
-        String jobType = text(job, "jobType");
-        String channelCd = text(payload, "channelCd");
-        String channelAccountId = text(payload, "channelAccountId");
-        String userId = text(payload, "userId");
-        String mallKey = text(payload, "mallKey");
-        String page = text(payload, "page");
-        String requestId = text(job, "requestId");
-
-        if ("MOCK_MALL".equals(channelCd) && !page.isBlank()) {
-            if (!channelAccountId.isBlank()) {
-                return String.join(":", jobType, channelAccountId, page);
-            }
-            return String.join(":", jobType, userId, mallKey, page);
-        }
-        if (!channelAccountId.isBlank()) {
-            return String.join(":", jobType, channelAccountId);
-        }
-        if (!userId.isBlank() && !mallKey.isBlank()) {
-            return String.join(":", jobType, userId, mallKey);
-        }
-        return requestId;
     }
 
     private JsonNode parseJson(String value) {

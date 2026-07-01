@@ -22,11 +22,18 @@ public class JobOutboxServiceImpl implements JobOutboxService {
 
     @Override
     public void enqueue(HubJobEvent event) {
+        enqueue(event, buildPartitionKey(event));
+    }
+
+    @Override
+    public void enqueue(HubJobEvent event, String partitionKey) {
         JobOutbox outbox = JobOutbox.builder()
                 .requestId(event.requestId())
                 .eventType(event.jobType())
                 .topic(jobsTopic)
-                .partitionKey(buildPartitionKey(event))
+                .partitionKey(partitionKey == null || partitionKey.isBlank()
+                        ? buildPartitionKey(event)
+                        : partitionKey)
                 .payload(toJson(event))
                 .status(JobOutboxStatus.PENDING)
                 .retryCount(0)
@@ -36,7 +43,22 @@ public class JobOutboxServiceImpl implements JobOutboxService {
         jobOutboxMapper.insert(outbox);
     }
 
+    @Override
+    public String findLatestPartitionKey(String requestId) {
+        return jobOutboxMapper.selectLatestPartitionKey(requestId);
+    }
+
+    @Override
+    public String resolvePartitionKey(HubJobEvent event) {
+        return buildPartitionKey(event);
+    }
+
     private String buildPartitionKey(HubJobEvent event) {
+        Object sourceRequestId = event.payload().get("sourceRequestId");
+        if ("ORDER_NORMALIZE".equals(event.jobType()) && sourceRequestId != null) {
+            return String.valueOf(sourceRequestId);
+        }
+
         Object channelAccountId = event.payload().get("channelAccountId");
         Object channelCd = event.payload().get("channelCd");
         Object page = event.payload().get("page");

@@ -56,6 +56,7 @@ public class HubJobServiceImpl implements HubJobService {
     private final UserMapper userMapper;
     private final ChannelMapper channelMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final JobPayloadValidator jobPayloadValidator;
 
     @Override
     public HubJobBatchResponse createBatchJobs(String username, HubJobBatchRequest request) {
@@ -291,25 +292,27 @@ public class HubJobServiceImpl implements HubJobService {
     }
 
     private void publishEvent(HubJob job) {
-        try {
-            Map<String, Object> payloadMap = objectMapper.readValue(
-                    job.getPayload(), new TypeReference<Map<String, Object>>() {});
-            payloadMap.put("channelCd", job.getChannelCd());
+        publishEvent(job, null);
+    }
 
-            jobOutboxService.enqueue(new HubJobEvent(
-                    job.getRequestId(),
-                    "HUB",
-                    "ORDER_COLLECT",
-                    job.getRequestKey(),
-                    job.getParentJobId(),
-                    job.getCorrelationId(),
-                    job.getCausationId(),
-                    job.getSchemaVersion(),
-                    job.getPayloadVersion(),
-                    payloadMap
-            ));
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("failed to parse payload for Kafka event", e);
+    private void publishEvent(HubJob job, String partitionKey) {
+        Map<String, Object> payloadMap = jobPayloadValidator.validate(job);
+        HubJobEvent event = new HubJobEvent(
+                job.getRequestId(),
+                job.getSourceErp(),
+                job.getJobType(),
+                job.getRequestKey(),
+                job.getParentJobId(),
+                job.getCorrelationId(),
+                job.getCausationId(),
+                job.getSchemaVersion(),
+                job.getPayloadVersion(),
+                payloadMap
+        );
+        if (partitionKey == null || partitionKey.isBlank()) {
+            jobOutboxService.enqueue(event);
+        } else {
+            jobOutboxService.enqueue(event, partitionKey);
         }
     }
 
@@ -379,54 +382,15 @@ public class HubJobServiceImpl implements HubJobService {
         if (job.getStatus() != HubJobStatus.FAILED) {
             throw new IllegalStateException("Only FAILED jobs can be retried");
         }
-        String latestPayload = rebuildPayloadForRetry(job);
-        job.setPayload(latestPayload);
+        jobPayloadValidator.validate(job);
+        String originalPayload = job.getPayload();
+        String partitionKey = jobOutboxService.findLatestPartitionKey(job.getRequestId());
         job.setStatus(HubJobStatus.QUEUED);
-        int updated = hubJobMapper.resetFailedJobForRetry(job.getRequestKey(), latestPayload);
+        int updated = hubJobMapper.resetFailedJobForRetry(job.getRequestKey(), originalPayload);
         if (updated != 1) {
             throw new IllegalStateException("Job retry skipped because current status is not FAILED");
         }
-        publishEvent(job);
-    }
-
-    private String rebuildPayloadForRetry(HubJob job) {
-        try {
-            Map<String, Object> payloadMap = objectMapper.readValue(
-                    job.getPayload(), new TypeReference<Map<String, Object>>() {});
-            Long userId = toLong(payloadMap.get("userId"));
-            String mallKey = requireString(payloadMap.get("mallKey"), "mallKey");
-            String frDt = requireString(payloadMap.get("frDt"), "frDt");
-            String toDt = requireString(payloadMap.get("toDt"), "toDt");
-            TriggerType triggerType = TriggerType.valueOf(
-                    String.valueOf(payloadMap.getOrDefault("triggerType", TriggerType.MANUAL.name())));
-            Long scheduleRunId = payloadMap.containsKey("scheduleRunId")
-                    ? toLong(payloadMap.get("scheduleRunId"))
-                    : null;
-
-            HubUser user = userMapper.findById(userId)
-                    .orElseThrow(() -> new AuthException("user not found"));
-            ChannelRow account;
-            if (payloadMap.containsKey("channelAccountId")) {
-                Long channelAccountId = toLong(payloadMap.get("channelAccountId"));
-                account = channelMapper.findByCorpIdAndId(user.getCorpId(), channelAccountId)
-                        .orElseThrow(() -> new ChannelNotFoundException(
-                                "channel account not found: " + channelAccountId));
-            } else {
-                account = channelMapper.findActiveByCorpIdAndMallKey(user.getCorpId(), mallKey)
-                        .stream()
-                        .findFirst()
-                        .orElseThrow(() -> new ChannelNotFoundException(mallKey + " channel has no active account"));
-            }
-            return serializePayload(
-                    account,
-                    new HubJobBatchRequest(frDt, toDt, List.of(mallKey)),
-                    user,
-                    triggerType,
-                    scheduleRunId
-            );
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("failed to parse payload for retry", e);
-        }
+        publishEvent(job, partitionKey);
     }
 
     private JobPerformanceSummary selectPerformanceSummary(int minutes) {
@@ -702,23 +666,6 @@ public class HubJobServiceImpl implements HubJobService {
         } catch (JsonProcessingException e) {
             return Map.of();
         }
-    }
-
-    private Long toLong(Object value) {
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        if (value instanceof String text && !text.isBlank()) {
-            return Long.parseLong(text);
-        }
-        throw new IllegalArgumentException("Invalid numeric value: " + value);
-    }
-
-    private String requireString(Object value, String fieldName) {
-        if (value instanceof String text && !text.isBlank()) {
-            return text;
-        }
-        throw new IllegalArgumentException(fieldName + " is required");
     }
 
     private boolean isMockMall(String mallKey) {

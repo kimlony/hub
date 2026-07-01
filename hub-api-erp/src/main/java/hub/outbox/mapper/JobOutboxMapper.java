@@ -12,6 +12,8 @@ public interface JobOutboxMapper {
 
     void insert(JobOutbox outbox);
 
+    String selectLatestPartitionKey(@Param("requestId") String requestId);
+
     List<JobOutbox> claimPending(
             @Param("limit") int limit,
             @Param("lockedBy") String lockedBy,

@@ -90,6 +90,28 @@ class JobOutboxServiceImplTest {
         assertThat(outbox.getStatus()).isEqualTo(JobOutboxStatus.PENDING);
     }
 
+    @Test
+    void enqueueUsesSourceRequestIdForOrderNormalize() {
+        JobOutboxServiceImpl service = service(new ObjectMapper());
+        HubJobEvent event = new HubJobEvent(
+                "normalize-001",
+                "HUB",
+                "ORDER_NORMALIZE",
+                "NORMALIZE_collect-001",
+                Map.of(
+                        "sourceRequestId", "collect-001",
+                        "channelAccountId", 10,
+                        "channelCd", "GODO"
+                )
+        );
+
+        service.enqueue(event);
+
+        ArgumentCaptor<JobOutbox> outboxCaptor = ArgumentCaptor.forClass(JobOutbox.class);
+        verify(jobOutboxMapper).insert(outboxCaptor.capture());
+        assertThat(outboxCaptor.getValue().getPartitionKey()).isEqualTo("collect-001");
+    }
+
     /**
      * Outbox payload 직렬화 실패 시 예외를 발생시키는지 검증한다.
      */

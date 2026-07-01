@@ -79,6 +79,14 @@
         )
     </insert>
 
+    <select id="selectLatestPartitionKey" resultType="string">
+        SELECT partition_key
+        FROM hub_job_outbox
+        WHERE request_id = #{requestId}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
     <select id="claimPending" resultMap="jobOutboxResultMap">
         WITH picked AS (
                     SELECT id

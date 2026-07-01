@@ -49,6 +49,18 @@ describe("retryPolicy", () => {
     });
   });
 
+  it("marks HTTP 429 as a retryable rate limit error", () => {
+    expect(classifyRetry({
+      message: "too many requests",
+      response: { status: 429 }
+    })).toMatchObject({
+      retryable: true,
+      reason: "HTTP_429",
+      category: "RATE_LIMIT",
+      httpStatus: 429
+    });
+  });
+
   it("marks timeout and network codes as retryable", () => {
     expect(classifyRetry({ code: "ETIMEDOUT", message: "timeout" })).toMatchObject({
       retryable: true,

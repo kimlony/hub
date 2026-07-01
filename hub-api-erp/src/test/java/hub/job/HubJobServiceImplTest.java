@@ -13,6 +13,7 @@ import hub.job.dto.response.HubJobBatchResponse;
 import hub.job.event.HubJobEvent;
 import hub.job.mapper.HubJobMapper;
 import hub.job.service.HubJobServiceImpl;
+import hub.job.service.JobPayloadValidator;
 import hub.outbox.service.JobOutboxService;
 import java.util.List;
 import java.util.Optional;
@@ -62,7 +63,8 @@ class HubJobServiceImplTest {
                 objectMapper,
                 userMapper,
                 channelMapper,
-                jdbcTemplate
+                jdbcTemplate,
+                new JobPayloadValidator(objectMapper)
         );
         HubUser user = user(1L, "admin");
         String requestKey = "10_GODO_20260618_20260618";
@@ -116,7 +118,8 @@ class HubJobServiceImplTest {
                 objectMapper,
                 userMapper,
                 channelMapper,
-                jdbcTemplate
+                jdbcTemplate,
+                new JobPayloadValidator(objectMapper)
         );
         HubUser user = user(1L, "admin");
         String requestKey = "10_GODO_20260618_20260618";
@@ -324,12 +327,16 @@ class HubJobServiceImplTest {
     @Test
     void retryJobResetsFailedJobAndPublishesOutboxEvent() {
         HubJobServiceImpl service = service();
-        HubUser user = user(1L, "admin");
         HubJob failedJob = HubJob.builder()
                 .requestId("failed-request-id")
                 .requestKey("10_GODO_20260618_20260618")
                 .jobType("ORDER_COLLECT")
                 .sourceErp("HUB")
+                .parentJobId(null)
+                .correlationId("collect-correlation")
+                .causationId(null)
+                .schemaVersion("1.0")
+                .payloadVersion("1.0")
                 .channelCd("GODO")
                 .status(HubJobStatus.FAILED)
                 .payload(payload())
@@ -337,8 +344,6 @@ class HubJobServiceImplTest {
                 .build();
 
         when(hubJobMapper.selectByRequestId("failed-request-id")).thenReturn(failedJob);
-        when(userMapper.findById(1L)).thenReturn(Optional.of(user));
-        when(channelMapper.findByCorpIdAndId(100L, 10L)).thenReturn(Optional.of(activeChannel()));
         when(hubJobMapper.resetFailedJobForRetry(eq(failedJob.getRequestKey()), any(String.class))).thenReturn(1);
 
         service.retryJob("failed-request-id");
@@ -348,6 +353,8 @@ class HubJobServiceImplTest {
         verify(jobOutboxService).enqueue(eventCaptor.capture());
         assertThat(eventCaptor.getValue().requestId()).isEqualTo("failed-request-id");
         assertThat(eventCaptor.getValue().requestKey()).isEqualTo(failedJob.getRequestKey());
+        assertThat(eventCaptor.getValue().jobType()).isEqualTo("ORDER_COLLECT");
+        assertThat(eventCaptor.getValue().correlationId()).isEqualTo("collect-correlation");
         assertThat(eventCaptor.getValue().payload()).containsEntry("channelCd", "GODO");
     }
 
@@ -379,7 +386,6 @@ class HubJobServiceImplTest {
     @Test
     void retryJobDoesNotPublishWhenResetIsSkipped() {
         HubJobServiceImpl service = service();
-        HubUser user = user(1L, "admin");
         HubJob failedJob = HubJob.builder()
                 .requestId("failed-request-id")
                 .requestKey("10_GODO_20260618_20260618")
@@ -392,8 +398,6 @@ class HubJobServiceImplTest {
                 .build();
 
         when(hubJobMapper.selectByRequestId("failed-request-id")).thenReturn(failedJob);
-        when(userMapper.findById(1L)).thenReturn(Optional.of(user));
-        when(channelMapper.findByCorpIdAndId(100L, 10L)).thenReturn(Optional.of(activeChannel()));
         when(hubJobMapper.resetFailedJobForRetry(eq(failedJob.getRequestKey()), any(String.class))).thenReturn(0);
 
         assertThatThrownBy(() -> service.retryJob("failed-request-id"))
@@ -403,6 +407,47 @@ class HubJobServiceImplTest {
         verify(jobOutboxService, never()).enqueue(any(HubJobEvent.class));
     }
 
+    @Test
+    void retryOrderNormalizePreservesEnvelopePayloadAndPartitionKey() {
+        HubJobServiceImpl service = service();
+        String originalPayload = """
+                {"sourceRequestId":"collect-001","channelCd":"GODO","userId":1,"custom":"keep-me"}
+                """;
+        HubJob failedJob = HubJob.builder()
+                .requestId("normalize-001")
+                .requestKey("NORMALIZE_collect-001")
+                .jobType("ORDER_NORMALIZE")
+                .sourceErp("HUB")
+                .parentJobId("collect-001")
+                .correlationId("correlation-001")
+                .causationId("collect-001")
+                .schemaVersion("1.0")
+                .payloadVersion("1.0")
+                .channelCd("GODO")
+                .status(HubJobStatus.FAILED)
+                .payload(originalPayload)
+                .retryCount(3)
+                .build();
+
+        when(hubJobMapper.selectByRequestId("normalize-001")).thenReturn(failedJob);
+        when(jobOutboxService.findLatestPartitionKey("normalize-001")).thenReturn("collect-001");
+        when(hubJobMapper.resetFailedJobForRetry(failedJob.getRequestKey(), originalPayload)).thenReturn(1);
+
+        service.retryJob("normalize-001");
+
+        ArgumentCaptor<HubJobEvent> eventCaptor = ArgumentCaptor.forClass(HubJobEvent.class);
+        verify(jobOutboxService).enqueue(eventCaptor.capture(), eq("collect-001"));
+        verify(hubJobMapper).resetFailedJobForRetry(failedJob.getRequestKey(), originalPayload);
+        HubJobEvent event = eventCaptor.getValue();
+        assertThat(event.jobType()).isEqualTo("ORDER_NORMALIZE");
+        assertThat(event.parentJobId()).isEqualTo("collect-001");
+        assertThat(event.correlationId()).isEqualTo("correlation-001");
+        assertThat(event.causationId()).isEqualTo("collect-001");
+        assertThat(event.schemaVersion()).isEqualTo("1.0");
+        assertThat(event.payloadVersion()).isEqualTo("1.0");
+        assertThat(event.payload()).containsEntry("custom", "keep-me");
+    }
+
     private HubJobServiceImpl service() {
         return new HubJobServiceImpl(
                 hubJobMapper,
@@ -410,7 +455,8 @@ class HubJobServiceImplTest {
                 objectMapper,
                 userMapper,
                 channelMapper,
-                jdbcTemplate
+                jdbcTemplate,
+                new JobPayloadValidator(objectMapper)
         );
     }
 

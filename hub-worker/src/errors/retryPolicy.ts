@@ -1,6 +1,7 @@
 type RetryClassification = {
   retryable: boolean;
-  reason: "HTTP_4XX" | "HTTP_5XX" | "NETWORK" | "TIMEOUT" | "UNKNOWN";
+  reason: "HTTP_4XX" | "HTTP_429" | "HTTP_5XX" | "NETWORK" | "TIMEOUT" | "UNKNOWN";
+  category: "TECHNICAL" | "BUSINESS" | "RATE_LIMIT" | "UNKNOWN";
   errorMessage: string;
   httpStatus?: number;
   errorName: string;
@@ -56,10 +57,22 @@ export function classifyRetry(error: unknown): RetryClassification {
     const statusName = httpStatusName(httpStatus, errorLike.response?.statusText);
     const message = `HTTP ${httpStatus} ${statusName}: ${baseMessage}`;
 
+    if (httpStatus === 429) {
+      return {
+        retryable: true,
+        reason: "HTTP_429",
+        category: "RATE_LIMIT",
+        errorMessage: message,
+        httpStatus,
+        errorName: statusName
+      };
+    }
+
     if (httpStatus >= 400 && httpStatus < 500) {
       return {
         retryable: false,
         reason: "HTTP_4XX",
+        category: "BUSINESS",
         errorMessage: message,
         httpStatus,
         errorName: statusName
@@ -70,6 +83,7 @@ export function classifyRetry(error: unknown): RetryClassification {
       return {
         retryable: true,
         reason: "HTTP_5XX",
+        category: "TECHNICAL",
         errorMessage: message,
         httpStatus,
         errorName: statusName
@@ -81,6 +95,7 @@ export function classifyRetry(error: unknown): RetryClassification {
     return {
       retryable: true,
       reason: "TIMEOUT",
+      category: "TECHNICAL",
       errorMessage: `${code} Timeout: ${baseMessage}`,
       errorName: "Timeout"
     };
@@ -90,6 +105,7 @@ export function classifyRetry(error: unknown): RetryClassification {
     return {
       retryable: true,
       reason: "NETWORK",
+      category: "TECHNICAL",
       errorMessage: `${code} Network Error: ${baseMessage}`,
       errorName: "Network Error"
     };
@@ -98,6 +114,7 @@ export function classifyRetry(error: unknown): RetryClassification {
   return {
     retryable: true,
     reason: "UNKNOWN",
+    category: "UNKNOWN",
     errorMessage: baseMessage,
     errorName
   };
