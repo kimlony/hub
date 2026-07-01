@@ -248,7 +248,7 @@ async function runMockMallLoad() {
       await producer.send({
         topic,
         messages: [{
-          key: `MOCK_MALL:${userId}:${mallKey}:${job.payload.page}`,
+          key: `channel-account:${corpId}:${channelAccountId}`,
           value: JSON.stringify({
             requestId: job.requestId,
             sourceErp: "HUB",

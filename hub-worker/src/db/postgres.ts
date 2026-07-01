@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createDecipheriv, randomUUID } from "node:crypto";
 import pg from "pg";
 import { logger } from "../logger.js";
+import { resolveJobPartitionKey } from "../jobKeys.js";
 import { getWorkerId } from "../workerIdentity.js";
 
 type HubJobMessage = {
@@ -697,7 +698,12 @@ export async function completeOrderCollectWithNormalize(
             WHERE request_id = $1 AND event_type = 'ORDER_NORMALIZE'
           )
         `,
-        [normalizeJob.requestId, process.env.KAFKA_TOPIC ?? "hub.jobs", message.requestId, JSON.stringify(outboxPayload)]
+        [
+          normalizeJob.requestId,
+          process.env.KAFKA_TOPIC ?? "hub.jobs",
+          resolveJobPartitionKey(normalizeJob),
+          JSON.stringify(outboxPayload)
+        ]
       );
       outboxCreated = outboxResult.rowCount === 1;
     }

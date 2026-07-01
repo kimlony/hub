@@ -3,6 +3,7 @@ package hub.outbox;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import hub.job.event.HubJobEvent;
+import hub.job.key.JobResourceKeyResolver;
 import hub.outbox.domain.JobOutbox;
 import hub.outbox.domain.JobOutboxStatus;
 import hub.outbox.mapper.JobOutboxMapper;
@@ -58,7 +59,7 @@ class JobOutboxServiceImplTest {
         assertThat(outbox.getRequestId()).isEqualTo("request-001");
         assertThat(outbox.getEventType()).isEqualTo("ORDER_COLLECT");
         assertThat(outbox.getTopic()).isEqualTo("hub.jobs");
-        assertThat(outbox.getPartitionKey()).isEqualTo("ORDER_COLLECT:10");
+        assertThat(outbox.getPartitionKey()).isEqualTo("channel-account:100:10");
         assertThat(outbox.getStatus()).isEqualTo(JobOutboxStatus.PENDING);
         assertThat(outbox.getRetryCount()).isZero();
         assertThat(outbox.getMaxRetryCount()).isEqualTo(5);
@@ -136,7 +137,8 @@ class JobOutboxServiceImplTest {
     }
 
     private JobOutboxServiceImpl service(ObjectMapper objectMapper) {
-        JobOutboxServiceImpl service = new JobOutboxServiceImpl(jobOutboxMapper, objectMapper);
+        JobOutboxServiceImpl service = new JobOutboxServiceImpl(
+                jobOutboxMapper, objectMapper, new JobResourceKeyResolver());
         ReflectionTestUtils.setField(service, "jobsTopic", "hub.jobs");
         return service;
     }

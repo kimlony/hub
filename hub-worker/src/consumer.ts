@@ -30,6 +30,7 @@ import type { JobHandlerMessage } from "./handlers/IJobHandler.js";
 import { publishDlq } from "./dlq.js";
 import { classifyRetry } from "./errors/retryPolicy.js";
 import { logger } from "./logger.js";
+import { resolveJobLockKey } from "./jobKeys.js";
 import { HubJobMessageSchema } from "./schemas.js";
 import { getKafkaClientId, getWorkerId } from "./workerIdentity.js";
 
@@ -435,11 +436,10 @@ async function prepareJobMessage(jobMessage: HubJobMessage): Promise<HubJobMessa
 }
 
 async function runRegisteredHandler(jobMessage: HubJobMessage, requestId: string): Promise<boolean | null> {
-  if (!requiresJobLock(jobMessage)) {
+  const lockKey = resolveJobLockKey(jobMessage);
+  if (!lockKey || getChannelCd(jobMessage) === "MOCK_MALL") {
     return executeRegisteredHandler(jobMessage, requestId);
   }
-
-  const lockKey = buildJobLockKey(jobMessage);
   const lockAcquired = await tryAcquireJobLock(lockKey, requestId);
 
   if (!lockAcquired) {
@@ -507,18 +507,6 @@ async function executeRegisteredHandler(jobMessage: HubJobMessage, requestId: st
 
 function requiresChannelCredentials(jobMessage: HubJobMessage): boolean {
   return jobMessage.jobType === "ORDER_COLLECT" && getChannelCd(jobMessage) !== "MOCK_MALL";
-}
-
-function requiresJobLock(jobMessage: HubJobMessage): boolean {
-  return jobMessage.jobType === "ORDER_COLLECT" && getChannelCd(jobMessage) !== "MOCK_MALL";
-}
-
-function buildJobLockKey(jobMessage: HubJobMessage): string {
-  const channelAccountId = getUserId(jobMessage.payload.channelAccountId);
-  if (channelAccountId === null) {
-    throw new Error("channelAccountId is required for job lock");
-  }
-  return `${jobMessage.jobType}:${channelAccountId}`;
 }
 
 async function enrichWithChannelCredentials(jobMessage: HubJobMessage): Promise<HubJobMessage> {

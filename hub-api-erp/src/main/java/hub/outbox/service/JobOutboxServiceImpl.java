@@ -3,6 +3,7 @@ package hub.outbox.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import hub.job.event.HubJobEvent;
+import hub.job.key.JobResourceKeyResolver;
 import hub.outbox.domain.JobOutbox;
 import hub.outbox.domain.JobOutboxStatus;
 import hub.outbox.mapper.JobOutboxMapper;
@@ -16,13 +17,14 @@ public class JobOutboxServiceImpl implements JobOutboxService {
 
     private final JobOutboxMapper jobOutboxMapper;
     private final ObjectMapper objectMapper;
+    private final JobResourceKeyResolver jobResourceKeyResolver;
 
     @Value("${hub.kafka.topics.jobs}")
     private String jobsTopic;
 
     @Override
     public void enqueue(HubJobEvent event) {
-        enqueue(event, buildPartitionKey(event));
+        enqueue(event, jobResourceKeyResolver.resolvePartitionKey(event));
     }
 
     @Override
@@ -32,7 +34,7 @@ public class JobOutboxServiceImpl implements JobOutboxService {
                 .eventType(event.jobType())
                 .topic(jobsTopic)
                 .partitionKey(partitionKey == null || partitionKey.isBlank()
-                        ? buildPartitionKey(event)
+                        ? jobResourceKeyResolver.resolvePartitionKey(event)
                         : partitionKey)
                 .payload(toJson(event))
                 .status(JobOutboxStatus.PENDING)
@@ -50,28 +52,7 @@ public class JobOutboxServiceImpl implements JobOutboxService {
 
     @Override
     public String resolvePartitionKey(HubJobEvent event) {
-        return buildPartitionKey(event);
-    }
-
-    private String buildPartitionKey(HubJobEvent event) {
-        Object sourceRequestId = event.payload().get("sourceRequestId");
-        if ("ORDER_NORMALIZE".equals(event.jobType()) && sourceRequestId != null) {
-            return String.valueOf(sourceRequestId);
-        }
-
-        Object channelAccountId = event.payload().get("channelAccountId");
-        Object channelCd = event.payload().get("channelCd");
-        Object page = event.payload().get("page");
-
-        if (channelAccountId == null) {
-            return event.requestId();
-        }
-
-        if ("MOCK_MALL".equals(channelCd) && page != null) {
-            return event.jobType() + ":" + channelAccountId + ":" + page;
-        }
-
-        return event.jobType() + ":" + channelAccountId;
+        return jobResourceKeyResolver.resolvePartitionKey(event);
     }
 
     private String toJson(HubJobEvent event) {

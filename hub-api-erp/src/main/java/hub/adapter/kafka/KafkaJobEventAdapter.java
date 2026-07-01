@@ -3,6 +3,7 @@ package hub.adapter.kafka;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import hub.job.event.HubJobEvent;
+import hub.job.key.JobResourceKeyResolver;
 import hub.port.JobEventPort;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
@@ -17,13 +18,14 @@ public class KafkaJobEventAdapter implements JobEventPort {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
+    private final JobResourceKeyResolver jobResourceKeyResolver;
 
     @Value("${hub.kafka.topics.jobs}")
     private String jobsTopic;
 
     @Override
     public void publish(HubJobEvent event) {
-        publish(event, buildPartitionKey(event));
+        publish(event, jobResourceKeyResolver.resolvePartitionKey(event));
     }
 
     @Override
@@ -45,22 +47,6 @@ public class KafkaJobEventAdapter implements JobEventPort {
                     exception
             );
         }
-    }
-
-    private String buildPartitionKey(HubJobEvent event) {
-        Object channelAccountId = event.payload().get("channelAccountId");
-        Object channelCd = event.payload().get("channelCd");
-        Object page = event.payload().get("page");
-
-        if (channelAccountId == null) {
-            return event.requestId();
-        }
-
-        if ("MOCK_MALL".equals(channelCd) && page != null) {
-            return event.jobType() + ":" + channelAccountId + ":" + page;
-        }
-
-        return event.jobType() + ":" + channelAccountId;
     }
 
     private String toJson(HubJobEvent event) {

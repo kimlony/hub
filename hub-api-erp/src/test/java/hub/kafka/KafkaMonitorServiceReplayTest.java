@@ -89,4 +89,36 @@ class KafkaMonitorServiceReplayTest {
         assertThat(response.partitionKey()).isEqualTo("collect-001");
         assertThat(response.status()).isEqualTo("QUEUED");
     }
+
+    @Test
+    void fallsBackToCommonResolverWhenReplayHasNoPreviousOutboxKey() {
+        HubJob storedJob = HubJob.builder()
+                .requestId("collect-002")
+                .requestKey("collect-key-002")
+                .jobType("ORDER_COLLECT")
+                .sourceErp("HUB")
+                .correlationId("correlation-002")
+                .schemaVersion("1.0")
+                .payloadVersion("1.0")
+                .status(HubJobStatus.FAILED)
+                .payload("{\"userId\":1,\"corpId\":100,\"channelAccountId\":10,\"mallKey\":\"GODO\",\"channelCd\":\"GODO\"}")
+                .build();
+        when(hubJobMapper.selectByRequestId("collect-002")).thenReturn(storedJob);
+        when(hubJobMapper.resetFailedJobForRetry(storedJob.getRequestKey(), storedJob.getPayload()))
+                .thenReturn(1);
+        when(jobOutboxService.resolvePartitionKey(org.mockito.ArgumentMatchers.any(HubJobEvent.class)))
+                .thenReturn("channel-account:100:10");
+
+        KafkaMonitorService service = new KafkaMonitorService(
+                kafkaAdmin, jdbcTemplate, objectMapper, hubJobMapper, jobOutboxService,
+                new JobPayloadValidator(objectMapper));
+        ReflectionTestUtils.setField(service, "jobsTopic", "hub.jobs");
+
+        KafkaDlqReplayResponse response = service.replayDlqMessage(new KafkaDlqReplayRequest("""
+                {"job":{"requestId":"collect-002","jobType":"ORDER_COLLECT"}}
+                """));
+
+        verify(jobOutboxService).enqueue(org.mockito.ArgumentMatchers.any(HubJobEvent.class));
+        assertThat(response.partitionKey()).isEqualTo("channel-account:100:10");
+    }
 }
