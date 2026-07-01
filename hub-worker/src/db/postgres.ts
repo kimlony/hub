@@ -9,6 +9,11 @@ type HubJobMessage = {
   sourceErp: string;
   jobType: string;
   requestKey?: string;
+  parentJobId?: string | null;
+  correlationId?: string;
+  causationId?: string | null;
+  schemaVersion?: string;
+  payloadVersion?: string;
   payload?: Record<string, unknown>;
 };
 
@@ -17,6 +22,11 @@ export type HubJobRow = {
   sourceErp: string;
   jobType: string;
   requestKey: string;
+  parentJobId: string | null;
+  correlationId: string;
+  causationId: string | null;
+  schemaVersion: string;
+  payloadVersion: string;
   payload: Record<string, unknown>;
 };
 
@@ -49,6 +59,11 @@ export type NormalizeJobInput = {
   requestKey: string;
   sourceErp: string;
   jobType: string;
+  parentJobId: string | null;
+  correlationId: string;
+  causationId: string | null;
+  schemaVersion: string;
+  payloadVersion: string;
   payload: Record<string, unknown>;
 };
 
@@ -192,9 +207,30 @@ async function ensurePostgresSchemaUnlocked(): Promise<void> {
         ALTER TABLE hub_job
         ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ;
 
+        ALTER TABLE hub_job ADD COLUMN IF NOT EXISTS parent_job_id VARCHAR(100);
+        ALTER TABLE hub_job ADD COLUMN IF NOT EXISTS correlation_id VARCHAR(100);
+        ALTER TABLE hub_job ADD COLUMN IF NOT EXISTS causation_id VARCHAR(100);
+        ALTER TABLE hub_job ADD COLUMN IF NOT EXISTS schema_version VARCHAR(20);
+        ALTER TABLE hub_job ADD COLUMN IF NOT EXISTS payload_version VARCHAR(20);
+
+        UPDATE hub_job
+        SET correlation_id = COALESCE(correlation_id, request_id),
+            schema_version = COALESCE(schema_version, '1.0'),
+            payload_version = COALESCE(payload_version, '1.0')
+        WHERE correlation_id IS NULL
+           OR schema_version IS NULL
+           OR payload_version IS NULL;
+
+        ALTER TABLE hub_job ALTER COLUMN correlation_id SET NOT NULL;
+        ALTER TABLE hub_job ALTER COLUMN schema_version SET NOT NULL;
+        ALTER TABLE hub_job ALTER COLUMN payload_version SET NOT NULL;
+
         CREATE INDEX IF NOT EXISTS idx_hub_job_next_retry_at
         ON hub_job (status, next_retry_at)
         WHERE status = 'QUEUED';
+
+        CREATE INDEX IF NOT EXISTS idx_hub_job_parent_job_id ON hub_job(parent_job_id);
+        CREATE INDEX IF NOT EXISTS idx_hub_job_correlation_id ON hub_job(correlation_id);
       END IF;
     END $$;
   `);
@@ -541,14 +577,16 @@ export async function createNormalizeJobForResult(message: HubJobMessage): Promi
     request_id: string;
     request_key: string;
     source_erp: string;
+    correlation_id: string;
     result_payload: Record<string, unknown>;
   }>(
     `
-      SELECT request_id, request_key, source_erp, result_payload
-      FROM hub_job_result
-      WHERE request_id = $1
-        AND jsonb_typeof(result_payload -> 'orders') = 'array'
-        AND jsonb_array_length(result_payload -> 'orders') > 0
+      SELECT r.request_id, r.request_key, r.source_erp, j.correlation_id, r.result_payload
+      FROM hub_job_result r
+      JOIN hub_job j ON j.request_id = r.request_id
+      WHERE r.request_id = $1
+        AND jsonb_typeof(r.result_payload -> 'orders') = 'array'
+        AND jsonb_array_length(r.result_payload -> 'orders') > 0
     `,
     [message.requestId]
   );
@@ -580,6 +618,11 @@ export async function createNormalizeJobForResult(message: HubJobMessage): Promi
     request_key: string;
     source_erp: string;
     job_type: string;
+    parent_job_id: string | null;
+    correlation_id: string;
+    causation_id: string | null;
+    schema_version: string;
+    payload_version: string;
     payload: Record<string, unknown>;
   }>(
     `
@@ -592,19 +635,29 @@ export async function createNormalizeJobForResult(message: HubJobMessage): Promi
         retry_count,
         job_type,
         source_erp,
+        parent_job_id,
+        correlation_id,
+        causation_id,
+        schema_version,
+        payload_version,
         created_at,
         updated_at
       ) VALUES (
-        $1, $2, $3, 'QUEUED', $4::jsonb, 0, 'ORDER_NORMALIZE', 'HUB', NOW(), NOW()
+        $1, $2, $3, 'QUEUED', $4::jsonb, 0, 'ORDER_NORMALIZE', 'HUB',
+        $5, $6, $5, '1.0', '1.0', NOW(), NOW()
       )
       ON CONFLICT (request_key) DO NOTHING
-      RETURNING request_id, request_key, source_erp, job_type, payload
+      RETURNING request_id, request_key, source_erp, job_type,
+                parent_job_id, correlation_id, causation_id,
+                schema_version, payload_version, payload
     `,
     [
       requestId,
       requestKey,
       String(payload.channelCd ?? "ORDER"),
-      JSON.stringify(payload)
+      JSON.stringify(payload),
+      message.requestId,
+      row.correlation_id
     ]
   );
 
@@ -624,6 +677,11 @@ export async function createNormalizeJobForResult(message: HubJobMessage): Promi
     requestKey: inserted.request_key,
     sourceErp: inserted.source_erp,
     jobType: inserted.job_type,
+    parentJobId: inserted.parent_job_id,
+    correlationId: inserted.correlation_id,
+    causationId: inserted.causation_id,
+    schemaVersion: inserted.schema_version,
+    payloadVersion: inserted.payload_version,
     payload: inserted.payload
   };
 }
@@ -1522,6 +1580,11 @@ export async function claimStuckQueuedJobs(): Promise<HubJobRow[]> {
     source_erp: string;
     job_type: string;
     request_key: string;
+    parent_job_id: string | null;
+    correlation_id: string;
+    causation_id: string | null;
+    schema_version: string;
+    payload_version: string;
     payload: Record<string, unknown>;
   }>(
     `
@@ -1543,7 +1606,9 @@ export async function claimStuckQueuedJobs(): Promise<HubJobRow[]> {
           updated_at = NOW()
       FROM picked
       WHERE h.request_id = picked.request_id
-      RETURNING h.request_id, h.source_erp, h.job_type, h.request_key, h.payload
+      RETURNING h.request_id, h.source_erp, h.job_type, h.request_key,
+                h.parent_job_id, h.correlation_id, h.causation_id,
+                h.schema_version, h.payload_version, h.payload
     `
   );
 
@@ -1552,6 +1617,11 @@ export async function claimStuckQueuedJobs(): Promise<HubJobRow[]> {
     sourceErp: row.source_erp,
     jobType: row.job_type,
     requestKey: row.request_key,
+    parentJobId: row.parent_job_id,
+    correlationId: row.correlation_id,
+    causationId: row.causation_id,
+    schemaVersion: row.schema_version,
+    payloadVersion: row.payload_version,
     payload: row.payload
   }));
 }
@@ -1562,6 +1632,11 @@ export async function claimZombieProcessingJobs(): Promise<HubJobRow[]> {
     source_erp: string;
     job_type: string;
     request_key: string;
+    parent_job_id: string | null;
+    correlation_id: string;
+    causation_id: string | null;
+    schema_version: string;
+    payload_version: string;
     payload: Record<string, unknown>;
   }>(
     `
@@ -1579,7 +1654,9 @@ export async function claimZombieProcessingJobs(): Promise<HubJobRow[]> {
           error_message = COALESCE(error_message, 'Recovered stale PROCESSING job')
       FROM picked
       WHERE h.request_id = picked.request_id
-      RETURNING h.request_id, h.source_erp, h.job_type, h.request_key, h.payload
+      RETURNING h.request_id, h.source_erp, h.job_type, h.request_key,
+                h.parent_job_id, h.correlation_id, h.causation_id,
+                h.schema_version, h.payload_version, h.payload
     `
   );
 
@@ -1588,6 +1665,11 @@ export async function claimZombieProcessingJobs(): Promise<HubJobRow[]> {
     sourceErp: row.source_erp,
     jobType: row.job_type,
     requestKey: row.request_key,
+    parentJobId: row.parent_job_id,
+    correlationId: row.correlation_id,
+    causationId: row.causation_id,
+    schemaVersion: row.schema_version,
+    payloadVersion: row.payload_version,
     payload: row.payload
   }));
 }

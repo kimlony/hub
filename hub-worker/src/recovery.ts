@@ -103,6 +103,11 @@ async function processStuckJob(job: HubJobRow): Promise<void> {
     sourceErp: job.sourceErp,
     jobType: job.jobType,
     requestKey: job.requestKey,
+    parentJobId: job.parentJobId,
+    correlationId: job.correlationId,
+    causationId: job.causationId,
+    schemaVersion: job.schemaVersion,
+    payloadVersion: job.payloadVersion,
     payload: job.payload
   }, "recovery", { alreadyClaimed: true });
 }
@@ -119,6 +124,11 @@ async function processZombieProcessingJob(job: HubJobRow): Promise<void> {
     sourceErp: job.sourceErp,
     jobType: job.jobType,
     requestKey: job.requestKey,
+    parentJobId: job.parentJobId,
+    correlationId: job.correlationId,
+    causationId: job.causationId,
+    schemaVersion: job.schemaVersion,
+    payloadVersion: job.payloadVersion,
     payload: job.payload
   }, "recovery", { alreadyClaimed: true });
 }

@@ -13,6 +13,11 @@ export const HubJobMessageSchema = z.object({
   sourceErp: z.string(),
   jobType: z.string().min(1),
   requestKey: z.string(),
+  parentJobId: z.string().nullable().optional(),
+  correlationId: z.string().optional(),
+  causationId: z.string().nullable().optional(),
+  schemaVersion: z.string().optional(),
+  payloadVersion: z.string().optional(),
   payload: HubJobPayloadSchema
 }).superRefine((message, ctx) => {
   if (message.jobType !== "ORDER_COLLECT") {

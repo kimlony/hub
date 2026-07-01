@@ -158,6 +158,11 @@ public class HubJobServiceImpl implements HubJobService {
                 .requestKey(requestKey)
                 .jobType("ORDER_COLLECT")
                 .sourceErp("HUB")
+                .parentJobId(null)
+                .correlationId(UUID.randomUUID().toString())
+                .causationId(null)
+                .schemaVersion("1.0")
+                .payloadVersion("1.0")
                 .channelCd(account.getMallKey())
                 .status(HubJobStatus.QUEUED)
                 .payload(serializePayload(account, request, user, triggerType, scheduleRunId))
@@ -296,6 +301,11 @@ public class HubJobServiceImpl implements HubJobService {
                     "HUB",
                     "ORDER_COLLECT",
                     job.getRequestKey(),
+                    job.getParentJobId(),
+                    job.getCorrelationId(),
+                    job.getCausationId(),
+                    job.getSchemaVersion(),
+                    job.getPayloadVersion(),
                     payloadMap
             ));
         } catch (JsonProcessingException e) {

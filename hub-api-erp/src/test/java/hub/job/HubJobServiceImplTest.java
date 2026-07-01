@@ -149,6 +149,11 @@ class HubJobServiceImplTest {
         assertThat(insertedJob.getRequestKey()).isEqualTo(requestKey);
         assertThat(insertedJob.getJobType()).isEqualTo("ORDER_COLLECT");
         assertThat(insertedJob.getSourceErp()).isEqualTo("HUB");
+        assertThat(insertedJob.getParentJobId()).isNull();
+        assertThat(insertedJob.getCorrelationId()).isNotBlank();
+        assertThat(insertedJob.getCausationId()).isNull();
+        assertThat(insertedJob.getSchemaVersion()).isEqualTo("1.0");
+        assertThat(insertedJob.getPayloadVersion()).isEqualTo("1.0");
         assertThat(insertedJob.getChannelCd()).isEqualTo("GODO");
         assertThat(insertedJob.getStatus()).isEqualTo(HubJobStatus.QUEUED);
         assertThat(insertedJob.getRetryCount()).isZero();
@@ -158,6 +163,11 @@ class HubJobServiceImplTest {
         assertThat(event.sourceErp()).isEqualTo("HUB");
         assertThat(event.jobType()).isEqualTo("ORDER_COLLECT");
         assertThat(event.requestKey()).isEqualTo(requestKey);
+        assertThat(event.parentJobId()).isNull();
+        assertThat(event.correlationId()).isEqualTo(insertedJob.getCorrelationId());
+        assertThat(event.causationId()).isNull();
+        assertThat(event.schemaVersion()).isEqualTo("1.0");
+        assertThat(event.payloadVersion()).isEqualTo("1.0");
         assertThat(event.payload())
                 .containsEntry("userId", 1)
                 .containsEntry("corpId", 100)

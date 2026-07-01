@@ -18,6 +18,11 @@ public class HubJob {
     private String requestKey;
     private String jobType;
     private String sourceErp;
+    private String parentJobId;
+    private String correlationId;
+    private String causationId;
+    private String schemaVersion;
+    private String payloadVersion;
     private String channelCd;
     private HubJobStatus status;
     private String payload;

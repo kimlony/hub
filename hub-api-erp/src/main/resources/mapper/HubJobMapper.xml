@@ -7,6 +7,11 @@
         <result property="requestKey"   column="request_key"/>
         <result property="jobType"      column="job_type"/>
         <result property="sourceErp"    column="source_erp"/>
+        <result property="parentJobId" column="parent_job_id"/>
+        <result property="correlationId" column="correlation_id"/>
+        <result property="causationId" column="causation_id"/>
+        <result property="schemaVersion" column="schema_version"/>
+        <result property="payloadVersion" column="payload_version"/>
         <result property="channelCd"    column="channel_cd"/>
         <result property="status"       column="status"       javaType="hub.job.domain.HubJobStatus"/>
         <result property="payload"      column="payload"/>
@@ -75,12 +80,14 @@
         INSERT INTO hub_job (
             request_id, request_key, channel_cd, status, payload,
             retry_count, error_message, completed_at, created_at, updated_at,
-            job_type, source_erp
+            job_type, source_erp, parent_job_id, correlation_id, causation_id,
+            schema_version, payload_version
         ) VALUES (
             #{requestId}, #{requestKey}, #{channelCd}, #{status},
             CAST(#{payload} AS json),
             #{retryCount}, #{errorMessage}, #{completedAt}, NOW(), NOW(),
-            #{jobType}, #{sourceErp}
+            #{jobType}, #{sourceErp}, #{parentJobId}, #{correlationId}, #{causationId},
+            #{schemaVersion}, #{payloadVersion}
         )
     </insert>
 
@@ -210,12 +217,14 @@
         INSERT INTO hub_job (
             request_id, request_key, channel_cd, status, payload,
             retry_count, error_message, completed_at, created_at, updated_at,
-            job_type, source_erp
+            job_type, source_erp, parent_job_id, correlation_id, causation_id,
+            schema_version, payload_version
         ) VALUES (
             #{requestId}, #{requestKey}, #{channelCd}, #{status},
             CAST(#{payload} AS json),
             #{retryCount}, #{errorMessage}, #{completedAt}, NOW(), NOW(),
-            #{jobType}, #{sourceErp}
+            #{jobType}, #{sourceErp}, #{parentJobId}, #{correlationId}, #{causationId},
+            #{schemaVersion}, #{payloadVersion}
         )
         ON CONFLICT (request_key) DO NOTHING
     </insert>

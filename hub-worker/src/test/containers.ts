@@ -88,6 +88,11 @@ async function initializePostgresBaseSchema(): Promise<void> {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         job_type VARCHAR(100) NOT NULL DEFAULT 'ORDER_COLLECT',
         source_erp VARCHAR(100) NOT NULL DEFAULT 'HUB',
+        parent_job_id VARCHAR(100),
+        correlation_id VARCHAR(100) NOT NULL DEFAULT gen_random_uuid()::text,
+        causation_id VARCHAR(100),
+        schema_version VARCHAR(20) NOT NULL DEFAULT '1.0',
+        payload_version VARCHAR(20) NOT NULL DEFAULT '1.0',
         next_retry_at TIMESTAMPTZ
       )
     `);

@@ -107,9 +107,17 @@ async function runSyntheticLoad() {
             retry_count,
             job_type,
             source_erp,
+            parent_job_id,
+            correlation_id,
+            causation_id,
+            schema_version,
+            payload_version,
             created_at,
             updated_at
-          ) VALUES ($1, $2, 'TEST', 'QUEUED', $3::json, 0, 'TEST_SLEEP', 'HUB', NOW(), NOW())
+          ) VALUES (
+            $1, $2, 'TEST', 'QUEUED', $3::json, 0, 'TEST_SLEEP', 'HUB',
+            NULL, $1, NULL, '1.0', '1.0', NOW(), NOW()
+          )
         `,
         [job.requestId, job.requestKey, JSON.stringify(job.payload)]
       );
@@ -123,6 +131,11 @@ async function runSyntheticLoad() {
             sourceErp: "HUB",
             jobType: "TEST_SLEEP",
             requestKey: job.requestKey,
+            parentJobId: null,
+            correlationId: job.requestId,
+            causationId: null,
+            schemaVersion: "1.0",
+            payloadVersion: "1.0",
             payload: job.payload
           })
         }]
@@ -216,9 +229,17 @@ async function runMockMallLoad() {
             retry_count,
             job_type,
             source_erp,
+            parent_job_id,
+            correlation_id,
+            causation_id,
+            schema_version,
+            payload_version,
             created_at,
             updated_at
-          ) VALUES ($1, $2, 'MOCK_MALL', 'QUEUED', $3::json, 0, 'ORDER_COLLECT', 'HUB', NOW(), NOW())
+          ) VALUES (
+            $1, $2, 'MOCK_MALL', 'QUEUED', $3::json, 0, 'ORDER_COLLECT', 'HUB',
+            NULL, $1, NULL, '1.0', '1.0', NOW(), NOW()
+          )
           ON CONFLICT (request_key) DO NOTHING
         `,
         [job.requestId, job.requestKey, JSON.stringify(job.payload)]
@@ -233,6 +254,11 @@ async function runMockMallLoad() {
             sourceErp: "HUB",
             jobType: "ORDER_COLLECT",
             requestKey: job.requestKey,
+            parentJobId: null,
+            correlationId: job.requestId,
+            causationId: null,
+            schemaVersion: "1.0",
+            payloadVersion: "1.0",
             payload: job.payload
           })
         }]

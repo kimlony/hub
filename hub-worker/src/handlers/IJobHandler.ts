@@ -3,6 +3,11 @@ export type JobHandlerMessage = {
   sourceErp: string;
   jobType: string;
   requestKey: string;
+  parentJobId?: string | null;
+  correlationId?: string;
+  causationId?: string | null;
+  schemaVersion?: string;
+  payloadVersion?: string;
   payload: Record<string, unknown>;
 };
 
