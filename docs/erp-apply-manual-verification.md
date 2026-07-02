@@ -135,3 +135,31 @@ curl -s -i "http://localhost:3000/api/hub/jobs/erp-apply-1/pipeline?corpId=abc"
 - `MissingServletRequestParameterException`, `MethodArgumentTypeMismatchException` 두 가지만 처리했다. `@Valid` 바인딩 실패(`BindException`), `ConstraintViolationException` 등 다른 요청 바인딩 예외는 여전히 catch-all `Exception` 핸들러로 떨어져 500이 반환될 수 있다.
 - `retryable`이 여전히 "실패 단계 존재 여부"만 보는 단순 정책.
 - corpId를 그대로 신뢰하는 임시 구조 — 인증/인가 도입 전까지는 접근 제어 수단이 아님.
+
+## 8. 운영자 UI에서 ERP_APPLY 재처리
+
+1. 운영자 화면의 **ERP 반영 결과** 메뉴로 이동한다.
+2. `corpId`를 입력하고 `status=FAILED`로 조회한다.
+3. 대상 결과의 **Pipeline** 버튼을 누른다.
+4. 상단 요약과 Job 흐름에서 다음 조건을 확인한다.
+   - `failedStage = ERP_APPLY`
+   - `retryable = YES`
+   - `retryFromJobType = ERP_APPLY`
+   - ERP_APPLY Job의 `status = FAILED`
+5. 조건이 모두 맞으면 **ERP_APPLY 재처리** 버튼이 활성화된다. 버튼을 누르고 확인 창에서 승인한다.
+6. UI는 실패한 ERP_APPLY Job의 `requestId`로 `POST /api/hub/jobs/{requestId}/retry`를 호출한다. 이 API는 Kafka에 직접 발행하지 않고 기존 Job을 `QUEUED`로 변경하며 `hub_job_outbox`에 `PENDING` 이벤트를 저장한다.
+7. 성공 메시지가 표시된 뒤 ERP 결과 목록과 열린 Pipeline을 다시 조회한다. Pipeline의 ERP_APPLY Job은 `QUEUED`로 보이고 재처리 버튼은 비활성화되어야 한다. Outbox Publisher가 발행하고 Worker가 처리하면 이후 `PROCESSING` 및 `SUCCESS` 또는 다시 `FAILED`로 전환된다.
+
+버튼은 ORDER_COLLECT나 ORDER_NORMALIZE 실패에는 활성화되지 않는다. `retryable=false`, `retryFromJobType`이 ERP_APPLY가 아닌 경우, `failedStage`가 ERP_APPLY가 아닌 경우, ERP_APPLY Job이 FAILED가 아닌 경우에도 비활성화된다.
+
+### 오류 확인
+
+재처리 API가 실패하면 Pipeline 모달 상단에 백엔드 응답의 `message`가 표시된다. 다른 운영자가 먼저 재처리해 상태가 바뀐 경우처럼 FAILED 조건이 더 이상 유효하지 않으면 요청이 거부될 수 있으므로 Pipeline을 다시 열어 최신 상태를 확인한다.
+
+API만 직접 검증하려면 다음 요청을 사용한다.
+
+```bash
+curl -s -i -X POST "http://localhost:3000/api/hub/jobs/{erpApplyRequestId}/retry"
+```
+
+정상 응답은 HTTP 200이며 body는 없다. 이후 `hub_job.status=QUEUED`와 해당 requestId의 최신 `hub_job_outbox.status=PENDING`을 확인한다.
