@@ -1,0 +1,6 @@
+services:
+  hub-api:
+    ports:
+      - "${HUB_API_PORT:-3000}:3000"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}

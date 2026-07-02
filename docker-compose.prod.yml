@@ -1,0 +1,4 @@
+services:
+  hub-api:
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}

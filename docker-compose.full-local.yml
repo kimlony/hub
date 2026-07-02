@@ -1,0 +1,22 @@
+services:
+  hub-api:
+    ports:
+      - "${HUB_API_PORT:-3000}:3000"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+
+  postgres:
+    ports:
+      - "${POSTGRES_PUBLISHED_PORT:-5432}:5432"
+
+  kafka:
+    ports:
+      - "${KAFKA_PUBLISHED_PORT:-9092}:9094"
+    environment:
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_PUBLISHED_PORT:-9092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+
+  hub-worker-http:
+    ports:
+      - "${WORKER_HTTP_PUBLISHED_PORT:-4000}:4000"
