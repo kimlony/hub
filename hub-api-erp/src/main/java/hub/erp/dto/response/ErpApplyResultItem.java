@@ -1,6 +1,6 @@
 package hub.erp.dto.response;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 public record ErpApplyResultItem(
         Long id,
@@ -15,8 +15,8 @@ public record ErpApplyResultItem(
         String errorCode,
         String errorMessage,
         int attemptCount,
-        LocalDateTime appliedAt,
-        LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        OffsetDateTime appliedAt,
+        OffsetDateTime createdAt,
+        OffsetDateTime updatedAt
 ) {
 }

@@ -1,6 +1,6 @@
 package hub.erp.domain;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -21,7 +21,7 @@ public class ErpApplyResult {
     private String errorCode;
     private String errorMessage;
     private int attemptCount;
-    private LocalDateTime appliedAt;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private OffsetDateTime appliedAt;
+    private OffsetDateTime createdAt;
+    private OffsetDateTime updatedAt;
 }
