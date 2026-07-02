@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
@@ -46,6 +47,21 @@ public class GlobalExceptionHandler {
         Map<String, Object> body = errorBody(HttpStatus.BAD_REQUEST, message);
         body.put("parameterName", exception.getParameterName());
         body.put("requiredType", exception.getParameterType());
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleMethodArgumentTypeMismatchException(
+            MethodArgumentTypeMismatchException exception) {
+        String requiredType = exception.getRequiredType() != null
+                ? exception.getRequiredType().getSimpleName()
+                : "unknown";
+        String message = "Invalid request parameter '%s': value '%s' cannot be converted to %s"
+                .formatted(exception.getName(), exception.getValue(), requiredType);
+        Map<String, Object> body = errorBody(HttpStatus.BAD_REQUEST, message);
+        body.put("parameterName", exception.getName());
+        body.put("rejectedValue", exception.getValue());
+        body.put("requiredType", requiredType);
         return ResponseEntity.badRequest().body(body);
     }
 

@@ -110,8 +110,28 @@ curl -s -i "http://localhost:3000/api/hub/jobs/erp-apply-1/pipeline"
 
 `GlobalExceptionHandler`에 `MissingServletRequestParameterException` 전용 핸들러가 추가되어, `corpId` 등 필수 `@RequestParam`이 누락되면 이제 500이 아니라 **400**이 반환된다. 응답 body에는 기존 `status`/`error`/`message` 구조를 유지한 채 `parameterName`, `requiredType`을 추가로 포함한다. `ErpApplyResultControllerTest#missingRequiredCorpIdReturnsBadRequest`, `JobPipelineControllerTest#missingRequiredCorpIdReturnsBadRequest` 테스트로 고정해 두었다.
 
+## 7. 파라미터 타입 불일치 처리 (해결됨)
+
+`corpId`, `normalizedOrderId`처럼 숫자를 받는 파라미터에 문자열을 넣거나(`page`, `size`도 동일) 타입이 맞지 않으면 `MethodArgumentTypeMismatchException`이 발생한다. `GlobalExceptionHandler`에 전용 핸들러가 추가되어 이제 500이 아니라 **400**이 반환되며, `parameterName`/`rejectedValue`/`requiredType`을 응답에 포함한다.
+
+```bash
+curl -s -i "http://localhost:3000/api/hub/erp/apply-results?corpId=abc"
+```
+
+```json
+{ "status": 400, "error": "Bad Request", "message": "Invalid request parameter 'corpId': value 'abc' cannot be converted to Long", "parameterName": "corpId", "rejectedValue": "abc", "requiredType": "Long" }
+```
+
+```bash
+curl -s -i "http://localhost:3000/api/hub/erp/apply-results?corpId=1&normalizedOrderId=abc"
+curl -s -i "http://localhost:3000/api/hub/erp/apply-results?corpId=1&page=abc"
+curl -s -i "http://localhost:3000/api/hub/jobs/erp-apply-1/pipeline?corpId=abc"
+```
+
+모두 동일한 형태로 400을 반환하며, `requiredType`은 해당 파라미터의 실제 타입(`Long`, `int`, `long` 등)을 그대로 보여준다. `ErpApplyResultControllerTest#invalidCorpIdTypeReturnsBadRequest`/`invalidNormalizedOrderIdTypeReturnsBadRequest`/`invalidPageTypeReturnsBadRequest`, `JobPipelineControllerTest#invalidCorpIdTypeReturnsBadRequest` 테스트로 고정해 두었다.
+
 ## 남은 위험
 
-- 이번에는 `MissingServletRequestParameterException`만 처리했다. 타입이 안 맞는 파라미터(`MethodArgumentTypeMismatchException`, 예: `corpId=abc`), `@Valid` 바인딩 실패(`BindException`), `ConstraintViolationException` 등 다른 요청 바인딩 예외는 여전히 catch-all `Exception` 핸들러로 떨어져 500이 반환될 수 있다.
+- `MissingServletRequestParameterException`, `MethodArgumentTypeMismatchException` 두 가지만 처리했다. `@Valid` 바인딩 실패(`BindException`), `ConstraintViolationException` 등 다른 요청 바인딩 예외는 여전히 catch-all `Exception` 핸들러로 떨어져 500이 반환될 수 있다.
 - `retryable`이 여전히 "실패 단계 존재 여부"만 보는 단순 정책.
 - corpId를 그대로 신뢰하는 임시 구조 — 인증/인가 도입 전까지는 접근 제어 수단이 아님.

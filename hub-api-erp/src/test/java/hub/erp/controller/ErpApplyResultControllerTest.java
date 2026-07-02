@@ -139,6 +139,47 @@ class ErpApplyResultControllerTest {
     }
 
     @Test
+    void invalidCorpIdTypeReturnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/hub/erp/apply-results").param("corpId", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.parameterName").value("corpId"))
+                .andExpect(jsonPath("$.rejectedValue").value("abc"))
+                .andExpect(jsonPath("$.requiredType").value("Long"))
+                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("corpId")))
+                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("abc")));
+    }
+
+    @Test
+    void invalidNormalizedOrderIdTypeReturnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/hub/erp/apply-results")
+                        .param("corpId", "1")
+                        .param("normalizedOrderId", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.parameterName").value("normalizedOrderId"))
+                .andExpect(jsonPath("$.rejectedValue").value("abc"))
+                .andExpect(jsonPath("$.requiredType").value("Long"))
+                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("normalizedOrderId")))
+                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("abc")));
+    }
+
+    @Test
+    void invalidPageTypeReturnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/hub/erp/apply-results")
+                        .param("corpId", "1")
+                        .param("page", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.parameterName").value("page"))
+                .andExpect(jsonPath("$.rejectedValue").value("abc"))
+                .andExpect(jsonPath("$.requiredType").value("int"))
+                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("page")))
+                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("abc")));
+    }
+
+    @Test
     void detailReturnsPayloadsAndSummaryFor200() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode requestPayload = mapper.readTree("{\"erpConnectionId\":\"MOCK-1\",\"orders\":[501]}");

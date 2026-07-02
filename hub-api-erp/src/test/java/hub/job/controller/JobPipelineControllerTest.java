@@ -119,4 +119,17 @@ class JobPipelineControllerTest {
                 .andExpect(jsonPath("$.parameterName").value("corpId"))
                 .andExpect(jsonPath("$.requiredType").value("long"));
     }
+
+    @Test
+    void invalidCorpIdTypeReturnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/hub/jobs/erp-apply-1/pipeline").param("corpId", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.parameterName").value("corpId"))
+                .andExpect(jsonPath("$.rejectedValue").value("abc"))
+                .andExpect(jsonPath("$.requiredType").value("long"))
+                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("corpId")))
+                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("abc")));
+    }
 }
