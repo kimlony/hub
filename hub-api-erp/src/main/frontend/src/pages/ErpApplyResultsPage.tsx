@@ -6,9 +6,11 @@ import {
   ErpApplyResult,
   ErpApplyResultDetail,
   JobPipeline,
+  JobLog,
   fetchErpApplyResultDetail,
   fetchErpApplyResults,
   fetchJobPipeline,
+  fetchJobLogs,
   retryErpApplyJob,
 } from '../api/erpApply'
 
@@ -209,13 +211,23 @@ function PipelineModal({
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [retrying, setRetrying] = useState(false)
+  const [jobLogs, setJobLogs] = useState<Record<string, JobLog[]>>({})
+  const [logsLoading, setLogsLoading] = useState(false)
 
   const loadPipeline = useCallback(async () => {
     setError('')
     try {
-      setPipeline(await fetchJobPipeline(authenticatedFetch, requestId, corpId))
+      const nextPipeline = await fetchJobPipeline(authenticatedFetch, requestId, corpId)
+      setPipeline(nextPipeline)
+      setLogsLoading(true)
+      const logResponses = await Promise.all(
+        nextPipeline.jobs.map((job) => fetchJobLogs(authenticatedFetch, job.requestId)),
+      )
+      setJobLogs(Object.fromEntries(logResponses.map((response) => [response.requestId, response.logs])))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Pipeline 조회에 실패했습니다.')
+      setError(reason instanceof Error ? reason.message : 'Pipeline 또는 Job 로그 조회에 실패했습니다.')
+    } finally {
+      setLogsLoading(false)
     }
   }, [authenticatedFetch, corpId, requestId])
 
@@ -279,6 +291,7 @@ function PipelineModal({
           {(result.errorCode || result.errorMessage) && <p className="mt-2 text-[12px] font-bold text-red-600">{result.errorCode ?? 'ERROR'} · {result.errorMessage}</p>}
         </div>
       ))}
+      <JobLogTimeline jobs={pipeline.jobs} logsByRequestId={jobLogs} loading={logsLoading} />
       <button
         disabled={!canRetryErp || retrying}
         onClick={() => void handleRetry()}
@@ -289,6 +302,91 @@ function PipelineModal({
       </button>
     </>}
   </Modal>
+}
+function JobLogTimeline({
+  jobs,
+  logsByRequestId,
+  loading,
+}: {
+  jobs: JobPipeline['jobs']
+  logsByRequestId: Record<string, JobLog[]>
+  loading: boolean
+}) {
+  return <section className="mt-6 border-t border-slate-100 pt-6">
+    <div className="mb-3 flex items-center justify-between">
+      <h3 className="text-[14px] font-extrabold text-[#191F28]">Job 로그 타임라인</h3>
+      {loading && <span className="text-[11px] font-semibold text-[#8B95A1]">로그 갱신 중...</span>}
+    </div>
+    <div className="space-y-4">
+      {jobs.map((job) => {
+        const logs = [...(logsByRequestId[job.requestId] ?? [])].sort((left, right) =>
+          left.createdAt.localeCompare(right.createdAt) || left.id - right.id,
+        )
+        return <div key={`logs-${job.requestId}`} className="rounded-lg border border-slate-100 p-4">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <strong className="text-[13px] text-[#191F28]">{job.jobType}</strong>
+            <ErpStatus status={job.status} />
+            <span className="font-mono text-[10px] text-[#8B95A1]">{job.requestId}</span>
+          </div>
+          {logs.length === 0 ? <p className="text-[12px] text-[#8B95A1]">저장된 로그가 없습니다.</p> :
+            <ol className="relative ml-2 border-l border-slate-200">
+              {logs.map((log) => <JobLogTimelineItem key={log.id} log={log} />)}
+            </ol>}
+        </div>
+      })}
+    </div>
+  </section>
+}
+
+function JobLogTimelineItem({ log }: { log: JobLog }) {
+  const status = resolveLogStatus(log)
+  const errorCode = resolveLogErrorCode(log)
+  const failed = log.level === 'ERROR' || status === 'FAILED' || Boolean(log.errorMessage)
+  const retryLabel = log.retryCount === null
+    ? null
+    : `retry ${log.retryCount}/${log.maxRetryCount ?? '-'}`
+  return <li className={`relative ml-5 pb-4 last:pb-0 ${failed ? 'text-red-700' : 'text-[#4E5968]'}`}>
+    <span className={`absolute -left-[25px] top-1 h-2.5 w-2.5 rounded-full ring-4 ring-white ${failed ? 'bg-red-500' : log.level === 'WARN' ? 'bg-amber-500' : 'bg-blue-500'}`} />
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="font-mono text-[11px] text-[#8B95A1]">{formatLogTime(log.createdAt)}</span>
+      <span className={`rounded px-1.5 py-0.5 text-[10px] font-extrabold ${failed ? 'bg-red-50 text-red-700' : log.level === 'WARN' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'}`}>{log.level}</span>
+      <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold">{status}</span>
+      {errorCode && <span className="rounded bg-red-50 px-1.5 py-0.5 font-mono text-[10px] font-extrabold text-red-700">{errorCode}</span>}
+      {retryLabel && <span className="text-[10px] font-bold text-amber-700">{retryLabel}</span>}
+    </div>
+    <p className={`mt-1 text-[12px] font-semibold ${failed ? 'text-red-700' : 'text-[#4E5968]'}`}>{log.message}</p>
+    {log.errorMessage && <p className="mt-1 break-words text-[11px] text-red-600">{log.errorMessage}</p>}
+    <p className="mt-1 font-mono text-[10px] text-[#8B95A1]">{log.eventType}</p>
+  </li>
+}
+
+function resolveLogStatus(log: JobLog): string {
+  if (log.detail) {
+    try {
+      const detail = JSON.parse(log.detail) as { toStatus?: unknown; status?: unknown }
+      const value = detail.toStatus ?? detail.status
+      if (typeof value === 'string' && value) return value
+    } catch {
+      // Fall back to the event type when detail is not JSON.
+    }
+  }
+  const event = log.eventType.toUpperCase()
+  if (event.includes('SUCCESS')) return 'SUCCESS'
+  if (event.includes('FAILED') || event.includes('DLQ')) return 'FAILED'
+  if (event.includes('PROCESSING')) return 'PROCESSING'
+  if (event.includes('RETRY')) return 'RETRY'
+  if (event.includes('QUEUED')) return 'QUEUED'
+  return event
+}
+
+function resolveLogErrorCode(log: JobLog): string | null {
+  const source = `${log.errorMessage ?? ''} ${log.message}`
+  return source.match(/\b(ERP_[A-Z0-9_]+|HTTP\s+\d{3}|E[A-Z_]+)\b/i)?.[1] ?? null
+}
+
+function formatLogTime(value: string): string {
+  const match = value.match(/(\d{2}:\d{2}:\d{2})/)
+  return match?.[1] ?? value
 }
 const inputClass = 'mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-[#3182F6]/30'
 const secondaryButton = 'rounded-lg bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-[#4E5968] hover:bg-slate-200'

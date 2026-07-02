@@ -69,6 +69,22 @@ export type NormalizedOrderForErp = {
   items: Array<Record<string, unknown>>;
 };
 
+export type ErpConnection = {
+  id: number;
+  corpId: number;
+  erpConnectionId: string;
+  erpType: string;
+  baseUrl: string | null;
+  authType: "NONE" | "TOKEN";
+  tokenUrl: string | null;
+  clientId: string | null;
+  clientSecret: string | null;
+  accessToken: string | null;
+  refreshToken: string | null;
+  tokenExpiresAt: Date | null;
+  isActive: boolean;
+};
+
 export type JobLogLevel = "INFO" | "WARN" | "ERROR";
 
 export type NewsItemInput = {
@@ -476,6 +492,34 @@ async function ensurePostgresSchemaUnlocked(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_hub_erp_apply_result_request ON hub_erp_apply_result(request_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_hub_erp_apply_result_status ON hub_erp_apply_result(status, updated_at DESC)`);
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_erp_connection (
+      id BIGSERIAL PRIMARY KEY,
+      corp_id BIGINT NOT NULL REFERENCES hub_corp(id),
+      erp_connection_id VARCHAR(100) NOT NULL,
+      erp_type VARCHAR(50) NOT NULL DEFAULT 'MOCK',
+      base_url VARCHAR(500),
+      auth_type VARCHAR(20) NOT NULL DEFAULT 'NONE',
+      token_url VARCHAR(500),
+      client_id VARCHAR(200),
+      client_secret TEXT,
+      access_token TEXT,
+      refresh_token TEXT,
+      token_expires_at TIMESTAMPTZ,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (corp_id, erp_connection_id),
+      UNIQUE (erp_connection_id)
+    )
+  `);
+  // TODO(security): encrypt client_secret/access_token/refresh_token before production use.
+  await pool.query(`
+    INSERT INTO hub_erp_connection (corp_id, erp_connection_id, erp_type, auth_type, is_active)
+    SELECT id, 'MOCK-' || id::text, 'MOCK', 'NONE', TRUE
+    FROM hub_corp
+    ON CONFLICT (corp_id, erp_connection_id) DO NOTHING
+  `);
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS hub_worker_heartbeat (
       worker_id VARCHAR(100) PRIMARY KEY,
       role VARCHAR(30) NOT NULL,
@@ -820,6 +864,12 @@ export async function completeOrderNormalizeWithErpApply(
       const channelAccountId = optionalPayloadInteger(message.payload, "channelAccountId") ?? Number(identity.channel_account_id);
       const channelCd = optionalPayloadString(message.payload, "channelCd") ?? identity.channel_cd;
       const erpConnectionId = `MOCK-${corpId}`;
+      await client.query(`
+        INSERT INTO hub_erp_connection (
+          corp_id, erp_connection_id, erp_type, auth_type, is_active
+        ) VALUES ($1, $2, 'MOCK', 'NONE', TRUE)
+        ON CONFLICT (corp_id, erp_connection_id) DO NOTHING
+      `, [corpId, erpConnectionId]);
       const idempotencyKey = createHash("sha256")
         .update(`${erpConnectionId}:CREATE:${normalizedOrderIds.join(",")}`)
         .digest("hex");
@@ -1029,6 +1079,52 @@ export async function findJobResultForNormalize(sourceRequestId: string): Promis
     resultPayload: row.result_payload,
     jobPayload: row.job_payload
   };
+}
+
+export async function findErpConnection(
+  corpId: number,
+  erpConnectionId: string
+): Promise<ErpConnection | null> {
+  const result = await pool.query<{
+    id: string; corp_id: string; erp_connection_id: string; erp_type: string;
+    base_url: string | null; auth_type: string; token_url: string | null;
+    client_id: string | null; client_secret: string | null; access_token: string | null;
+    refresh_token: string | null; token_expires_at: Date | null; is_active: boolean;
+  }>(`
+    SELECT id, corp_id, erp_connection_id, erp_type, base_url, auth_type,
+           token_url, client_id, client_secret, access_token, refresh_token,
+           token_expires_at, is_active
+    FROM hub_erp_connection
+    WHERE corp_id = $1 AND erp_connection_id = $2
+  `, [corpId, erpConnectionId]);
+  const row = result.rows[0];
+  if (!row) return null;
+  if (row.auth_type !== "NONE" && row.auth_type !== "TOKEN") {
+    throw new Error(`Unsupported ERP auth type: ${row.auth_type}`);
+  }
+  return {
+    id: Number(row.id), corpId: Number(row.corp_id), erpConnectionId: row.erp_connection_id,
+    erpType: row.erp_type, baseUrl: row.base_url, authType: row.auth_type,
+    tokenUrl: row.token_url, clientId: row.client_id, clientSecret: row.client_secret,
+    accessToken: row.access_token, refreshToken: row.refresh_token,
+    tokenExpiresAt: row.token_expires_at ? new Date(row.token_expires_at) : null,
+    isActive: row.is_active
+  };
+}
+
+export async function updateErpConnectionToken(
+  erpConnectionId: string,
+  accessToken: string,
+  expiresAt: Date
+): Promise<void> {
+  const result = await pool.query(`
+    UPDATE hub_erp_connection
+    SET access_token = $2, token_expires_at = $3, updated_at = NOW()
+    WHERE erp_connection_id = $1
+  `, [erpConnectionId, accessToken, expiresAt]);
+  if (result.rowCount !== 1) {
+    throw new Error(`ERP connection token update failed: ${erpConnectionId}`);
+  }
 }
 
 export async function findNormalizedOrdersForErp(orderIds: number[]): Promise<NormalizedOrderForErp[]> {

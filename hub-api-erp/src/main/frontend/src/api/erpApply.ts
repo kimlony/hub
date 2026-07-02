@@ -133,3 +133,29 @@ export async function retryErpApplyJob(
     throw new Error(message)
   }
 }
+export type JobLog = {
+  id: number
+  requestId: string
+  eventType: string
+  level: string
+  message: string
+  channelCd: string | null
+  mallKey: string | null
+  retryCount: number | null
+  maxRetryCount: number | null
+  errorMessage: string | null
+  detail: string | null
+  createdAt: string
+}
+
+export type JobLogsResponse = {
+  requestId: string
+  logs: JobLog[]
+}
+
+export async function fetchJobLogs(
+  authenticatedFetch: AuthenticatedFetch,
+  requestId: string,
+): Promise<JobLogsResponse> {
+  return parseResponse(await authenticatedFetch(`/api/hub/jobs/${encodeURIComponent(requestId)}/logs`))
+}

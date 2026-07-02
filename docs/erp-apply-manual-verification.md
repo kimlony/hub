@@ -163,3 +163,19 @@ curl -s -i -X POST "http://localhost:3000/api/hub/jobs/{erpApplyRequestId}/retry
 ```
 
 정상 응답은 HTTP 200이며 body는 없다. 이후 `hub_job.status=QUEUED`와 해당 requestId의 최신 `hub_job_outbox.status=PENDING`을 확인한다.
+## 9. Pipeline Job 로그 타임라인 확인
+
+1. **ERP 반영 결과** 화면에서 `status=FAILED` 조건으로 실패 건을 조회한다.
+2. 대상 행의 **Pipeline** 버튼을 누르고 `failedStage=ERP_APPLY`, `retryFromJobType=ERP_APPLY`인지 확인한다.
+3. Pipeline 하단의 **Job 로그 타임라인**에서 ORDER_COLLECT, ORDER_NORMALIZE, ERP_APPLY 그룹이 각각 표시되는지 확인한다.
+4. 각 그룹의 로그가 `createdAt`, 동일 시각에는 로그 id 기준 오름차순으로 표시되는지 확인한다. 화면에는 시각, level, eventType에서 해석한 상태, retry 횟수, message와 errorMessage가 나타난다.
+5. ERP_APPLY 실패 로그는 빨간색으로 강조되고 `ERP_500` 같은 오류 코드와 `Mock ERP apply failed` 메시지가 표시되는지 확인한다.
+6. **ERP_APPLY 재처리**를 실행한다. 성공 후 Pipeline과 각 Job의 `/api/hub/jobs/{requestId}/logs`가 다시 조회되므로 재처리 또는 상태 변경 로그가 타임라인에 추가되는지 확인한다.
+
+Pipeline 화면은 로그를 포함하도록 Pipeline API를 확장하지 않는다. Pipeline을 먼저 조회한 뒤 응답의 각 Job requestId로 기존 로그 API를 병렬 호출한다.
+
+```text
+GET /api/hub/jobs/{requestId}/logs
+```
+
+로그 API의 실제 필드는 `eventType`, `level`, `message`, `retryCount`, `maxRetryCount`, `errorMessage`, `detail`, `createdAt`이다. 별도 `status`와 `errorCode` 컬럼은 없으므로 UI는 `detail.toStatus` 또는 eventType에서 상태를, errorMessage/message에서 오류 코드를 표시용으로 추출한다.

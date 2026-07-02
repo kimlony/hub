@@ -4,21 +4,61 @@ import {
   saveErpApplyResults
 } from "../../db/postgres.js";
 import type { IJobHandler, JobHandlerMessage } from "../../handlers/IJobHandler.js";
-import { MockErpAdapter, MockErpError, type MockErpRequest } from "./MockErpAdapter.js";
+import {
+  PostgresErpConnectionRepository,
+  type ErpConnection,
+  type ErpConnectionRepository
+} from "./ErpConnectionRepository.js";
+import { MockErpTokenProvider, type ErpTokenProvider } from "./MockErpTokenProvider.js";
+import {
+  MockErpAdapter,
+  MockErpError,
+  type MockErpOptions,
+  type MockErpRequest
+} from "./MockErpAdapter.js";
+
+type ErpApplyStore = {
+  areAlreadyApplied: typeof areErpOrdersAlreadyApplied;
+  findOrders: typeof findNormalizedOrdersForErp;
+  saveResults: typeof saveErpApplyResults;
+};
+
+const postgresStore: ErpApplyStore = {
+  areAlreadyApplied: areErpOrdersAlreadyApplied,
+  findOrders: findNormalizedOrdersForErp,
+  saveResults: saveErpApplyResults
+};
+
+export class ErpConnectionError extends Error {
+  constructor(public readonly code: string, message: string) {
+    super(message);
+    this.name = "ErpConnectionError";
+  }
+}
 
 export class ErpApplyHandler implements IJobHandler {
-  constructor(private readonly adapter = new MockErpAdapter()) {}
+  private readonly tokenProvider: ErpTokenProvider;
+
+  constructor(
+    private readonly adapter = new MockErpAdapter(),
+    private readonly connectionRepository: ErpConnectionRepository = new PostgresErpConnectionRepository(),
+    tokenProvider?: ErpTokenProvider,
+    private readonly store: ErpApplyStore = postgresStore
+  ) {
+    this.tokenProvider = tokenProvider ?? new MockErpTokenProvider(connectionRepository);
+  }
 
   async handle(message: JobHandlerMessage): Promise<void> {
     const payload = parsePayload(message.payload);
-    if (await areErpOrdersAlreadyApplied(payload.idempotencyKey, payload.normalizedOrderIds)) {
+    if (await this.store.areAlreadyApplied(payload.idempotencyKey, payload.normalizedOrderIds)) {
       return;
     }
 
-    const orders = await findNormalizedOrdersForErp(payload.normalizedOrderIds);
+    const orders = await this.store.findOrders(payload.normalizedOrderIds);
     if (orders.length !== payload.normalizedOrderIds.length) {
       throw new Error("One or more normalized orders were not found for ERP_APPLY");
     }
+    // Secrets and tokens intentionally stay out of this request and the Kafka payload.
     const request: MockErpRequest = {
       erpConnectionId: payload.erpConnectionId,
       operation: payload.operation,
@@ -27,11 +67,31 @@ export class ErpApplyHandler implements IJobHandler {
     };
 
     try {
-      const response = await this.adapter.apply(request, {
+      const connection = await this.resolveConnection(payload.corpId, payload.erpConnectionId);
+      const token = connection.authType === "TOKEN"
+        ? await this.tokenProvider.getAccessToken(connection)
+        : null;
+      const options: MockErpOptions = {
         mockFail: payload.mockFail,
-        mockErrorCode: payload.mockErrorCode
-      });
-      await saveErpApplyResults({
+        mockErrorCode: payload.mockErrorCode,
+        mockAuthFailOnce: payload.mockAuthFailOnce,
+        mockAuthFailAlways: payload.mockAuthFailAlways,
+        authAttempt: 0
+      };
+      let response;
+      try {
+        response = await this.adapter.apply(connection, token, request, options);
+      } catch (error) {
+        if (!(error instanceof MockErpError) || !error.isAuthFailure || connection.authType !== "TOKEN") {
+          throw error;
+        }
+        const refreshedToken = await this.tokenProvider.forceRefreshToken(connection);
+        response = await this.adapter.apply(connection, refreshedToken, request, {
+          ...options,
+          authAttempt: 1
+        });
+      }
+      await this.store.saveResults({
         requestId: message.requestId,
         correlationId: message.correlationId ?? message.requestId,
         normalizedOrderIds: payload.normalizedOrderIds,
@@ -44,9 +104,11 @@ export class ErpApplyHandler implements IJobHandler {
         responsePayload: response
       });
     } catch (error) {
-      const errorCode = error instanceof MockErpError ? error.code : "ERP_TECHNICAL_ERROR";
+      const errorCode = error instanceof MockErpError || error instanceof ErpConnectionError
+        ? error.code
+        : "ERP_TECHNICAL_ERROR";
       const errorMessage = error instanceof Error ? error.message : String(error);
-      await saveErpApplyResults({
+      await this.store.saveResults({
         requestId: message.requestId,
         correlationId: message.correlationId ?? message.requestId,
         normalizedOrderIds: payload.normalizedOrderIds,
@@ -61,6 +123,23 @@ export class ErpApplyHandler implements IJobHandler {
       throw error;
     }
   }
+
+  private async resolveConnection(corpId: number, erpConnectionId: string): Promise<ErpConnection> {
+    const connection = await this.connectionRepository.findById(corpId, erpConnectionId);
+    if (!connection) {
+      throw new ErpConnectionError(
+        "ERP_CONNECTION_NOT_FOUND",
+        `ERP connection was not found: ${erpConnectionId}`
+      );
+    }
+    if (!connection.isActive) {
+      throw new ErpConnectionError(
+        "ERP_CONNECTION_INACTIVE",
+        `ERP connection is inactive: ${erpConnectionId}`
+      );
+    }
+    return connection;
+  }
 }
 
 function parsePayload(payload: Record<string, unknown>) {
@@ -70,13 +149,20 @@ function parsePayload(payload: Record<string, unknown>) {
   if (normalizedOrderIds.length === 0) {
     throw new Error("normalizedOrderIds is required for ERP_APPLY");
   }
+  const corpId = Number(payload.corpId);
+  if (!Number.isInteger(corpId) || corpId <= 0) {
+    throw new Error("corpId is required for ERP_APPLY");
+  }
   return {
     normalizedOrderIds,
+    corpId,
     erpConnectionId: requiredString(payload.erpConnectionId, "erpConnectionId"),
     operation: requiredString(payload.operation, "operation"),
     idempotencyKey: requiredString(payload.idempotencyKey, "idempotencyKey"),
     mockFail: payload.mockFail === true,
-    mockErrorCode: typeof payload.mockErrorCode === "string" ? payload.mockErrorCode : undefined
+    mockErrorCode: typeof payload.mockErrorCode === "string" ? payload.mockErrorCode : undefined,
+    mockAuthFailOnce: payload.mockAuthFailOnce === true,
+    mockAuthFailAlways: payload.mockAuthFailAlways === true
   };
 }
 

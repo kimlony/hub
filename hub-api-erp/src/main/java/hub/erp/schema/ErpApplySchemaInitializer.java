@@ -16,6 +16,34 @@ public class ErpApplySchemaInitializer {
     @PostConstruct
     public void initialize() {
         jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS hub_erp_connection (
+                    id BIGSERIAL PRIMARY KEY,
+                    corp_id BIGINT NOT NULL REFERENCES hub_corp(id),
+                    erp_connection_id VARCHAR(100) NOT NULL,
+                    erp_type VARCHAR(50) NOT NULL DEFAULT 'MOCK',
+                    base_url VARCHAR(500),
+                    auth_type VARCHAR(20) NOT NULL DEFAULT 'NONE',
+                    token_url VARCHAR(500),
+                    client_id VARCHAR(200),
+                    client_secret TEXT,
+                    access_token TEXT,
+                    refresh_token TEXT,
+                    token_expires_at TIMESTAMPTZ,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE (corp_id, erp_connection_id),
+                    UNIQUE (erp_connection_id)
+                )
+                """);
+        // TODO(security): encrypt client_secret/access_token/refresh_token before production use.
+        jdbcTemplate.execute("""
+                INSERT INTO hub_erp_connection (corp_id, erp_connection_id, erp_type, auth_type, is_active)
+                SELECT id, 'MOCK-' || id::text, 'MOCK', 'NONE', TRUE
+                FROM hub_corp
+                ON CONFLICT (corp_id, erp_connection_id) DO NOTHING
+                """);
+        jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS hub_erp_apply_result (
                     id BIGSERIAL PRIMARY KEY,
                     request_id VARCHAR(100) NOT NULL,
