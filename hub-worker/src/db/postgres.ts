@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createDecipheriv, randomUUID } from "node:crypto";
+import { createDecipheriv, createHash, randomUUID } from "node:crypto";
 import pg from "pg";
 import { logger } from "../logger.js";
 import { resolveJobPartitionKey } from "../jobKeys.js";
@@ -52,6 +52,21 @@ export type CompleteOrderCollectResult = {
   succeeded: boolean;
   normalizeJob: NormalizeJobInput | null;
   outboxCreated: boolean;
+};
+
+export type CompleteOrderNormalizeResult = {
+  succeeded: boolean;
+  erpApplyJob: NormalizeJobInput | null;
+  outboxCreated: boolean;
+};
+
+export type NormalizedOrderForErp = {
+  id: number;
+  channelOrderId: string;
+  orderStatus: string | null;
+  orderAmount: string | null;
+  buyerName: string | null;
+  items: Array<Record<string, unknown>>;
 };
 
 export type JobLogLevel = "INFO" | "WARN" | "ERROR";
@@ -437,6 +452,30 @@ async function ensurePostgresSchemaUnlocked(): Promise<void> {
     )
   `);
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_erp_apply_result (
+      id BIGSERIAL PRIMARY KEY,
+      request_id VARCHAR(100) NOT NULL,
+      correlation_id VARCHAR(100) NOT NULL,
+      normalized_order_id BIGINT NOT NULL REFERENCES hub_collected_order(id),
+      erp_connection_id VARCHAR(100) NOT NULL,
+      operation VARCHAR(30) NOT NULL,
+      status VARCHAR(30) NOT NULL,
+      idempotency_key VARCHAR(200) NOT NULL,
+      erp_document_no VARCHAR(120),
+      request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      response_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      error_code VARCHAR(100),
+      error_message TEXT,
+      attempt_count INT NOT NULL DEFAULT 0,
+      applied_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (idempotency_key, normalized_order_id)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_hub_erp_apply_result_request ON hub_erp_apply_result(request_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_hub_erp_apply_result_status ON hub_erp_apply_result(status, updated_at DESC)`);
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS hub_worker_heartbeat (
       worker_id VARCHAR(100) PRIMARY KEY,
       role VARCHAR(30) NOT NULL,
@@ -692,10 +731,10 @@ export async function completeOrderCollectWithNormalize(
             request_id, event_type, topic, partition_key, payload, status,
             retry_count, max_retry_count, next_retry_at, created_at, updated_at
           )
-          SELECT $1, 'ORDER_NORMALIZE', $2, $3, $4::jsonb, 'PENDING', 0, 5, NOW(), NOW(), NOW()
+          SELECT $1::varchar, 'ORDER_NORMALIZE', $2::varchar, $3::varchar, $4::jsonb, 'PENDING', 0, 5, NOW(), NOW(), NOW()
           WHERE NOT EXISTS (
             SELECT 1 FROM hub_job_outbox
-            WHERE request_id = $1 AND event_type = 'ORDER_NORMALIZE'
+            WHERE request_id = $1::varchar AND event_type = 'ORDER_NORMALIZE'
           )
         `,
         [
@@ -723,6 +762,157 @@ export async function completeOrderCollectWithNormalize(
 
     await client.query("COMMIT");
     return { succeeded: true, normalizeJob, outboxCreated };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function completeOrderNormalizeWithErpApply(
+  message: HubJobMessage
+): Promise<CompleteOrderNormalizeResult> {
+  if (message.jobType !== "ORDER_NORMALIZE") {
+    throw new Error(`Expected ORDER_NORMALIZE but received ${message.jobType}`);
+  }
+  const sourceRequestId = requiredPayloadString(message.payload, "sourceRequestId");
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const parentResult = await client.query<{
+      request_id: string;
+      request_key: string;
+      correlation_id: string;
+    }>(
+      `
+        SELECT request_id, request_key, correlation_id
+        FROM hub_job
+        WHERE request_id = $1 AND status = 'PROCESSING'
+        FOR UPDATE
+      `,
+      [message.requestId]
+    );
+    const parent = parentResult.rows[0];
+    if (!parent) {
+      await client.query("ROLLBACK");
+      return { succeeded: false, erpApplyJob: null, outboxCreated: false };
+    }
+
+    const normalized = await client.query<{
+      id: number; corp_id: number; user_id: number; channel_account_id: number; channel_cd: string;
+    }>(
+      `
+        SELECT id, corp_id, user_id, channel_account_id, channel_cd
+        FROM hub_collected_order WHERE request_id = $1 ORDER BY id
+      `,
+      [sourceRequestId]
+    );
+    const normalizedOrderIds = normalized.rows.map((row) => Number(row.id));
+    let erpApplyJob: NormalizeJobInput | null = null;
+    let outboxCreated = false;
+
+    if (normalizedOrderIds.length > 0) {
+      const identity = normalized.rows[0];
+      const corpId = optionalPayloadInteger(message.payload, "corpId") ?? Number(identity.corp_id);
+      const userId = optionalPayloadInteger(message.payload, "userId") ?? Number(identity.user_id);
+      const channelAccountId = optionalPayloadInteger(message.payload, "channelAccountId") ?? Number(identity.channel_account_id);
+      const channelCd = optionalPayloadString(message.payload, "channelCd") ?? identity.channel_cd;
+      const erpConnectionId = `MOCK-${corpId}`;
+      const idempotencyKey = createHash("sha256")
+        .update(`${erpConnectionId}:CREATE:${normalizedOrderIds.join(",")}`)
+        .digest("hex");
+      const payload = {
+        sourceNormalizeJobId: message.requestId,
+        normalizedOrderIds,
+        corpId,
+        userId,
+        channelAccountId,
+        channelCd,
+        erpConnectionId,
+        operation: "CREATE",
+        idempotencyKey
+      };
+      const requestKey = `ERP_APPLY_${message.requestId}`;
+      await client.query(
+        `
+          INSERT INTO hub_job (
+            request_id, request_key, channel_cd, status, payload, retry_count,
+            job_type, source_erp, parent_job_id, correlation_id, causation_id,
+            schema_version, payload_version, created_at, updated_at
+          ) VALUES (
+            $1, $2, $3, 'QUEUED', $4::jsonb, 0, 'ERP_APPLY', 'HUB',
+            $5, $6, $5, '1.0', '1.0', NOW(), NOW()
+          )
+          ON CONFLICT (request_key) DO NOTHING
+        `,
+        [randomUUID(), requestKey, channelCd, JSON.stringify(payload), message.requestId, parent.correlation_id]
+      );
+      const child = await client.query<{
+        request_id: string; request_key: string; source_erp: string; job_type: string;
+        parent_job_id: string | null; correlation_id: string; causation_id: string | null;
+        schema_version: string; payload_version: string; payload: Record<string, unknown>;
+      }>(
+        `
+          SELECT request_id, request_key, source_erp, job_type, parent_job_id,
+                 correlation_id, causation_id, schema_version, payload_version, payload
+          FROM hub_job WHERE request_key = $1
+        `,
+        [requestKey]
+      );
+      const row = child.rows[0];
+      if (!row || row.parent_job_id !== message.requestId || row.correlation_id !== parent.correlation_id) {
+        throw new Error(`ERP_APPLY child relationship mismatch: ${requestKey}`);
+      }
+      erpApplyJob = {
+        requestId: row.request_id,
+        requestKey: row.request_key,
+        sourceErp: row.source_erp,
+        jobType: row.job_type,
+        parentJobId: row.parent_job_id,
+        correlationId: row.correlation_id,
+        causationId: row.causation_id,
+        schemaVersion: row.schema_version,
+        payloadVersion: row.payload_version,
+        payload: row.payload
+      };
+      const outboxPayload = { ...erpApplyJob, status: "QUEUED", channelCd };
+      const outboxResult = await client.query(
+        `
+          INSERT INTO hub_job_outbox (
+            request_id, event_type, topic, partition_key, payload, status,
+            retry_count, max_retry_count, next_retry_at, created_at, updated_at
+          )
+          SELECT $1::varchar, 'ERP_APPLY', $2::varchar, $3::varchar, $4::jsonb, 'PENDING', 0, 5, NOW(), NOW(), NOW()
+          WHERE NOT EXISTS (
+            SELECT 1 FROM hub_job_outbox WHERE request_id = $1::varchar AND event_type = 'ERP_APPLY'
+          )
+        `,
+        [
+          erpApplyJob.requestId,
+          process.env.KAFKA_TOPIC ?? "hub.jobs",
+          resolveJobPartitionKey(erpApplyJob),
+          JSON.stringify(outboxPayload)
+        ]
+      );
+      outboxCreated = outboxResult.rowCount === 1;
+    }
+
+    const success = await client.query(
+      `
+        UPDATE hub_job
+        SET status = 'SUCCESS', error_message = NULL, next_retry_at = NULL,
+            completed_at = NOW(), updated_at = NOW()
+        WHERE request_id = $1 AND status = 'PROCESSING'
+      `,
+      [message.requestId]
+    );
+    if (success.rowCount !== 1) {
+      throw new Error(`ORDER_NORMALIZE success transition failed: ${message.requestId}`);
+    }
+    await client.query("COMMIT");
+    return { succeeded: true, erpApplyJob, outboxCreated };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
@@ -839,6 +1029,134 @@ export async function findJobResultForNormalize(sourceRequestId: string): Promis
     resultPayload: row.result_payload,
     jobPayload: row.job_payload
   };
+}
+
+export async function findNormalizedOrdersForErp(orderIds: number[]): Promise<NormalizedOrderForErp[]> {
+  if (orderIds.length === 0) {
+    return [];
+  }
+  const result = await pool.query<{
+    id: number;
+    channel_order_id: string;
+    order_status: string | null;
+    order_amount: string | null;
+    buyer_name: string | null;
+    items: Array<Record<string, unknown>>;
+  }>(
+    `
+      SELECT o.id, o.channel_order_id, o.order_status, o.order_amount::text, o.buyer_name,
+             COALESCE(
+               jsonb_agg(to_jsonb(i) ORDER BY i.id) FILTER (WHERE i.id IS NOT NULL),
+               '[]'::jsonb
+             ) AS items
+      FROM hub_collected_order o
+      LEFT JOIN hub_collected_order_item i ON i.order_id = o.id
+      WHERE o.id = ANY($1::bigint[])
+      GROUP BY o.id
+      ORDER BY o.id
+    `,
+    [orderIds]
+  );
+  return result.rows.map((row) => ({
+    id: Number(row.id),
+    channelOrderId: row.channel_order_id,
+    orderStatus: row.order_status,
+    orderAmount: row.order_amount,
+    buyerName: row.buyer_name,
+    items: row.items
+  }));
+}
+
+export async function areErpOrdersAlreadyApplied(
+  idempotencyKey: string,
+  normalizedOrderIds: number[]
+): Promise<boolean> {
+  if (normalizedOrderIds.length === 0) {
+    return true;
+  }
+  const result = await pool.query<{ applied_count: number }>(
+    `
+      SELECT COUNT(*)::int AS applied_count
+      FROM hub_erp_apply_result
+      WHERE idempotency_key = $1
+        AND normalized_order_id = ANY($2::bigint[])
+        AND status = 'APPLIED'
+    `,
+    [idempotencyKey, normalizedOrderIds]
+  );
+  return Number(result.rows[0]?.applied_count ?? 0) === normalizedOrderIds.length;
+}
+
+export async function saveErpApplyResults(input: {
+  requestId: string;
+  correlationId: string;
+  normalizedOrderIds: number[];
+  erpConnectionId: string;
+  operation: string;
+  status: "APPLIED" | "FAILED";
+  idempotencyKey: string;
+  erpDocumentNo?: string | null;
+  requestPayload: Record<string, unknown>;
+  responsePayload?: Record<string, unknown>;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+}): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const normalizedOrderId of input.normalizedOrderIds) {
+      await client.query(
+        `
+          INSERT INTO hub_erp_apply_result (
+            request_id, correlation_id, normalized_order_id, erp_connection_id,
+            operation, status, idempotency_key, erp_document_no,
+            request_payload, response_payload, error_code, error_message,
+            attempt_count, applied_at, created_at, updated_at
+          ) VALUES (
+            $1::varchar, $2::varchar, $3::bigint, $4::varchar,
+            $5::varchar, $6::varchar, $7::varchar, $8::varchar,
+            $9::jsonb, $10::jsonb, $11, $12, 1,
+            CASE WHEN $6::varchar = 'APPLIED' THEN NOW() ELSE NULL END, NOW(), NOW()
+          )
+          ON CONFLICT (idempotency_key, normalized_order_id) DO UPDATE
+          SET request_id = EXCLUDED.request_id,
+              correlation_id = EXCLUDED.correlation_id,
+              status = EXCLUDED.status,
+              erp_document_no = EXCLUDED.erp_document_no,
+              request_payload = EXCLUDED.request_payload,
+              response_payload = EXCLUDED.response_payload,
+              error_code = EXCLUDED.error_code,
+              error_message = EXCLUDED.error_message,
+              attempt_count = hub_erp_apply_result.attempt_count + 1,
+              applied_at = CASE
+                WHEN EXCLUDED.status = 'APPLIED' THEN NOW()
+                ELSE hub_erp_apply_result.applied_at
+              END,
+              updated_at = NOW()
+        `,
+        [
+          input.requestId,
+          input.correlationId,
+          normalizedOrderId,
+          input.erpConnectionId,
+          input.operation,
+          input.status,
+          input.idempotencyKey,
+          input.erpDocumentNo ?? null,
+          JSON.stringify(input.requestPayload),
+          JSON.stringify(input.responsePayload ?? {}),
+          input.errorCode ?? null,
+          input.errorMessage ?? null
+        ]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function saveNormalizeCheckpoint(input: {
@@ -1470,6 +1788,25 @@ function parseRetryBackoffMs(): number[] {
 function getBackoffMs(retryCount: number): number {
   const index = Math.max(0, retryCount - 1);
   return RETRY_BACKOFF_MS[Math.min(index, RETRY_BACKOFF_MS.length - 1)] ?? DEFAULT_RETRY_BACKOFF_MS[0];
+}
+
+function requiredPayloadString(payload: Record<string, unknown> | undefined, field: string): string {
+  const value = payload?.[field];
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${field} is required`);
+  }
+  return value.trim();
+}
+
+function optionalPayloadInteger(payload: Record<string, unknown> | undefined, field: string): number | null {
+  const value = payload?.[field];
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+function optionalPayloadString(payload: Record<string, unknown> | undefined, field: string): string | null {
+  const value = payload?.[field];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 export async function succeedJob(requestId: string): Promise<boolean> {

@@ -3,6 +3,7 @@ import { Kafka, type Consumer, type EachMessagePayload } from "kafkajs";
 import {
   captureOrderCollectResult,
   completeOrderCollectWithNormalize,
+  completeOrderNormalizeWithErpApply,
   deferJobForLockConflict,
   findActiveChannelAccountIdentity,
   findActiveChannelCredentials,
@@ -25,6 +26,7 @@ import { NfaOrderHandler } from "./channels/nfa/NfaOrderHandler.js";
 import { MockMallOrderHandler } from "./channels/mockMall/MockMallOrderHandler.js";
 import { OrderNormalizeHandler } from "./channels/orderNormalize/OrderNormalizeHandler.js";
 import { TestSleepHandler } from "./channels/test/TestSleepHandler.js";
+import { ErpApplyHandler } from "./channels/erp/ErpApplyHandler.js";
 import { HandlerRegistry } from "./handlers/HandlerRegistry.js";
 import type { JobHandlerMessage } from "./handlers/IJobHandler.js";
 import { publishDlq } from "./dlq.js";
@@ -64,6 +66,7 @@ registry.register("ORDER_COLLECT", new MockMallOrderHandler(), "MOCK_MALL");
 registry.register("CRAWL", new DartCrawlHandler(), "DART");
 registry.register("CRAWL", new NaverRssCrawlHandler(), "NAVER_RSS");
 registry.register("ORDER_NORMALIZE", new OrderNormalizeHandler());
+registry.register("ERP_APPLY", new ErpApplyHandler());
 registry.register("TEST_SLEEP", new TestSleepHandler(), "TEST");
 
 export async function startConsumer(): Promise<void> {
@@ -456,6 +459,29 @@ async function runRegisteredHandler(jobMessage: HubJobMessage, requestId: string
 
 async function executeRegisteredHandler(jobMessage: HubJobMessage, requestId: string): Promise<boolean> {
   const handler = registry.get(jobMessage.jobType, getChannelCd(jobMessage));
+  if (jobMessage.jobType === "ORDER_NORMALIZE") {
+    await handler.handle(jobMessage);
+    const completion = await completeOrderNormalizeWithErpApply(jobMessage);
+    if (completion.erpApplyJob) {
+      await saveJobLog({
+        requestId: jobMessage.requestId,
+        eventType: completion.outboxCreated ? "ERP_APPLY_OUTBOX_CREATED" : "ERP_APPLY_OUTBOX_ALREADY_EXISTS",
+        level: "INFO",
+        message: completion.outboxCreated ? "ERP apply job and outbox created" : "ERP apply job already has an outbox event",
+        jobType: jobMessage.jobType,
+        sourceErp: jobMessage.sourceErp,
+        requestKey: jobMessage.requestKey,
+        channelCd: getChannelCd(jobMessage),
+        mallKey: getMallKey(jobMessage),
+        detail: {
+          erpApplyRequestId: completion.erpApplyJob.requestId,
+          erpConnectionId: completion.erpApplyJob.payload.erpConnectionId,
+          correlationId: completion.erpApplyJob.correlationId
+        }
+      });
+    }
+    return completion.succeeded;
+  }
   if (jobMessage.jobType !== "ORDER_COLLECT") {
     await handler.handle(jobMessage);
     return succeedJob(requestId);

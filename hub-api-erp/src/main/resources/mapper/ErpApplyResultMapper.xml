@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="hub.erp.mapper.ErpApplyResultMapper">
+    <resultMap id="erpApplyResultMap" type="hub.erp.domain.ErpApplyResult">
+        <id property="id" column="id"/>
+        <result property="requestId" column="request_id"/>
+        <result property="correlationId" column="correlation_id"/>
+        <result property="normalizedOrderId" column="normalized_order_id"/>
+        <result property="erpConnectionId" column="erp_connection_id"/>
+        <result property="operation" column="operation"/>
+        <result property="status" column="status"/>
+        <result property="idempotencyKey" column="idempotency_key"/>
+        <result property="erpDocumentNo" column="erp_document_no"/>
+        <result property="requestPayload" column="request_payload"/>
+        <result property="responsePayload" column="response_payload"/>
+        <result property="errorCode" column="error_code"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="attemptCount" column="attempt_count"/>
+        <result property="appliedAt" column="applied_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+    <sql id="columns">
+        r.id, r.request_id, r.correlation_id, r.normalized_order_id,
+        r.erp_connection_id, r.operation, r.status, r.idempotency_key,
+        r.erp_document_no, r.request_payload::text AS request_payload,
+        r.response_payload::text AS response_payload, r.error_code,
+        r.error_message, r.attempt_count, r.applied_at, r.created_at, r.updated_at
+    </sql>
+    <sql id="filters">
+        AND o.corp_id = #{corpId}
+        <if test="erpConnectionId != null and erpConnectionId != ''">AND r.erp_connection_id = #{erpConnectionId}</if>
+        <if test="status != null and status != ''">AND r.status = #{status}</if>
+        <if test="operation != null and operation != ''">AND r.operation = #{operation}</if>
+        <if test="requestId != null and requestId != ''">AND r.request_id = #{requestId}</if>
+        <if test="correlationId != null and correlationId != ''">AND r.correlation_id = #{correlationId}</if>
+        <if test="normalizedOrderId != null">AND r.normalized_order_id = #{normalizedOrderId}</if>
+        <if test="fromDate != null">AND r.created_at &gt;= #{fromDate}</if>
+        <if test="toDate != null">AND r.created_at &lt;= #{toDate}</if>
+    </sql>
+    <select id="selectList" resultMap="erpApplyResultMap">
+        SELECT <include refid="columns"/>
+        FROM hub_erp_apply_result r
+        JOIN hub_collected_order o ON o.id = r.normalized_order_id
+        WHERE 1 = 1 <include refid="filters"/>
+        ORDER BY r.updated_at DESC, r.id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+    <select id="selectCount" resultType="long">
+        SELECT COUNT(*) FROM hub_erp_apply_result r
+        JOIN hub_collected_order o ON o.id = r.normalized_order_id
+        WHERE 1 = 1 <include refid="filters"/>
+    </select>
+    <select id="selectByIdAndCorpId" resultMap="erpApplyResultMap">
+        SELECT <include refid="columns"/>
+        FROM hub_erp_apply_result r
+        JOIN hub_collected_order o ON o.id = r.normalized_order_id
+        WHERE r.id = #{id} AND o.corp_id = #{corpId}
+    </select>
+    <select id="selectByCorrelationIdAndCorpId" resultMap="erpApplyResultMap">
+        SELECT <include refid="columns"/>
+        FROM hub_erp_apply_result r
+        JOIN hub_collected_order o ON o.id = r.normalized_order_id
+        WHERE r.correlation_id = #{correlationId} AND o.corp_id = #{corpId}
+        ORDER BY r.created_at ASC, r.id ASC
+    </select>
+</mapper>

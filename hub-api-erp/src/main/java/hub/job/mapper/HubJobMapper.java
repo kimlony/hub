@@ -18,6 +18,11 @@ public interface HubJobMapper {
 
     HubJob selectByRequestKey(String requestKey);
 
+    List<HubJob> selectPipelineByCorrelationIdAndCorpId(
+            @Param("correlationId") String correlationId,
+            @Param("corpId") long corpId
+    );
+
     List<HubJob> selectByStatus(String status);
 
     List<HubJobLogItem> selectJobLogs(String requestId);

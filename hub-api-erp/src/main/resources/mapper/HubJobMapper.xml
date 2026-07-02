@@ -99,6 +99,13 @@
         SELECT * FROM hub_job WHERE request_key = #{requestKey}
     </select>
 
+    <select id="selectPipelineByCorrelationIdAndCorpId" resultMap="hubJobResultMap">
+        SELECT * FROM hub_job
+        WHERE correlation_id = #{correlationId}
+          AND payload ->> 'corpId' = CAST(#{corpId} AS varchar)
+        ORDER BY created_at ASC, request_id ASC
+    </select>
+
     <select id="selectByStatus" resultMap="hubJobResultMap">
         SELECT * FROM hub_job WHERE status = #{status}
     </select>

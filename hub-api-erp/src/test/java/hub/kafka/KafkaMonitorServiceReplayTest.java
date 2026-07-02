@@ -121,4 +121,48 @@ class KafkaMonitorServiceReplayTest {
         verify(jobOutboxService).enqueue(org.mockito.ArgumentMatchers.any(HubJobEvent.class));
         assertThat(response.partitionKey()).isEqualTo("channel-account:100:10");
     }
+
+    @Test
+    void replaysErpApplyAsErpApplyThroughOutbox() {
+        String payload = """
+                {"sourceNormalizeJobId":"normalize-003","normalizedOrderIds":[101],"corpId":100,"userId":1,"channelAccountId":10,"channelCd":"GODO","erpConnectionId":"MOCK-100","operation":"CREATE","idempotencyKey":"erp-replay-key","mockFail":true}
+                """;
+        HubJob storedJob = HubJob.builder()
+                .requestId("erp-apply-003")
+                .requestKey("ERP_APPLY_normalize-003")
+                .jobType("ERP_APPLY")
+                .sourceErp("HUB")
+                .parentJobId("normalize-003")
+                .correlationId("correlation-003")
+                .causationId("normalize-003")
+                .schemaVersion("1.0")
+                .payloadVersion("1.0")
+                .channelCd("GODO")
+                .status(HubJobStatus.FAILED)
+                .payload(payload)
+                .build();
+        when(hubJobMapper.selectByRequestId("erp-apply-003")).thenReturn(storedJob);
+        when(hubJobMapper.resetFailedJobForRetry(storedJob.getRequestKey(), payload)).thenReturn(1);
+        when(jobOutboxService.findLatestPartitionKey("erp-apply-003"))
+                .thenReturn("erp-connection:100:MOCK-100");
+        KafkaMonitorService service = new KafkaMonitorService(
+                kafkaAdmin, jdbcTemplate, objectMapper, hubJobMapper, jobOutboxService,
+                new JobPayloadValidator(objectMapper));
+        ReflectionTestUtils.setField(service, "jobsTopic", "hub.jobs");
+
+        service.replayDlqMessage(new KafkaDlqReplayRequest("""
+                {"job":{"requestId":"erp-apply-003","jobType":"ERP_APPLY"}}
+                """));
+
+        ArgumentCaptor<HubJobEvent> eventCaptor = ArgumentCaptor.forClass(HubJobEvent.class);
+        verify(jobOutboxService).enqueue(
+                eventCaptor.capture(),
+                org.mockito.ArgumentMatchers.eq("erp-connection:100:MOCK-100"));
+        HubJobEvent event = eventCaptor.getValue();
+        assertThat(event.jobType()).isEqualTo("ERP_APPLY");
+        assertThat(event.parentJobId()).isEqualTo("normalize-003");
+        assertThat(event.correlationId()).isEqualTo("correlation-003");
+        assertThat(event.payload()).containsEntry("idempotencyKey", "erp-replay-key");
+        assertThat(event.payload()).containsEntry("mockFail", true);
+    }
 }

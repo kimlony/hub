@@ -50,6 +50,7 @@ describeIntegration("DLQ publish after retry exhaustion", () => {
   let kafkaBrokers: string[];
 
   const requestId = `dlq-test-${Date.now()}`;
+  const erpRequestId = `dlq-erp-test-${Date.now()}`;
   const requestKey = "DLQ_TEST_001";
   const errorMessage = "retry exhausted external API failure";
 
@@ -112,7 +113,9 @@ describeIntegration("DLQ publish after retry exhaustion", () => {
     await consumer?.disconnect().catch(() => undefined);
     await dlq?.closeDlqProducer();
     await pool?.query("DELETE FROM hub_job_log WHERE request_id = $1", [requestId]);
+    await pool?.query("DELETE FROM hub_job_log WHERE request_id = $1", [erpRequestId]);
     await pool?.query("DELETE FROM hub_job WHERE request_id = $1", [requestId]);
+    await pool?.query("DELETE FROM hub_job WHERE request_id = $1", [erpRequestId]);
     await db?.closePostgresPool();
     await pool?.end();
     await stopWorkerIntegrationContainers();
@@ -197,5 +200,85 @@ describeIntegration("DLQ publish after retry exhaustion", () => {
       job: jobMessage
     });
     expect(new Date(payload.failedAt).toString()).not.toBe("Invalid Date");
+  });
+
+  it("keeps the ERP_APPLY envelope when retry exhaustion publishes to DLQ", async () => {
+    const erpPayload = {
+      sourceNormalizeJobId: "normalize-dlq-001",
+      normalizedOrderIds: [101],
+      corpId: 100,
+      userId: 1,
+      channelAccountId: 10,
+      channelCd: "GODO",
+      erpConnectionId: "MOCK-100",
+      operation: "CREATE",
+      idempotencyKey: "erp-dlq-key-001",
+      mockFail: true
+    };
+    await pool.query(
+      `
+        INSERT INTO hub_job (
+          request_id, request_key, channel_cd, status, payload, retry_count,
+          job_type, source_erp, parent_job_id, correlation_id, causation_id,
+          schema_version, payload_version, created_at, updated_at
+        ) VALUES (
+          $1, 'ERP_APPLY_DLQ_001', 'GODO', 'PROCESSING', $2::jsonb, 3,
+          'ERP_APPLY', 'HUB', 'normalize-dlq-001', 'correlation-dlq-001',
+          'normalize-dlq-001', '1.0', '1.0', NOW(), NOW()
+        )
+      `,
+      [erpRequestId, JSON.stringify(erpPayload)]
+    );
+    const decision = await db.retryOrFailJob(erpRequestId, "Mock ERP apply failed");
+    expect(decision.status).toBe("FAILED");
+    const jobMessage: JobHandlerMessage = {
+      requestId: erpRequestId,
+      requestKey: "ERP_APPLY_DLQ_001",
+      sourceErp: "HUB",
+      jobType: "ERP_APPLY",
+      parentJobId: "normalize-dlq-001",
+      correlationId: "correlation-dlq-001",
+      causationId: "normalize-dlq-001",
+      schemaVersion: "1.0",
+      payloadVersion: "1.0",
+      payload: erpPayload
+    };
+
+    const kafka = new Kafka({
+      clientId: `hub-worker-erp-dlq-test-${Date.now()}`,
+      brokers: kafkaBrokers,
+      logLevel: logLevel.NOTHING
+    });
+    const erpConsumer = kafka.consumer({ groupId: `hub-worker-dlq-test-${erpRequestId}` });
+    await erpConsumer.connect();
+    await erpConsumer.subscribe({ topic: dlqTopic, fromBeginning: true });
+    try {
+      const received = new Promise<DlqPayload>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("ERP_APPLY DLQ message not received")), 15_000);
+        erpConsumer.run({
+          eachMessage: async ({ message }) => {
+            const payload = parseDlqPayload(message.value);
+            if (payload?.job.requestId !== erpRequestId) {
+              return;
+            }
+            clearTimeout(timeout);
+            resolve(payload);
+          }
+        }).catch(reject);
+      });
+      expect(await dlq.publishDlq({
+        jobMessage,
+        errorMessage: "Mock ERP apply failed",
+        retryCount: decision.retryCount,
+        maxRetryCount: decision.maxRetryCount,
+        source: "recovery"
+      })).toBe(true);
+      const dlqPayload = await received;
+      expect(dlqPayload.job).toEqual(jobMessage);
+      expect(dlqPayload.job.jobType).toBe("ERP_APPLY");
+      expect(dlqPayload.job.payload).toEqual(erpPayload);
+    } finally {
+      await erpConsumer.disconnect();
+    }
   });
 });

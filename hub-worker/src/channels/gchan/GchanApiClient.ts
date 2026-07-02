@@ -22,7 +22,7 @@ export class GchanApiClient {
 
   constructor() {
     this.client = axios.create({
-      baseURL: process.env.GCHAN_BASE_URL ?? "https://example.invalid/gchan",
+      baseURL: process.env.GCHAN_BASE_URL ?? "https://sellerapidev.schancedev.co.kr",
       headers: {
         "Content-Type": "application/json"
       },

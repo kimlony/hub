@@ -12,6 +12,12 @@ describe("job resource keys", () => {
     expect(resolveJobPartitionKey(job("ORDER_COLLECT", payload))).toBe("channel-account:100:10");
     expect(resolveJobPartitionKey(job("ORDER_STATUS_SYNC", payload))).toBe("channel-account:100:10");
     expect(resolveJobLockKey(job("ORDER_COLLECT", payload))).toBe("channel-account:100:10");
+    expect(resolveJobPartitionKey(job("ORDER_COLLECT", payload)))
+      .toBe(resolveJobLockKey(job("ORDER_COLLECT", payload)));
+    expect(resolveJobPartitionKey(job("ORDER_COLLECT", {
+      corpId: 100,
+      channelAccountId: 11
+    }))).toBe("channel-account:100:11");
   });
 
   it("keeps normalize partitioned by source request and does not lock it", () => {

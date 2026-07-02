@@ -448,6 +448,59 @@ class HubJobServiceImplTest {
         assertThat(event.payload()).containsEntry("custom", "keep-me");
     }
 
+    @Test
+    void retryErpApplyKeepsJobTypePayloadAndCorrelation() {
+        HubJobServiceImpl service = service();
+        String payload = """
+                {"sourceNormalizeJobId":"normalize-001","normalizedOrderIds":[11],"corpId":100,"userId":1,"channelAccountId":10,"channelCd":"GODO","erpConnectionId":"MOCK-100","operation":"CREATE","idempotencyKey":"erp-key-001","mockFail":true}
+                """;
+        HubJob failedJob = HubJob.builder()
+                .requestId("erp-apply-001")
+                .requestKey("ERP_APPLY_normalize-001")
+                .jobType("ERP_APPLY")
+                .sourceErp("HUB")
+                .parentJobId("normalize-001")
+                .correlationId("correlation-001")
+                .causationId("normalize-001")
+                .schemaVersion("1.0")
+                .payloadVersion("1.0")
+                .channelCd("GODO")
+                .status(HubJobStatus.FAILED)
+                .payload(payload)
+                .retryCount(3)
+                .build();
+        when(hubJobMapper.selectByRequestId("erp-apply-001")).thenReturn(failedJob);
+        when(jobOutboxService.findLatestPartitionKey("erp-apply-001"))
+                .thenReturn("erp-connection:100:MOCK-100");
+        when(hubJobMapper.resetFailedJobForRetry(failedJob.getRequestKey(), payload)).thenReturn(1);
+
+        service.retryJob("erp-apply-001");
+
+        ArgumentCaptor<HubJobEvent> eventCaptor = ArgumentCaptor.forClass(HubJobEvent.class);
+        verify(jobOutboxService).enqueue(eventCaptor.capture(), eq("erp-connection:100:MOCK-100"));
+        HubJobEvent event = eventCaptor.getValue();
+        assertThat(event.jobType()).isEqualTo("ERP_APPLY");
+        assertThat(event.parentJobId()).isEqualTo("normalize-001");
+        assertThat(event.correlationId()).isEqualTo("correlation-001");
+        assertThat(event.payload()).containsEntry("idempotencyKey", "erp-key-001");
+        assertThat(event.payload()).containsEntry("mockFail", true);
+    }
+
+    @Test
+    void retryRejectsAlreadySuccessfulErpApply() {
+        HubJob successfulJob = HubJob.builder()
+                .requestId("erp-success-001")
+                .jobType("ERP_APPLY")
+                .status(HubJobStatus.SUCCESS)
+                .build();
+        when(hubJobMapper.selectByRequestId("erp-success-001")).thenReturn(successfulJob);
+
+        assertThatThrownBy(() -> service().retryJob("erp-success-001"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Only FAILED jobs can be retried");
+        verify(jobOutboxService, never()).enqueue(any(HubJobEvent.class));
+    }
+
     private HubJobServiceImpl service() {
         return new HubJobServiceImpl(
                 hubJobMapper,

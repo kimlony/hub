@@ -26,6 +26,13 @@ public class JobPayloadValidator {
                 require(payload, "sourceRequestId");
                 require(payload, "channelCd");
             }
+            case "ERP_APPLY" -> {
+                require(payload, "sourceNormalizeJobId");
+                require(payload, "normalizedOrderIds");
+                require(payload, "erpConnectionId");
+                require(payload, "operation");
+                require(payload, "idempotencyKey");
+            }
             default -> {
                 // Extension point: future Job Types add their payload contract here.
             }

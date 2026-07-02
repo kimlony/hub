@@ -52,6 +52,11 @@ class CrawlSchedulerTest {
         assertThat(job.getRequestKey()).startsWith("CRAWL_DART_");
         assertThat(job.getJobType()).isEqualTo("CRAWL");
         assertThat(job.getSourceErp()).isEqualTo("HUB");
+        assertThat(job.getParentJobId()).isNull();
+        assertThat(job.getCorrelationId()).isNotBlank();
+        assertThat(job.getCausationId()).isNull();
+        assertThat(job.getSchemaVersion()).isEqualTo("1.0");
+        assertThat(job.getPayloadVersion()).isEqualTo("1.0");
         assertThat(job.getChannelCd()).isEqualTo("DART");
         assertThat(job.getStatus()).isEqualTo(HubJobStatus.QUEUED);
         assertThat(job.getRetryCount()).isZero();
@@ -61,6 +66,11 @@ class CrawlSchedulerTest {
         assertThat(event.requestId()).isEqualTo(job.getRequestId());
         assertThat(event.jobType()).isEqualTo("CRAWL");
         assertThat(event.requestKey()).isEqualTo(job.getRequestKey());
+        assertThat(event.parentJobId()).isNull();
+        assertThat(event.correlationId()).isEqualTo(job.getCorrelationId());
+        assertThat(event.causationId()).isNull();
+        assertThat(event.schemaVersion()).isEqualTo("1.0");
+        assertThat(event.payloadVersion()).isEqualTo("1.0");
         assertThat(event.payload()).containsEntry("mallKey", "DART");
         assertThat(event.payload()).containsEntry("channelCd", "DART");
     }
@@ -85,10 +95,14 @@ class CrawlSchedulerTest {
         assertThat(job.getRequestKey()).startsWith("CRAWL_RSS_");
         assertThat(job.getChannelCd()).isEqualTo("NAVER_RSS");
         assertThat(job.getStatus()).isEqualTo(HubJobStatus.QUEUED);
+        assertThat(job.getCorrelationId()).isNotBlank();
+        assertThat(job.getSchemaVersion()).isEqualTo("1.0");
+        assertThat(job.getPayloadVersion()).isEqualTo("1.0");
         assertThat(job.getPayload()).contains("\"channelCd\":\"NAVER_RSS\"");
 
         HubJobEvent event = eventCaptor.getValue();
         assertThat(event.requestId()).isEqualTo(job.getRequestId());
+        assertThat(event.correlationId()).isEqualTo(job.getCorrelationId());
         assertThat(event.payload()).containsEntry("mallKey", "NAVER_RSS");
         assertThat(event.payload()).containsEntry("channelCd", "NAVER_RSS");
     }

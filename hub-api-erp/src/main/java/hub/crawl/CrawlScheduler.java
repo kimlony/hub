@@ -7,7 +7,6 @@ import hub.job.domain.HubJobStatus;
 import hub.job.event.HubJobEvent;
 import hub.job.mapper.HubJobMapper;
 import hub.outbox.service.JobOutboxService;
-import hub.port.JobEventPort;
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -27,6 +26,7 @@ public class CrawlScheduler {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HHmm");
     private static final String SOURCE_ERP = "HUB";
     private static final String JOB_TYPE = "CRAWL";
+    private static final String CONTRACT_VERSION = "1.0";
 
     private final HubJobMapper hubJobMapper;
 //    private final JobEventPort jobEventPort;
@@ -70,11 +70,17 @@ public class CrawlScheduler {
             }
 
             Map<String, Object> payload = buildPayload(channelCd);
+            String correlationId = UUID.randomUUID().toString();
             HubJob job = HubJob.builder()
                     .requestId(UUID.randomUUID().toString())
                     .requestKey(requestKey)
                     .jobType(JOB_TYPE)
                     .sourceErp(SOURCE_ERP)
+                    .parentJobId(null)
+                    .correlationId(correlationId)
+                    .causationId(null)
+                    .schemaVersion(CONTRACT_VERSION)
+                    .payloadVersion(CONTRACT_VERSION)
                     .channelCd(channelCd)
                     .status(HubJobStatus.QUEUED)
                     .payload(toJson(payload))
@@ -89,6 +95,11 @@ public class CrawlScheduler {
                     SOURCE_ERP,
                     JOB_TYPE,
                     requestKey,
+                    job.getParentJobId(),
+                    job.getCorrelationId(),
+                    job.getCausationId(),
+                    job.getSchemaVersion(),
+                    job.getPayloadVersion(),
                     payload
             ));
 

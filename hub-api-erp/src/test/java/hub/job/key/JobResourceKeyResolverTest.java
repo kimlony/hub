@@ -17,6 +17,9 @@ class JobResourceKeyResolverTest {
                 .isEqualTo("channel-account:100:10");
         assertThat(resolver.resolvePartitionKey(event("ORDER_STATUS_SYNC", payload)))
                 .isEqualTo("channel-account:100:10");
+        assertThat(resolver.resolvePartitionKey(event("ORDER_COLLECT", Map.of(
+                "corpId", 100, "channelAccountId", 11))))
+                .isEqualTo("channel-account:100:11");
     }
 
     @Test

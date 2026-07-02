@@ -3,6 +3,7 @@ package hub.exception;
 import hub.auth.AuthException;
 import hub.channel.ChannelConflictException;
 import hub.channel.ChannelNotFoundException;
+import hub.erp.ErpApplyResultNotFoundException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -46,6 +47,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleHubJobNotFoundException(HubJobNotFoundException exception) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(errorBody(HttpStatus.NOT_FOUND, exception.getMessage()));
+    }
+
+    @ExceptionHandler(ErpApplyResultNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleErpApplyResultNotFoundException(
+            ErpApplyResultNotFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(errorBody(HttpStatus.NOT_FOUND, exception.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalArgumentException(IllegalArgumentException exception) {
+        return ResponseEntity.badRequest().body(errorBody(HttpStatus.BAD_REQUEST, exception.getMessage()));
     }
 
     @ExceptionHandler(HubUnauthorizedException.class)

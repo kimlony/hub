@@ -96,6 +96,10 @@ async function initializePostgresBaseSchema(): Promise<void> {
         next_retry_at TIMESTAMPTZ
       )
     `);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uidx_hub_job_request_key
+      ON hub_job(request_key)
+    `);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS hub_job_log (

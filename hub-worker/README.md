@@ -47,7 +47,7 @@ Core columns:
 | `result_payload` | Collected result JSON |
 | `saved_at` | Save timestamp |
 
-No Oracle connection or Oracle client is required.
+`ERP_APPLY` jobs call a `MockErpAdapter` and store results in PostgreSQL table `hub_erp_apply_result` (one row per normalized order, protected by a unique `idempotency_key + normalized_order_id` constraint). No Oracle connection or Oracle client is required.
 
 ## Environment
 
