@@ -145,6 +145,8 @@ GET /api/hub/jobs/{requestId}/pipeline?corpId={corpId}
 
 `requestId`가 속한 `correlationId` 기준으로 `ORDER_COLLECT -> ORDER_NORMALIZE -> ERP_APPLY` Job 흐름과 연결된 `hub_erp_apply_result`를 함께 보여줍니다. 응답에는 `currentStage`, `failedStage`, `retryable`, `retryFromJobType`이 계산되어 포함됩니다.
 
+curl 예시와 계산 필드 설명은 [docs/erp-apply-manual-verification.md](../docs/erp-apply-manual-verification.md)를 참고하세요.
+
 ### Mock Mall load test
 
 ```http

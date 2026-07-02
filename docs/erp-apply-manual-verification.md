@@ -1,0 +1,117 @@
+# ERP_APPLY 조회 API 수동 검증 가이드
+
+## 목적
+
+`GET /api/hub/erp/apply-results`, `GET /api/hub/erp/apply-results/{id}`, `GET /api/hub/jobs/{requestId}/pipeline` 세 API를 로컬 환경에서 curl로 직접 호출해 확인하는 방법을 정리한다. 자동화된 검증은 `hub-api-erp/src/test/java/hub/erp/controller/ErpApplyResultControllerTest.java`와 `hub-api-erp/src/test/java/hub/job/controller/JobPipelineControllerTest.java`(컨트롤러 레벨), `hub-api-erp/src/test/java/hub/erp/ErpApplyResultServiceImplTest.java`, `hub-api-erp/src/test/java/hub/job/JobPipelineServiceImplTest.java`(서비스 레벨)에서 수행하며, 이 문서는 실제 DB 데이터를 기준으로 한 수동 확인용이다.
+
+로컬 API 서버는 기본적으로 `http://localhost:3000`에서 실행된다 ([hub-api-erp/README.md](../hub-api-erp/README.md) 참고).
+
+## 1. ERP 반영 결과 목록 조회
+
+```bash
+curl -s "http://localhost:3000/api/hub/erp/apply-results?corpId=1&status=FAILED&page=1&size=20"
+```
+
+주요 조건을 조합할 수도 있다.
+
+```bash
+curl -s "http://localhost:3000/api/hub/erp/apply-results?corpId=1&correlationId=corr-1&erpConnectionId=MOCK-1&operation=CREATE&fromDate=2026-07-01T00:00:00&toDate=2026-07-02T00:00:00"
+```
+
+`corpId`는 필수 파라미터다. 생략하면 400이 반환된다.
+
+```bash
+curl -s -i "http://localhost:3000/api/hub/erp/apply-results"
+```
+
+```json
+{ "status": 400, "error": "Bad Request", "message": "Required request parameter 'corpId' (Long) is missing", "parameterName": "corpId", "requiredType": "Long" }
+```
+
+## 2. ERP 반영 결과 단건 조회
+
+```bash
+curl -s "http://localhost:3000/api/hub/erp/apply-results/12?corpId=1"
+```
+
+응답에는 목록 필드 외에 `requestPayload`, `responsePayload` 원문과 `payloadSummary`(byte 크기)가 포함된다.
+
+존재하지 않는 id를 조회하면:
+
+```bash
+curl -s -i "http://localhost:3000/api/hub/erp/apply-results/999999?corpId=1"
+```
+
+```json
+{ "status": 404, "error": "Not Found", "message": "ERP apply result not found for id: 999999" }
+```
+
+## 3. Job pipeline 조회
+
+```bash
+curl -s "http://localhost:3000/api/hub/jobs/{requestId}/pipeline?corpId=1"
+```
+
+`requestId`는 `ORDER_COLLECT`, `ORDER_NORMALIZE`, `ERP_APPLY` 중 어느 단계의 request_id를 넣어도 같은 correlationId 체인 전체가 조회된다.
+
+### 실패한 ERP_APPLY를 확인하는 예시 응답
+
+```json
+{
+  "correlationId": "corr-1",
+  "rootJobId": "collect-1",
+  "currentStage": "ERP_APPLY",
+  "failedStage": "ERP_APPLY",
+  "retryable": true,
+  "retryFromJobType": "ERP_APPLY",
+  "jobs": [
+    { "requestId": "collect-1", "jobType": "ORDER_COLLECT", "status": "SUCCESS", "parentJobId": null, "causationId": null, "retryCount": 0, "createdAt": "2026-07-01T09:00:00", "updatedAt": "2026-07-01T09:01:00" },
+    { "requestId": "normalize-1", "jobType": "ORDER_NORMALIZE", "status": "SUCCESS", "parentJobId": "collect-1", "causationId": "collect-1", "retryCount": 0, "createdAt": "2026-07-01T09:02:00", "updatedAt": "2026-07-01T09:03:00" },
+    { "requestId": "erp-apply-1", "jobType": "ERP_APPLY", "status": "FAILED", "parentJobId": "normalize-1", "causationId": "normalize-1", "retryCount": 3, "createdAt": "2026-07-01T09:04:00", "updatedAt": "2026-07-01T09:10:00" }
+  ],
+  "erpApplyResults": [
+    { "requestId": "erp-apply-1", "normalizedOrderId": 501, "status": "FAILED", "erpDocumentNo": null, "errorCode": "ERP_500", "errorMessage": "Mock ERP apply failed" }
+  ]
+}
+```
+
+존재하지 않는 requestId를 조회하면 `GET /api/hub/erp/apply-results/{id}`와 동일한 형태로 404가 반환된다.
+
+```json
+{ "status": 404, "error": "Not Found", "message": "Hub job not found for requestId: missing-1" }
+```
+
+`corpId`를 생략하면 목록/단건 조회와 동일하게 400이 반환된다.
+
+```bash
+curl -s -i "http://localhost:3000/api/hub/jobs/erp-apply-1/pipeline"
+```
+
+```json
+{ "status": 400, "error": "Bad Request", "message": "Required request parameter 'corpId' (long) is missing", "parameterName": "corpId", "requiredType": "long" }
+```
+
+## 4. currentStage / failedStage / retryable / retryFromJobType 의미
+
+`ORDER_COLLECT(10) -> ORDER_NORMALIZE(20) -> ERP_APPLY(30)` 순서를 기준으로 계산한다 (`hub.job.service.JobPipelineServiceImpl#stageOrder`).
+
+| 필드 | 의미 |
+|---|---|
+| `currentStage` | 파이프라인이 현재 머물러 있는 단계. `FAILED`가 있으면 그 단계, 없으면 아직 `SUCCESS`가 아닌 단계 중 가장 뒤쪽 단계(모두 SUCCESS면 마지막 단계) |
+| `failedStage` | 상태가 `FAILED`인 Job 중 가장 뒤쪽 단계의 jobType. 실패가 없으면 `null` |
+| `retryable` | `failedStage`가 존재하면 `true`인 단순 정책. 에러 종류(4xx/5xx, 영구 실패 여부 등)는 아직 반영하지 않는다 |
+| `retryFromJobType` | 재시도를 걸어야 할 Job의 jobType. 현재는 `failedStage`와 항상 동일 |
+
+## 5. 주의사항 — corpId 임시 구조
+
+인증/인가(로그인 세션, JWT 기반 tenant 식별)가 이 세 API에는 아직 붙어 있지 않다. 그래서 `corpId`를 요청 쿼리 파라미터로 그대로 받아서 조회 조건에만 사용하고 있으며, **호출자가 다른 corpId 값을 넣으면 다른 회사 데이터도 조회할 수 있는 상태**다. 이는 향후 고객사별 데이터 분리를 위한 최소한의 필터링 장치일 뿐, 접근 제어 수단이 아니다. 인증/인가가 도입되면 `corpId`는 로그인 사용자의 토큰에서 추출하도록 바꿔야 한다.
+
+## 6. 필수 파라미터 누락 처리 (해결됨)
+
+`GlobalExceptionHandler`에 `MissingServletRequestParameterException` 전용 핸들러가 추가되어, `corpId` 등 필수 `@RequestParam`이 누락되면 이제 500이 아니라 **400**이 반환된다. 응답 body에는 기존 `status`/`error`/`message` 구조를 유지한 채 `parameterName`, `requiredType`을 추가로 포함한다. `ErpApplyResultControllerTest#missingRequiredCorpIdReturnsBadRequest`, `JobPipelineControllerTest#missingRequiredCorpIdReturnsBadRequest` 테스트로 고정해 두었다.
+
+## 남은 위험
+
+- 이번에는 `MissingServletRequestParameterException`만 처리했다. 타입이 안 맞는 파라미터(`MethodArgumentTypeMismatchException`, 예: `corpId=abc`), `@Valid` 바인딩 실패(`BindException`), `ConstraintViolationException` 등 다른 요청 바인딩 예외는 여전히 catch-all `Exception` 핸들러로 떨어져 500이 반환될 수 있다.
+- `retryable`이 여전히 "실패 단계 존재 여부"만 보는 단순 정책.
+- corpId를 그대로 신뢰하는 임시 구조 — 인증/인가 도입 전까지는 접근 제어 수단이 아님.

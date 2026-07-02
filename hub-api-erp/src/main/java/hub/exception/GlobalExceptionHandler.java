@@ -15,6 +15,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
@@ -35,6 +36,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, Object>> handleReadableException(HttpMessageNotReadableException exception) {
         return ResponseEntity.badRequest().body(errorBody(HttpStatus.BAD_REQUEST, "Invalid request body"));
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingServletRequestParameterException(
+            MissingServletRequestParameterException exception) {
+        String message = "Required request parameter '%s' (%s) is missing"
+                .formatted(exception.getParameterName(), exception.getParameterType());
+        Map<String, Object> body = errorBody(HttpStatus.BAD_REQUEST, message);
+        body.put("parameterName", exception.getParameterName());
+        body.put("requiredType", exception.getParameterType());
+        return ResponseEntity.badRequest().body(body);
     }
 
     @ExceptionHandler(AuthException.class)
