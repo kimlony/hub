@@ -116,33 +116,33 @@
 
     <update id="markSent">
         UPDATE hub_job_outbox
-        SET status = 'SENT',
-        published_at = NOW(),
-        last_error = NULL,
-        updated_at = NOW()
-        WHERE id = #{id}
+           SET status = 'SENT',
+               published_at = NOW(),
+               last_error = NULL,
+               updated_at = NOW()
+         WHERE id = #{id}
     </update>
 
     <update id="markRetry">
         UPDATE hub_job_outbox
-        SET status = 'PENDING',
-        retry_count = retry_count + 1,
-        last_error = #{errorMessage},
-        next_retry_at = NOW() + (#{delaySeconds} * INTERVAL '1 second'),
-        locked_by = NULL,
-        locked_at = NULL,
-        updated_at = NOW()
-        WHERE id = #{id}
+           SET status = 'PENDING',
+               retry_count = retry_count + 1,
+               last_error = #{errorMessage},
+               next_retry_at = NOW() + (#{delaySeconds} * INTERVAL '1 second'),
+               locked_by = NULL,
+               locked_at = NULL,
+               updated_at = NOW()
+         WHERE id = #{id}
     </update>
 
     <update id="markFailed">
         UPDATE hub_job_outbox
-        SET status = 'FAILED',
-        last_error = #{errorMessage},
-        locked_by = NULL,
-        locked_at = NULL,
-        updated_at = NOW()
-        WHERE id = #{id}
+           SET status = 'FAILED',
+               last_error = #{errorMessage},
+               locked_by = NULL,
+               locked_at = NULL,
+               updated_at = NOW()
+         WHERE id = #{id}
     </update>
 
     <select id="selectStats" resultMap="jobOutboxStatsResultMap">

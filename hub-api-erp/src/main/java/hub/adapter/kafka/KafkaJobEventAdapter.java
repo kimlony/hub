@@ -22,7 +22,7 @@ public class KafkaJobEventAdapter implements JobEventPort {
 
     @Value("${hub.kafka.topics.jobs}")
     private String jobsTopic;
-
+    // 실제 KAFKA를 발행하는 메소드
     @Override
     public void publish(HubJobEvent event) {
         publish(event, jobResourceKeyResolver.resolvePartitionKey(event));

@@ -37,6 +37,16 @@ type OutboxMonitorResponse = {
 
 const STATUS_OPTIONS = ['', 'PENDING', 'PUBLISHING', 'SENT', 'FAILED']
 
+const JOB_TYPE_LABELS: Record<string, string> = {
+  ORDER_COLLECT: '주문수집',
+  ORDER_NORMALIZE: '데이터 정제화',
+  ERP_APPLY: 'ERP 반영',
+}
+
+function jobTypeLabel(jobType: string): string {
+  return JOB_TYPE_LABELS[jobType] ?? jobType
+}
+
 export default function OutboxPage() {
   const authenticatedFetch = useAuthenticatedFetch()
   const [statusFilter, setStatusFilter] = useState('')
@@ -152,7 +162,7 @@ export default function OutboxPage() {
           <thead>
             <tr className="bg-[#FAFAFA]">
               <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">ID</th>
-              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Event</th>
+              <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">작업</th>
               <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Topic / Key</th>
               <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Status</th>
               <th className="px-5 py-2.5 text-left text-[11px] font-semibold text-[#8B95A1] uppercase tracking-wide">Retry</th>
@@ -167,7 +177,8 @@ export default function OutboxPage() {
                   {event.id}
                 </td>
                 <td className="px-5 py-3">
-                  <p className="text-[13px] font-bold text-[#191F28]">{event.eventType}</p>
+                  <p className="text-[13px] font-bold text-[#191F28]">{jobTypeLabel(event.eventType)}</p>
+                  <p className="mt-0.5 font-mono text-[10px] text-[#8B95A1]">{event.eventType}</p>
                   <p className="mt-1 max-w-[180px] truncate font-mono text-[11px] text-[#8B95A1]" title={event.requestId}>
                     {event.requestId}
                   </p>

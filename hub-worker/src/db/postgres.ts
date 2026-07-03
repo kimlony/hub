@@ -761,23 +761,27 @@ export async function completeOrderCollectWithNormalize(
       [message.requestId, parent.request_key, message.jobType, parent.source_erp, JSON.stringify(resultPayload)]
     );
 
-    const normalizeJob = await createNormalizeChild(client, message, parent, resultPayload);
+    const normalizeResult = await createNormalizeChild(client, message, parent, resultPayload);
     let outboxCreated = false;
-    if (normalizeJob) {
+    const normalizeJob = normalizeResult?.job ?? null;
+    if (normalizeResult && normalizeResult.shouldPublish) {
       const outboxPayload = {
-        requestId: normalizeJob.requestId,
-        requestKey: normalizeJob.requestKey,
-        jobType: normalizeJob.jobType,
+        requestId: normalizeJob!.requestId,
+        requestKey: normalizeJob!.requestKey,
+        jobType: normalizeJob!.jobType,
         status: "QUEUED",
-        sourceErp: normalizeJob.sourceErp,
-        channelCd: String(normalizeJob.payload.channelCd ?? "ORDER"),
-        parentJobId: normalizeJob.parentJobId,
-        correlationId: normalizeJob.correlationId,
-        causationId: normalizeJob.causationId,
-        schemaVersion: normalizeJob.schemaVersion,
-        payloadVersion: normalizeJob.payloadVersion,
-        payload: normalizeJob.payload
+        sourceErp: normalizeJob!.sourceErp,
+        channelCd: String(normalizeJob!.payload.channelCd ?? "ORDER"),
+        parentJobId: normalizeJob!.parentJobId,
+        correlationId: normalizeJob!.correlationId,
+        causationId: normalizeJob!.causationId,
+        schemaVersion: normalizeJob!.schemaVersion,
+        payloadVersion: normalizeJob!.payloadVersion,
+        payload: normalizeJob!.payload
       };
+      // A prior outbox row can only be safely superseded once Kafka has already
+      // taken delivery of it (status SENT). If a row is still PENDING/claimed,
+      // publishing another one here would race the existing delivery attempt.
       const outboxResult = await client.query(
         `
           INSERT INTO hub_job_outbox (
@@ -787,13 +791,13 @@ export async function completeOrderCollectWithNormalize(
           SELECT $1::varchar, 'ORDER_NORMALIZE', $2::varchar, $3::varchar, $4::jsonb, 'PENDING', 0, 5, NOW(), NOW(), NOW()
           WHERE NOT EXISTS (
             SELECT 1 FROM hub_job_outbox
-            WHERE request_id = $1::varchar AND event_type = 'ORDER_NORMALIZE'
+            WHERE request_id = $1::varchar AND event_type = 'ORDER_NORMALIZE' AND status <> 'SENT'
           )
         `,
         [
-          normalizeJob.requestId,
+          normalizeJob!.requestId,
           process.env.KAFKA_TOPIC ?? "hub.jobs",
-          resolveJobPartitionKey(normalizeJob),
+          resolveJobPartitionKey(normalizeJob!),
           JSON.stringify(outboxPayload)
         ]
       );
@@ -994,7 +998,7 @@ async function createNormalizeChild(
   message: HubJobMessage,
   parent: { request_id: string; request_key: string; source_erp: string; correlation_id: string },
   resultPayload: Record<string, unknown>
-): Promise<NormalizeJobInput | null> {
+): Promise<{ job: NormalizeJobInput; shouldPublish: boolean } | null> {
   const orders = Array.isArray(resultPayload.orders) ? resultPayload.orders : [];
   if (orders.length === 0) {
     return null;
@@ -1012,7 +1016,8 @@ async function createNormalizeChild(
     frDt: message.payload?.frDt ?? resultPayload.frDt,
     toDt: message.payload?.toDt ?? resultPayload.toDt
   };
-  await client.query<{ request_id: string }>(
+
+  const inserted = await client.query<{ request_id: string }>(
     `
       INSERT INTO hub_job (
         request_id, request_key, channel_cd, status, payload, retry_count,
@@ -1027,6 +1032,33 @@ async function createNormalizeChild(
     `,
     [randomUUID(), requestKey, String(payload.channelCd ?? "ORDER"), JSON.stringify(payload), message.requestId, parent.correlation_id]
   );
+
+  // A brand-new child is always published. When the insert conflicted, an
+  // ORDER_NORMALIZE job for this ORDER_COLLECT already exists - this happens
+  // when the same date/account is re-collected. Re-collection only needs to
+  // re-run normalization if the previous run already finished (SUCCESS/FAILED);
+  // a job still QUEUED/PROCESSING is already going to (re)normalize the latest
+  // collected orders, so touching it here would just race that in-flight run.
+  let shouldPublish = inserted.rowCount === 1;
+  if (!shouldPublish) {
+    const existing = await client.query<{ status: string }>(
+      "SELECT status FROM hub_job WHERE request_key = $1 FOR UPDATE",
+      [requestKey]
+    );
+    const existingStatus = existing.rows[0]?.status;
+    if (existingStatus === "SUCCESS" || existingStatus === "FAILED") {
+      const reactivated = await client.query(
+        `
+          UPDATE hub_job
+          SET payload = $2::jsonb, status = 'QUEUED', error_message = NULL,
+              next_retry_at = NULL, completed_at = NULL, updated_at = NOW()
+          WHERE request_key = $1 AND status IN ('SUCCESS', 'FAILED')
+        `,
+        [requestKey, JSON.stringify(payload)]
+      );
+      shouldPublish = reactivated.rowCount === 1;
+    }
+  }
 
   const child = await client.query<{
     request_id: string; request_key: string; source_erp: string; job_type: string;
@@ -1050,16 +1082,19 @@ async function createNormalizeChild(
   }
 
   return {
-    requestId: row.request_id,
-    requestKey: row.request_key,
-    sourceErp: row.source_erp,
-    jobType: row.job_type,
-    parentJobId: row.parent_job_id,
-    correlationId: row.correlation_id,
-    causationId: row.causation_id,
-    schemaVersion: row.schema_version,
-    payloadVersion: row.payload_version,
-    payload: row.payload
+    job: {
+      requestId: row.request_id,
+      requestKey: row.request_key,
+      sourceErp: row.source_erp,
+      jobType: row.job_type,
+      parentJobId: row.parent_job_id,
+      correlationId: row.correlation_id,
+      causationId: row.causation_id,
+      schemaVersion: row.schema_version,
+      payloadVersion: row.payload_version,
+      payload: row.payload
+    },
+    shouldPublish
   };
 }
 

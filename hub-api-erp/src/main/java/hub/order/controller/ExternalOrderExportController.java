@@ -29,11 +29,11 @@ public class ExternalOrderExportController {
     ) {
         if (principal == null || principal.userId() == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "EXTERNAL_TOKEN_REQUIRED", "message", "?筌? API ??ルㅎ荑???熬곣뫗???紐껊퉵??"));
+                    .body(Map.of("error", "EXTERNAL_TOKEN_REQUIRED", "message", "외부 API 토큰 인증이 필요합니다."));
         }
         if (!principal.hasScope("orders:read")) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("error", "INSUFFICIENT_SCOPE", "message", "orders:read 雅?굝??뇡???熬곣뫗???紐껊퉵??"));
+                    .body(Map.of("error", "INSUFFICIENT_SCOPE", "message", "orders:read 권한이 필요합니다."));
         }
         return ResponseEntity.ok(orderExportService.getOrdersForUser(
                 principal.userId(), "", frDt, toDt, page, size

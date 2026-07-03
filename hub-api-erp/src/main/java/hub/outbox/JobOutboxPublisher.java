@@ -29,7 +29,7 @@ public class JobOutboxPublisher {
 
     @Value("${hub.outbox.publishing-stale-seconds:300}")
     private int publishingStaleSeconds;
-
+    // KAFKA 발행을 하기위해 out_box에 저장된 PENDING값을 가진 로우를 가져오는 스케쥴러
     @Scheduled(fixedDelayString = "${hub.outbox.publish-delay-ms:3000}")
     public void publishPendingEvents() {
         String lockedBy = buildLockedBy();
@@ -49,8 +49,8 @@ public class JobOutboxPublisher {
         try {
             HubJobEvent event = objectMapper.readValue(outbox.getPayload(), HubJobEvent.class);
 
-            // The producer of the outbox record owns ordering semantics. Reusing
-            // the persisted key also keeps retries and replays on one partition.
+            // 아웃박스 레코드를 생성(발행)하는 주체가 순서 제어권을 갖는다
+            // 이미 (DB에) 저장된 Key를 그대로 재사용하는 것은 재시도(Retry)나 재생(Replay) 시에도 동일한 파티션으로만 가도록 묶어준다
             jobEventPort.publish(event, outbox.getPartitionKey());
 
             jobOutboxMapper.markSent(outbox.getId());

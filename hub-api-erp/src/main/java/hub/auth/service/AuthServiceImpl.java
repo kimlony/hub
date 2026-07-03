@@ -24,10 +24,10 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public LoginResponse login(LoginRequest request) {
         HubUser user = userMapper.findByUsername(request.getUsername())
-                .orElseThrow(() -> new AuthException("?熬곣뫗逾?????裕??????뺢퀡???먯쾸? ????紐?? ???용????덈펲."));
+                .orElseThrow(() -> new AuthException("아이디 또는 비밀번호가 올바르지 않습니다."));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new AuthException("?熬곣뫗逾?????裕??????뺢퀡???먯쾸? ????紐?? ???용????덈펲.");
+            throw new AuthException("사용자를 찾을 수 없습니다.");
         }
 
         String token = jwtProvider.generate(user.getUsername());
@@ -37,7 +37,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public List<String> getMallKeys(String username) {
         HubUser user = userMapper.findByUsername(username)
-                .orElseThrow(() -> new AuthException("?????? 嶺뚢돦堉??????怨룸????덈펲."));
+                .orElseThrow(() -> new AuthException("사용자 조회를 실패했습니다."));
         return userMapper.findMallKeysByUserId(user.getId());
     }
 }

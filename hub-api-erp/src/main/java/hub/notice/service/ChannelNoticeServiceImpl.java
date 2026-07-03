@@ -56,7 +56,7 @@ public class ChannelNoticeServiceImpl implements ChannelNoticeService {
                               OR lower(error_message) LIKE '%unsupported%'
                               OR lower(error_message) LIKE '%required%'
                               OR lower(error_message) LIKE '%hub_aes_secret%'
-                              OR error_message LIKE '%?筌뤾쑴理??'
+                              OR error_message LIKE '인증/설정 오류 제외'
                           )
                         GROUP BY channel_cd
                         HAVING COUNT(*) >= ?
@@ -71,9 +71,9 @@ public class ChannelNoticeServiceImpl implements ChannelNoticeService {
     }
 
     private void upsertOpenNotice(ChannelFailureCandidate candidate) {
-        String title = candidate.channelCd() + " ?낅슣?뽪룇??瑜곸뗄 嶺뚯솘??????뉖?";
-        String message = "?熬곣뫗??" + candidate.channelCd()
-                + " 嶺뚮ㅎ????낅슣?뽪룇??瑜곸뗄 ?リ옇??????믨퀣???? ???용????덈펲. ?筌? ???몃쫭嶺?API ??얜Ŧ堉???쒖굣?節놁뿉??怨뺣뾼????? ??ル∥六??????吏?????熬곣뫀彛???덈펲.";
+        String title = candidate.channelCd() + " 외부 채널 장애 감지";
+        String message = "채널" + candidate.channelCd()
+                + " 외부 API 연동 오류가 반복적으로 발생했습니다. 인증 정보, API 응답 상태, 네트워크 상태를 확인해주세요.";
 
         jdbcTemplate.update(
                 """

@@ -47,13 +47,13 @@ public class ExternalApiAuthServiceImpl implements ExternalApiAuthService {
     @Override
     public ExternalApiTokenResponse issueToken(String clientId, String timestamp, String signature) {
         if (isBlank(clientId) || isBlank(timestamp) || isBlank(signature)) {
-            throw new ExternalApiAuthException("?熬곣뫖???筌뤾쑴理????녹맠?띠럾? ?熬곣뫁逾??琉????鍮??");
+            throw new ExternalApiAuthException("clientId, timestamp, signature는 필수입니다.");
         }
 
         ExternalApiClientRow client = externalApiClientMapper.findByClientId(clientId)
-                .orElseThrow(() -> new ExternalApiAuthException("?繹먮굞夷??? ??? clientId???낅퉵??"));
+                .orElseThrow(() -> new ExternalApiAuthException("등록되지 않은 clientId입니다."));
         if (!"ACTIVE".equals(client.getStatus())) {
-            throw new ExternalApiAuthException("?????繹먮봿?????????怨룹꽘?筌뤾쑴肉???덈펲.");
+            throw new ExternalApiAuthException("비활성화된 외부 API 클라이언트입니다.");
         }
 
         validateTimestamp(timestamp, client.getSignatureValidSeconds());
@@ -63,7 +63,7 @@ public class ExternalApiAuthServiceImpl implements ExternalApiAuthService {
         // prevents a leaked token request from being replayed outside the window.
         String expectedSignature = hmacSha256Hex(clientSecret, clientId + "." + timestamp);
         if (!constantTimeEquals(expectedSignature, signature)) {
-            throw new ExternalApiAuthException("??類ㅺ뎄??????紐?? ???용????덈펲.");
+            throw new ExternalApiAuthException("서명이 올바르지 않습니다.");
         }
 
         List<String> scopes = readStringList(client.getScopesJson());
@@ -81,13 +81,13 @@ public class ExternalApiAuthServiceImpl implements ExternalApiAuthService {
     private void validateTimestamp(String timestamp, Integer validSeconds) {
         Instant requestedAt = parseTimestamp(timestamp);
         if (requestedAt == null) {
-            throw new ExternalApiAuthException("timestamp ?筌먦끇六??????紐?? ???용????덈펲.");
+            throw new ExternalApiAuthException("timestamp 형식이 올바르지 않습니다.");
         }
 
         long allowedSeconds = validSeconds == null || validSeconds <= 0 ? 300 : validSeconds;
         Duration diff = Duration.between(requestedAt, Instant.now()).abs();
         if (diff.getSeconds() > allowedSeconds) {
-            throw new ExternalApiAuthException("timestamp ???깅뮔 ??蹂?뜟??嶺뚮씭??쭩??琉????鍮??");
+            throw new ExternalApiAuthException("timestamp 허용 시간이 만료되었습니다.");
         }
     }
 
@@ -115,7 +115,7 @@ public class ExternalApiAuthServiceImpl implements ExternalApiAuthService {
             mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             return HexFormat.of().formatHex(mac.doFinal(message.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
-            throw new IllegalStateException("HMAC ??類ㅺ뎄 ??諛댁뎽?????덉넮???곕????덈펲.", e);
+            throw new IllegalStateException("HMAC 서명 생성에 실패했습니다.", e);
         }
     }
 

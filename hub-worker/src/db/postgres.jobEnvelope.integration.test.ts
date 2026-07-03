@@ -475,4 +475,154 @@ describeIntegration("job envelope relationship fields", () => {
     });
     await pool.query("DELETE FROM hub_job WHERE request_id = $1", [failedRequestId]);
   });
+
+  it("reactivates a SUCCESS ORDER_NORMALIZE job to QUEUED and creates a new outbox event when the same ORDER_COLLECT is re-collected", async () => {
+    const collectRequestId2 = `cr-succ-${Date.now()}`;
+    const collectRequestKey2 = `collect-recollect-success-key-${Date.now()}`;
+    const correlationId2 = `correlation-recollect-success-${Date.now()}`;
+    await pool.query(
+      `
+        INSERT INTO hub_job (
+          request_id, request_key, channel_cd, status, payload, retry_count,
+          job_type, source_erp, parent_job_id, correlation_id, causation_id,
+          schema_version, payload_version, created_at, updated_at
+        ) VALUES (
+          $1, $2, 'MOCK_MALL', 'PROCESSING', $3::jsonb, 0,
+          'ORDER_COLLECT', 'HUB', NULL, $4, NULL, '1.0', '1.0', NOW(), NOW()
+        )
+      `,
+      [
+        collectRequestId2,
+        collectRequestKey2,
+        JSON.stringify({ userId, corpId, channelAccountId, channelCd: "MOCK_MALL", mallKey: "MOCK_MALL" }),
+        correlationId2
+      ]
+    );
+    const collectMessage2 = {
+      requestId: collectRequestId2,
+      requestKey: collectRequestKey2,
+      sourceErp: "HUB",
+      jobType: "ORDER_COLLECT",
+      payload: { userId, corpId, channelAccountId, channelCd: "MOCK_MALL", mallKey: "MOCK_MALL" }
+    };
+
+    const firstCompletion = await db.completeOrderCollectWithNormalize(
+      collectMessage2,
+      { channelCd: "MOCK_MALL", orders: [{ orderId: "FIRST-1" }] }
+    );
+    const normalizeJob2 = firstCompletion.normalizeJob;
+    expect(normalizeJob2).not.toBeNull();
+    expect(firstCompletion.outboxCreated).toBe(true);
+
+    // Simulate the first normalize run finishing successfully and its outbox event
+    // having already been published to Kafka.
+    await pool.query("UPDATE hub_job SET status = 'SUCCESS', completed_at = NOW() WHERE request_id = $1", [
+      normalizeJob2?.requestId
+    ]);
+    await pool.query(
+      "UPDATE hub_job_outbox SET status = 'SENT', published_at = NOW() WHERE request_id = $1 AND event_type = 'ORDER_NORMALIZE'",
+      [normalizeJob2?.requestId]
+    );
+
+    // Re-collect the same date/account: hub-api-erp resets the ORDER_COLLECT job's
+    // status but reuses its request_id, so the worker calls completion again.
+    await pool.query("UPDATE hub_job SET status = 'PROCESSING' WHERE request_id = $1", [collectRequestId2]);
+    const secondCompletion = await db.completeOrderCollectWithNormalize(
+      collectMessage2,
+      { channelCd: "MOCK_MALL", orders: [{ orderId: "SECOND-1" }, { orderId: "SECOND-2" }] }
+    );
+
+    expect(secondCompletion.normalizeJob?.requestId).toBe(normalizeJob2?.requestId);
+    expect(secondCompletion.outboxCreated).toBe(true);
+
+    const jobState = await pool.query<{ status: string; job_count: string }>(
+      `
+        SELECT
+          (SELECT status FROM hub_job WHERE request_id = $1) AS status,
+          (SELECT COUNT(*) FROM hub_job WHERE request_key = $2)::text AS job_count
+      `,
+      [normalizeJob2?.requestId, normalizeJob2?.requestKey]
+    );
+    expect(jobState.rows[0]).toEqual({ status: "QUEUED", job_count: "1" });
+
+    const outboxState = await pool.query<{ status: string; count: string }>(
+      `
+        SELECT status, COUNT(*)::text AS count
+        FROM hub_job_outbox
+        WHERE request_id = $1 AND event_type = 'ORDER_NORMALIZE'
+        GROUP BY status
+        ORDER BY status
+      `,
+      [normalizeJob2?.requestId]
+    );
+    expect(outboxState.rows).toEqual([
+      { status: "PENDING", count: "1" },
+      { status: "SENT", count: "1" }
+    ]);
+
+    await pool.query("DELETE FROM hub_job_outbox WHERE request_id = $1", [normalizeJob2?.requestId]);
+    await pool.query("DELETE FROM hub_job WHERE correlation_id = $1", [correlationId2]);
+  });
+
+  it("does not touch or republish an ORDER_NORMALIZE job that is still QUEUED when the ORDER_COLLECT is re-collected", async () => {
+    const collectRequestId3 = `cr-inflt-${Date.now()}`;
+    const collectRequestKey3 = `collect-recollect-inflight-key-${Date.now()}`;
+    const correlationId3 = `correlation-recollect-inflight-${Date.now()}`;
+    await pool.query(
+      `
+        INSERT INTO hub_job (
+          request_id, request_key, channel_cd, status, payload, retry_count,
+          job_type, source_erp, parent_job_id, correlation_id, causation_id,
+          schema_version, payload_version, created_at, updated_at
+        ) VALUES (
+          $1, $2, 'MOCK_MALL', 'PROCESSING', $3::jsonb, 0,
+          'ORDER_COLLECT', 'HUB', NULL, $4, NULL, '1.0', '1.0', NOW(), NOW()
+        )
+      `,
+      [
+        collectRequestId3,
+        collectRequestKey3,
+        JSON.stringify({ userId, corpId, channelAccountId, channelCd: "MOCK_MALL", mallKey: "MOCK_MALL" }),
+        correlationId3
+      ]
+    );
+    const collectMessage3 = {
+      requestId: collectRequestId3,
+      requestKey: collectRequestKey3,
+      sourceErp: "HUB",
+      jobType: "ORDER_COLLECT",
+      payload: { userId, corpId, channelAccountId, channelCd: "MOCK_MALL", mallKey: "MOCK_MALL" }
+    };
+
+    const firstCompletion = await db.completeOrderCollectWithNormalize(
+      collectMessage3,
+      { channelCd: "MOCK_MALL", orders: [{ orderId: "INFLIGHT-1" }] }
+    );
+    const normalizeJob3 = firstCompletion.normalizeJob;
+    expect(normalizeJob3).not.toBeNull();
+    expect(firstCompletion.outboxCreated).toBe(true);
+    // Normalize job is left QUEUED (never picked up by a worker yet).
+
+    await pool.query("UPDATE hub_job SET status = 'PROCESSING' WHERE request_id = $1", [collectRequestId3]);
+    const secondCompletion = await db.completeOrderCollectWithNormalize(
+      collectMessage3,
+      { channelCd: "MOCK_MALL", orders: [{ orderId: "INFLIGHT-2" }] }
+    );
+
+    expect(secondCompletion.normalizeJob?.requestId).toBe(normalizeJob3?.requestId);
+    expect(secondCompletion.outboxCreated).toBe(false);
+
+    const state = await pool.query<{ status: string; outbox_count: string }>(
+      `
+        SELECT
+          (SELECT status FROM hub_job WHERE request_id = $1) AS status,
+          (SELECT COUNT(*) FROM hub_job_outbox WHERE request_id = $1 AND event_type = 'ORDER_NORMALIZE')::text AS outbox_count
+      `,
+      [normalizeJob3?.requestId]
+    );
+    expect(state.rows[0]).toEqual({ status: "QUEUED", outbox_count: "1" });
+
+    await pool.query("DELETE FROM hub_job_outbox WHERE request_id = $1", [normalizeJob3?.requestId]);
+    await pool.query("DELETE FROM hub_job WHERE correlation_id = $1", [correlationId3]);
+  });
 });

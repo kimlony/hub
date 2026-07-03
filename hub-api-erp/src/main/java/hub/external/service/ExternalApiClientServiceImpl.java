@@ -74,13 +74,13 @@ public class ExternalApiClientServiceImpl implements ExternalApiClientService {
         return ExternalApiClientCreateResponse.builder()
                 .client(toResponse(row))
                 .clientSecret(clientSecret)
-                .warning("clientSecret?? 嶺뚣끉裕???꾩룇裕????얜Ŧ堉????ｇ춯???戮?뻣??紐껊퉵?? ?釉뚯뫒???濡?듆 ???뚯궏臾???????紐껊퉵??")
+                .warning("clientSecret은 최초 1회만 표시됩니다. 반드시 안전한 곳에 보관하세요. 다시 조회할 수 없습니다.")
                 .build();
     }
 
     private HubUser findUser(String username) {
         return userMapper.findByUsername(username)
-                .orElseThrow(() -> new AuthException("?????? 嶺뚢돦堉??????怨룸????덈펲."));
+                .orElseThrow(() -> new AuthException("사용자를 찾을 수 없습니다."));
     }
 
     private String generateUniqueClientId(Long userId) {
@@ -90,7 +90,7 @@ public class ExternalApiClientServiceImpl implements ExternalApiClientService {
                 return candidate;
             }
         }
-        throw new IllegalStateException("clientId ??諛댁뎽?????덉넮???곕????덈펲.");
+        throw new IllegalStateException("clientId 생성에 실패했습니다.");
     }
 
     private String generateClientSecret() {
@@ -113,7 +113,7 @@ public class ExternalApiClientServiceImpl implements ExternalApiClientService {
             }
             return sb.toString();
         } catch (Exception e) {
-            throw new IllegalStateException("clientSecret fingerprint ??諛댁뎽?????덉넮???곕????덈펲.", e);
+            throw new IllegalStateException("clientSecret fingerprint 생성에 실패했습니다.", e);
         }
     }
 
@@ -136,7 +136,7 @@ public class ExternalApiClientServiceImpl implements ExternalApiClientService {
         try {
             return objectMapper.writeValueAsString(values == null ? List.of() : values);
         } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("JSON ?곌떠???琉욱뱺 ???덉넮???곕????덈펲.", e);
+            throw new IllegalArgumentException("JSON 생성에 실패했습니다.", e);
         }
     }
 

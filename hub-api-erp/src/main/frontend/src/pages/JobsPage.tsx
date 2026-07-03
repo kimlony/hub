@@ -7,6 +7,7 @@ import { useAuthenticatedFetch } from '../hooks/useAuthenticatedFetch'
 
 type Job = {
   requestId: string
+  jobType: string
   channelCd: string
   frDt: string
   toDt: string
@@ -65,6 +66,16 @@ const LOG_LEVEL_COLORS: Record<string, string> = {
 }
 
 const PAGE_SIZE = 20
+
+const JOB_TYPE_LABELS: Record<string, string> = {
+  ORDER_COLLECT: '주문수집',
+  ORDER_NORMALIZE: '데이터 정제화',
+  ERP_APPLY: 'ERP 반영',
+}
+
+function jobTypeLabel(jobType: string): string {
+  return JOB_TYPE_LABELS[jobType] ?? jobType
+}
 
 function formatPeriod(frDt: string, toDt: string): string {
   if (!frDt || !toDt) return '-'
@@ -247,6 +258,7 @@ export default function JobsPage() {
             <thead>
               <tr className="border-b border-slate-100 bg-[#FAFAFA]">
                 <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#8B95A1]">Request ID</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#8B95A1]">작업</th>
                 <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#8B95A1]">채널</th>
                 <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#8B95A1]">수집 기간</th>
                 <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-[#8B95A1]">상태</th>
@@ -259,13 +271,13 @@ export default function JobsPage() {
             <tbody>
               {loading && jobs.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-[13px] text-[#8B95A1]">
+                  <td colSpan={9} className="px-5 py-12 text-center text-[13px] text-[#8B95A1]">
                     불러오는 중...
                   </td>
                 </tr>
               ) : jobs.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-[13px] text-[#8B95A1]">
+                  <td colSpan={9} className="px-5 py-12 text-center text-[13px] text-[#8B95A1]">
                     조건에 맞는 작업이 없습니다.
                   </td>
                 </tr>
@@ -276,6 +288,10 @@ export default function JobsPage() {
                     <tr key={j.requestId} className="border-t border-slate-50 transition-colors hover:bg-slate-50">
                       <td className="px-5 py-3 font-mono text-[11px] text-[#8B95A1]">
                         {j.requestId.slice(0, 8)}...
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="text-[12px] font-extrabold text-[#191F28]">{jobTypeLabel(j.jobType)}</div>
+                        <div className="mt-0.5 font-mono text-[10px] text-[#8B95A1]">{j.jobType}</div>
                       </td>
                       <td className="px-5 py-3">
                         <span className={`rounded-md px-2.5 py-0.5 text-[11px] font-bold ${CHANNEL_COLORS[j.channelCd] ?? 'bg-slate-100 text-slate-600'}`}>

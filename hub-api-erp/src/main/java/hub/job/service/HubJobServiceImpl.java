@@ -40,8 +40,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-//import hub.port.JobEventPort;
-
 
 @Service
 @RequiredArgsConstructor
@@ -50,7 +48,7 @@ public class HubJobServiceImpl implements HubJobService {
 
     private final HubJobMapper hubJobMapper;
 //    private final JobEventPort jobEventPort;
-//    OUTBOX ??????怨쀬Ŧ ?곌떠??롪퍔???彛?怨댄맋 嶺뚯쉳???Kafka?????繹?筌? ?꾩룇裕됵쭛??濡ル츎 ???? Outbox ???逾??곕뾼?????繹?筌? ???繞③뇡???꾩렮維???怨쀬Ŧ ?곌떠??롪퍔?筌???鍮??
+//  Kafka 직접 발행 대신 Outbox에 이벤트를 저장하고, OutboxPublisher가 Kafka 발행을 담당한다.
     private final JobOutboxService jobOutboxService;
     private final ObjectMapper objectMapper;
     private final UserMapper userMapper;
@@ -110,7 +108,7 @@ public class HubJobServiceImpl implements HubJobService {
         if (existing == null) {
             HubJob newJob = buildNewJob(requestKey, account, request, user, triggerType, scheduleRunId);
 
-            // requestKey unique index makes concurrent duplicate requests idempotent.
+            // requestKey 고유 인덱스는 동시 중복 요청을 멱등하게 만듭니다.
             int inserted = hubJobMapper.insertJobIfAbsent(newJob);
 
             if (inserted == 1) {
@@ -120,7 +118,7 @@ public class HubJobServiceImpl implements HubJobService {
             } else {
                 HubJob duplicated = hubJobMapper.selectByRequestKey(requestKey);
                 if (duplicated == null) {
-                    throw new IllegalStateException("Duplicated job was not found after insert conflict");
+                    throw new IllegalStateException("중복된 작업이 발견되지 않았습니다.");
                 }
                 requestId = duplicated.getRequestId();
                 status = duplicated.getStatus().name();
@@ -294,7 +292,7 @@ public class HubJobServiceImpl implements HubJobService {
     private void publishEvent(HubJob job) {
         publishEvent(job, null);
     }
-
+    // 실제 kafka발행이 아님 -> hub_job_outbox에 PENDING 상태로 insert됨
     private void publishEvent(HubJob job, String partitionKey) {
         Map<String, Object> payloadMap = jobPayloadValidator.validate(job);
         HubJobEvent event = new HubJobEvent(
@@ -629,6 +627,7 @@ public class HubJobServiceImpl implements HubJobService {
         String createdAt = job.getCreatedAt() != null ? job.getCreatedAt().toString() : "";
         return new HubJobListItem(
                 job.getRequestId(),
+                job.getJobType(),
                 job.getChannelCd(),
                 frDt,
                 toDt,
