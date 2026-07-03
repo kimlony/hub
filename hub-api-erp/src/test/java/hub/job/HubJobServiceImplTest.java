@@ -67,7 +67,7 @@ class HubJobServiceImplTest {
                 new JobPayloadValidator(objectMapper)
         );
         HubUser user = user(1L, "admin");
-        String requestKey = "10_GODO_20260618_20260618";
+        String requestKey = "SCHEDULE_77_10_GODO_20260618_20260618";
         HubJob duplicatedJob = HubJob.builder()
                 .requestId("existing-request-id")
                 .requestKey(requestKey)
@@ -93,8 +93,9 @@ class HubJobServiceImplTest {
                 .thenReturn(duplicatedJob);
         when(hubJobMapper.insertJobIfAbsent(any(HubJob.class))).thenReturn(0);
 
-        HubJobBatchResponse response = service.createBatchJobs(
+        HubJobBatchResponse response = service.createScheduledBatchJobs(
                 "admin",
+                77L,
                 new HubJobBatchRequest("20260618", "20260618", List.of("GODO"))
         );
 
@@ -122,7 +123,7 @@ class HubJobServiceImplTest {
                 new JobPayloadValidator(objectMapper)
         );
         HubUser user = user(1L, "admin");
-        String requestKey = "10_GODO_20260618_20260618";
+        String requestKey = "SCHEDULE_77_10_GODO_20260618_20260618";
 
         when(userMapper.findByUsername("admin")).thenReturn(Optional.of(user));
         when(channelMapper.findActiveByCorpIdAndMallKey(100L, "GODO"))
@@ -136,8 +137,9 @@ class HubJobServiceImplTest {
         when(hubJobMapper.selectByRequestKey(requestKey)).thenReturn(null);
         when(hubJobMapper.insertJobIfAbsent(any(HubJob.class))).thenReturn(1);
 
-        HubJobBatchResponse response = service.createBatchJobs(
+        HubJobBatchResponse response = service.createScheduledBatchJobs(
                 "admin",
+                77L,
                 new HubJobBatchRequest("20260618", "20260618", List.of("GODO"))
         );
 
@@ -179,7 +181,7 @@ class HubJobServiceImplTest {
                 .containsEntry("channelCd", "GODO")
                 .containsEntry("frDt", "20260618")
                 .containsEntry("toDt", "20260618")
-                .containsEntry("triggerType", "MANUAL");
+                .containsEntry("triggerType", "SCHEDULE");
 
         assertThat(response.jobs()).hasSize(1);
         assertThat(response.jobs().get(0).requestId()).isEqualTo(insertedJob.getRequestId());
@@ -194,7 +196,7 @@ class HubJobServiceImplTest {
     void createBatchJobsReturnsExistingJobWithoutResetWhenJobIsAlreadyQueued() {
         HubJobServiceImpl service = service();
         HubUser user = user(1L, "admin");
-        String requestKey = "10_GODO_20260618_20260618";
+        String requestKey = "SCHEDULE_77_10_GODO_20260618_20260618";
         HubJob existingJob = HubJob.builder()
                 .requestId("queued-request-id")
                 .requestKey(requestKey)
@@ -206,8 +208,9 @@ class HubJobServiceImplTest {
         when(channelMapper.findActiveByCorpIdAndMallKey(100L, "GODO")).thenReturn(List.of(activeChannel()));
         when(hubJobMapper.selectByRequestKey(requestKey)).thenReturn(existingJob);
 
-        HubJobBatchResponse response = service.createBatchJobs(
+        HubJobBatchResponse response = service.createScheduledBatchJobs(
                 "admin",
+                77L,
                 new HubJobBatchRequest("20260618", "20260618", List.of("GODO"))
         );
 
@@ -226,7 +229,7 @@ class HubJobServiceImplTest {
     void createBatchJobsResetsCompletedJobAndPublishesOutboxEvent() {
         HubJobServiceImpl service = service();
         HubUser user = user(1L, "admin");
-        String requestKey = "10_GODO_20260618_20260618";
+        String requestKey = "SCHEDULE_77_10_GODO_20260618_20260618";
         HubJob existingJob = HubJob.builder()
                 .requestId("completed-request-id")
                 .requestKey(requestKey)
@@ -243,8 +246,9 @@ class HubJobServiceImplTest {
         when(hubJobMapper.selectByRequestKey(requestKey)).thenReturn(existingJob);
         when(hubJobMapper.updateStatusToReset(eq(requestKey), any(String.class))).thenReturn(1);
 
-        HubJobBatchResponse response = service.createBatchJobs(
+        HubJobBatchResponse response = service.createScheduledBatchJobs(
                 "admin",
+                77L,
                 new HubJobBatchRequest("20260618", "20260618", List.of("GODO"))
         );
 
@@ -259,7 +263,7 @@ class HubJobServiceImplTest {
         assertThat(event.payload())
                 .containsEntry("mallKey", "GODO")
                 .containsEntry("channelCd", "GODO")
-                .containsEntry("triggerType", "MANUAL");
+                .containsEntry("triggerType", "SCHEDULE");
         assertThat(response.jobs()).hasSize(1);
         assertThat(response.jobs().get(0).requestId()).isEqualTo("completed-request-id");
         assertThat(response.jobs().get(0).status()).isEqualTo(HubJobStatus.QUEUED.name());
@@ -272,7 +276,7 @@ class HubJobServiceImplTest {
     void createBatchJobsDoesNotPublishWhenCompletedJobResetIsSkipped() {
         HubJobServiceImpl service = service();
         HubUser user = user(1L, "admin");
-        String requestKey = "10_GODO_20260618_20260618";
+        String requestKey = "SCHEDULE_77_10_GODO_20260618_20260618";
         HubJob existingJob = HubJob.builder()
                 .requestId("completed-request-id")
                 .requestKey(requestKey)
@@ -289,14 +293,42 @@ class HubJobServiceImplTest {
         when(hubJobMapper.selectByRequestKey(requestKey)).thenReturn(existingJob);
         when(hubJobMapper.updateStatusToReset(eq(requestKey), any(String.class))).thenReturn(0);
 
-        assertThatThrownBy(() -> service.createBatchJobs(
+        assertThatThrownBy(() -> service.createScheduledBatchJobs(
                 "admin",
+                77L,
                 new HubJobBatchRequest("20260618", "20260618", List.of("GODO"))
         ))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Job reset skipped because current status is not completed");
 
         verify(jobOutboxService, never()).enqueue(any(HubJobEvent.class));
+    }
+
+    @Test
+    void createBatchJobsCreatesNewExecutionForRepeatedManualCollection() {
+        HubJobServiceImpl service = service();
+        HubUser user = user(1L, "admin");
+
+        when(userMapper.findByUsername("admin")).thenReturn(Optional.of(user));
+        when(channelMapper.findActiveByCorpIdAndMallKey(100L, "GODO")).thenReturn(List.of(activeChannel()));
+        when(hubJobMapper.selectByRequestKey(any(String.class))).thenReturn(null);
+        when(hubJobMapper.insertJobIfAbsent(any(HubJob.class))).thenReturn(1);
+
+        HubJobBatchRequest request = new HubJobBatchRequest("20260618", "20260618", List.of("GODO"));
+        HubJobBatchResponse first = service.createBatchJobs("admin", request);
+        HubJobBatchResponse second = service.createBatchJobs("admin", request);
+
+        ArgumentCaptor<HubJob> jobCaptor = ArgumentCaptor.forClass(HubJob.class);
+        verify(hubJobMapper, times(2)).insertJobIfAbsent(jobCaptor.capture());
+        verify(jobOutboxService, times(2)).enqueue(any(HubJobEvent.class));
+        verify(hubJobMapper, never()).updateStatusToReset(any(String.class), any(String.class));
+
+        List<HubJob> insertedJobs = jobCaptor.getAllValues();
+        assertThat(insertedJobs).hasSize(2);
+        assertThat(insertedJobs.get(0).getRequestKey()).startsWith("MANUAL_");
+        assertThat(insertedJobs.get(1).getRequestKey()).startsWith("MANUAL_");
+        assertThat(insertedJobs.get(0).getRequestKey()).isNotEqualTo(insertedJobs.get(1).getRequestKey());
+        assertThat(first.jobs().get(0).requestId()).isNotEqualTo(second.jobs().get(0).requestId());
     }
 
     /**

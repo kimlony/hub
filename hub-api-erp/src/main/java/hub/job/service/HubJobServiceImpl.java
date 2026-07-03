@@ -60,9 +60,10 @@ public class HubJobServiceImpl implements HubJobService {
     public HubJobBatchResponse createBatchJobs(String username, HubJobBatchRequest request) {
         HubUser user = findUserByUsername(username);
 
+        String executionId = UUID.randomUUID().toString();
         List<HubJobBatchResponse.JobResult> jobs = resolveChannelAccounts(user, request)
                 .stream()
-                .map(account -> createBatchJob(user, account, request, TriggerType.MANUAL, null))
+                .map(account -> createBatchJob(user, account, request, TriggerType.MANUAL, null, executionId))
                 .collect(Collectors.toList());
 
         return new HubJobBatchResponse(jobs);
@@ -74,7 +75,7 @@ public class HubJobServiceImpl implements HubJobService {
 
         List<HubJobBatchResponse.JobResult> jobs = resolveChannelAccounts(user, request)
                 .stream()
-                .map(account -> createBatchJob(user, account, request, TriggerType.SCHEDULE, scheduleRunId))
+                .map(account -> createBatchJob(user, account, request, TriggerType.SCHEDULE, scheduleRunId, null))
                 .collect(Collectors.toList());
 
         return new HubJobBatchResponse(jobs);
@@ -95,11 +96,12 @@ public class HubJobServiceImpl implements HubJobService {
             ChannelRow account,
             HubJobBatchRequest request,
             TriggerType triggerType,
-            Long scheduleRunId
+            Long scheduleRunId,
+            String executionId
     ) {
         String mallKey = account.getMallKey();
 
-        String requestKey = buildRequestKey(account, request, triggerType, scheduleRunId);
+        String requestKey = buildRequestKey(account, request, triggerType, scheduleRunId, executionId);
         HubJob existing = hubJobMapper.selectByRequestKey(requestKey);
 
         String requestId;
@@ -173,7 +175,8 @@ public class HubJobServiceImpl implements HubJobService {
             ChannelRow account,
             HubJobBatchRequest request,
             TriggerType triggerType,
-            Long scheduleRunId
+            Long scheduleRunId,
+            String executionId
     ) {
         String mallKey = account.getMallKey();
         String accountId = String.valueOf(account.getId());
@@ -192,6 +195,8 @@ public class HubJobServiceImpl implements HubJobService {
         }
         if (isMockMall(mallKey) && request.mockPage() != null) {
             return String.join("_",
+                    "MANUAL",
+                    executionId,
                     nullToDefault(request.loadTestRunId(), "MOCK_MALL"),
                     accountId,
                     mallKey,
@@ -200,7 +205,7 @@ public class HubJobServiceImpl implements HubJobService {
                     request.toDt()
             );
         }
-        return String.join("_", accountId, mallKey, request.frDt(), request.toDt());
+        return String.join("_", "MANUAL", executionId, accountId, mallKey, request.frDt(), request.toDt());
     }
 
     private String serializePayload(
