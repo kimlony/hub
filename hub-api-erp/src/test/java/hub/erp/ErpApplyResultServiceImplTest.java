@@ -5,7 +5,7 @@ import hub.erp.domain.ErpApplyResult;
 import hub.erp.dto.request.ErpApplyResultSearchCondition;
 import hub.erp.mapper.ErpApplyResultMapper;
 import hub.erp.service.ErpApplyResultServiceImpl;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -72,8 +72,8 @@ class ErpApplyResultServiceImplTest {
         row.setAttemptCount(2);
         row.setRequestPayload("{\"orderId\":11}");
         row.setResponsePayload("{\"accepted\":true}");
-        row.setCreatedAt(LocalDateTime.now());
-        row.setUpdatedAt(LocalDateTime.now());
+        row.setCreatedAt(OffsetDateTime.now());
+        row.setUpdatedAt(OffsetDateTime.now());
         return row;
     }
 }

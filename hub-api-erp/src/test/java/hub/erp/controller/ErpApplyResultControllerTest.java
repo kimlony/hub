@@ -23,6 +23,8 @@ import hub.erp.dto.response.ErpApplyResultListResponse;
 import hub.erp.service.ErpApplyResultService;
 import hub.external.ExternalApiAuthFilter;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -57,7 +59,8 @@ class ErpApplyResultControllerTest {
     private ErpApplyResultItem sampleItem() {
         return new ErpApplyResultItem(1L, "erp-apply-1", "corr-1", 501L, "MOCK-1", "CREATE", "FAILED",
                 "MOCK-1:CREATE:501", null, "ERP_500", "Mock ERP apply failed", 3, null,
-                LocalDateTime.of(2026, 7, 1, 10, 0), LocalDateTime.of(2026, 7, 1, 10, 5));
+                OffsetDateTime.of(2026, 7, 1, 10, 0, 0, 0, ZoneOffset.UTC),
+                OffsetDateTime.of(2026, 7, 1, 10, 5, 0, 0, ZoneOffset.UTC));
     }
 
     @Test
