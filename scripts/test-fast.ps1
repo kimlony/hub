@@ -3,6 +3,15 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
+# Test-only defaults for local/CI verification. These are not production secrets.
+if (-not $env:HUB_AES_SECRET) {
+    $env:HUB_AES_SECRET = "change-me-32-byte-secret-local!!"
+}
+
+if (-not $env:POSTGRES_PASSWORD) {
+    $env:POSTGRES_PASSWORD = "hub"
+}
+
 function Invoke-Step {
     param(
         [string] $Name,

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="hub.setting.mapper.UserSettingMapper">
+    <select id="selectByUserId" resultType="hub.setting.domain.UserSetting">
+        SELECT user_id, auto_erp_apply, auto_news_collect, created_at, updated_at
+        FROM hub_user_setting
+        WHERE user_id = #{userId}
+    </select>
+
+    <insert id="insertDefaultIfAbsent">
+        INSERT INTO hub_user_setting (user_id, auto_erp_apply, auto_news_collect)
+        VALUES (#{userId}, FALSE, FALSE)
+        ON CONFLICT (user_id) DO NOTHING
+    </insert>
+
+    <insert id="upsert">
+        INSERT INTO hub_user_setting (user_id, auto_erp_apply, auto_news_collect, created_at, updated_at)
+        VALUES (#{userId}, #{autoErpApply}, #{autoNewsCollect}, NOW(), NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET auto_erp_apply = EXCLUDED.auto_erp_apply,
+            auto_news_collect = EXCLUDED.auto_news_collect,
+            updated_at = NOW()
+    </insert>
+
+    <select id="existsAutoNewsCollectEnabled" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM hub_user_setting WHERE auto_news_collect = TRUE
+        )
+    </select>
+</mapper>

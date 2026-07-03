@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 
 type NavItem = { label: string; to: string; icon: string; badge?: number }
 type NavSection = { section: string; items: NavItem[] }
@@ -35,7 +36,8 @@ const nav: NavSection[] = [
   },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const { username } = useAuth()
   return (
     <aside className="w-56 flex flex-col flex-shrink-0 bg-white border-r border-slate-100 h-screen">
       <div className="px-5 py-6">
@@ -83,16 +85,17 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-5 py-4 border-t border-slate-100">
-        <div className="flex items-center gap-3">
+      <div className="px-3 py-3 border-t border-slate-100">
+        <button onClick={onOpenSettings} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-slate-50">
           <div className="w-8 h-8 rounded-full bg-[#191F28] flex items-center justify-center text-white text-sm font-bold">
-            K
+            {(username ?? 'U').slice(0, 1).toUpperCase()}
           </div>
-          <div>
-            <p className="text-[#191F28] text-[13px] font-bold">관리자</p>
-            <p className="text-[#8B95A1] text-[11px]">bizbee.co.kr</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[#191F28] text-[13px] font-bold">{username ?? '사용자'}</p>
+            <p className="text-[#8B95A1] text-[11px]">환경설정</p>
           </div>
-        </div>
+          <span className="text-[#8B95A1]">⚙</span>
+        </button>
       </div>
     </aside>
   )

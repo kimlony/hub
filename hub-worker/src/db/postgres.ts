@@ -58,6 +58,7 @@ export type CompleteOrderNormalizeResult = {
   succeeded: boolean;
   erpApplyJob: NormalizeJobInput | null;
   outboxCreated: boolean;
+  erpAutoApplySkipped: boolean;
 };
 
 export type NormalizedOrderForErp = {
@@ -122,7 +123,6 @@ export type JobResultForNormalize = {
 const MAX_RETRY_COUNT = 3;
 const DEFAULT_RETRY_BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000];
 const RETRY_BACKOFF_MS = parseRetryBackoffMs();
-const AES_SECRET = requiredEnv("HUB_AES_SECRET");
 const LOCK_TTL_MINUTES = Number(process.env.JOB_LOCK_TTL_MINUTES ?? 30);
 const WORKER_ID = getWorkerId();
 const jobResultCapture = new AsyncLocalStorage<CapturedJobResult>();
@@ -187,6 +187,15 @@ async function ensurePostgresSchemaUnlocked(): Promise<void> {
       AND c.corp_cd = 'LEGACY-' || u.id
   `);
   await pool.query(`ALTER TABLE users ALTER COLUMN corp_id SET NOT NULL`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_user_setting (
+      user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      auto_erp_apply BOOLEAN NOT NULL DEFAULT FALSE,
+      auto_news_collect BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS user_malls (
       id BIGSERIAL PRIMARY KEY,
@@ -841,7 +850,7 @@ export async function completeOrderNormalizeWithErpApply(
     const parent = parentResult.rows[0];
     if (!parent) {
       await client.query("ROLLBACK");
-      return { succeeded: false, erpApplyJob: null, outboxCreated: false };
+      return { succeeded: false, erpApplyJob: null, outboxCreated: false, erpAutoApplySkipped: false };
     }
 
     const normalized = await client.query<{
@@ -856,9 +865,17 @@ export async function completeOrderNormalizeWithErpApply(
     const normalizedOrderIds = normalized.rows.map((row) => Number(row.id));
     let erpApplyJob: NormalizeJobInput | null = null;
     let outboxCreated = false;
+    let erpAutoApplySkipped = false;
 
     if (normalizedOrderIds.length > 0) {
       const identity = normalized.rows[0];
+      const settingUserId = optionalPayloadInteger(message.payload, "userId") ?? Number(identity.user_id);
+      const settingResult = await client.query<{ auto_erp_apply: boolean }>(`
+        SELECT auto_erp_apply FROM hub_user_setting WHERE user_id = $1
+      `, [settingUserId]);
+      const autoErpApply = settingResult.rows[0]?.auto_erp_apply ?? false;
+      erpAutoApplySkipped = !autoErpApply;
+      if (autoErpApply) {
       const corpId = optionalPayloadInteger(message.payload, "corpId") ?? Number(identity.corp_id);
       const userId = optionalPayloadInteger(message.payload, "userId") ?? Number(identity.user_id);
       const channelAccountId = optionalPayloadInteger(message.payload, "channelAccountId") ?? Number(identity.channel_account_id);
@@ -947,6 +964,7 @@ export async function completeOrderNormalizeWithErpApply(
         ]
       );
       outboxCreated = outboxResult.rowCount === 1;
+      }
     }
 
     const success = await client.query(
@@ -962,7 +980,7 @@ export async function completeOrderNormalizeWithErpApply(
       throw new Error(`ORDER_NORMALIZE success transition failed: ${message.requestId}`);
     }
     await client.query("COMMIT");
-    return { succeeded: true, erpApplyJob, outboxCreated };
+    return { succeeded: true, erpApplyJob, outboxCreated, erpAutoApplySkipped };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
@@ -1839,7 +1857,8 @@ function decryptAes(cipherText: string | null): string | null {
   if (!cipherText) {
     return null;
   }
-  if (Buffer.byteLength(AES_SECRET, "utf8") !== 32) {
+  const aesSecret = requiredEnv("HUB_AES_SECRET");
+  if (Buffer.byteLength(aesSecret, "utf8") !== 32) {
     throw new Error("HUB_AES_SECRET must be exactly 32 bytes");
   }
 
@@ -1847,7 +1866,7 @@ function decryptAes(cipherText: string | null): string | null {
   const iv = combined.subarray(0, 16);
   const encrypted = combined.subarray(16);
   try {
-    const decipher = createDecipheriv("aes-256-cbc", Buffer.from(AES_SECRET, "utf8"), iv);
+    const decipher = createDecipheriv("aes-256-cbc", Buffer.from(aesSecret, "utf8"), iv);
     return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
   } catch (error) {
     logger.error({

@@ -66,6 +66,8 @@ describeIntegration("job envelope relationship fields", () => {
   afterAll(async () => {
     await pool?.query("DELETE FROM hub_erp_apply_result WHERE correlation_id = $1", [correlationId]);
     await pool?.query("DELETE FROM hub_collected_order WHERE request_id = $1", [collectRequestId]);
+    await pool?.query("DELETE FROM hub_collected_order WHERE user_id = $1 AND channel_order_id LIKE 'WAIT-%'", [userId]);
+    await pool?.query("DELETE FROM hub_user_setting WHERE user_id = $1", [userId]);
     await pool?.query("DELETE FROM hub_order_normalize_checkpoint WHERE request_id = $1", [collectRequestId]);
     await pool?.query(
       "DELETE FROM hub_job_outbox WHERE payload ->> 'correlationId' = $1",
@@ -79,6 +81,11 @@ describeIntegration("job envelope relationship fields", () => {
   }, 120_000);
 
   it("inherits the collection correlation id when creating ORDER_NORMALIZE", async () => {
+    await pool.query(`
+      INSERT INTO hub_user_setting (user_id, auto_erp_apply, auto_news_collect)
+      VALUES ($1, TRUE, FALSE)
+      ON CONFLICT (user_id) DO UPDATE SET auto_erp_apply = TRUE, updated_at = NOW()
+    `, [userId]);
     await pool.query(
       `
         INSERT INTO hub_job (
@@ -367,6 +374,55 @@ describeIntegration("job envelope relationship fields", () => {
     expect(counts.rows[0]).toEqual({ job_count: "1", outbox_count: "1" });
   });
 
+  it("completes ORDER_NORMALIZE without ERP_APPLY when the setting is missing", async () => {
+    await pool.query("DELETE FROM hub_user_setting WHERE user_id = $1", [userId]);
+    const sourceRequestId = `collect-manual-erp-${Date.now()}`;
+    const normalizeRequestId = `normalize-manual-erp-${Date.now()}`;
+    const normalizeRequestKey = `NORMALIZE_${sourceRequestId}`;
+    await pool.query(`
+      INSERT INTO hub_collected_order (
+        corp_id, channel_account_id, user_id, request_id, request_key, source_erp,
+        channel_cd, mall_key, channel_order_id, order_status, raw_payload
+      ) VALUES ($1, $2, $3, $4, $5, 'HUB', 'MOCK_MALL', 'MOCK_MALL', $6, 'PAID', '{}'::jsonb)
+    `, [corpId, channelAccountId, userId, sourceRequestId, `collect-key-${Date.now()}`, `WAIT-${Date.now()}`]);
+    const payload = {
+      sourceRequestId, userId, corpId, channelAccountId,
+      channelCd: "MOCK_MALL", mallKey: "MOCK_MALL"
+    };
+    await pool.query(`
+      INSERT INTO hub_job (
+        request_id, request_key, channel_cd, status, payload, retry_count,
+        job_type, source_erp, parent_job_id, correlation_id, causation_id,
+        schema_version, payload_version, created_at, updated_at
+      ) VALUES (
+        $1, $2, 'MOCK_MALL', 'PROCESSING', $3::jsonb, 0,
+        'ORDER_NORMALIZE', 'HUB', $4, $5, $4, '1.0', '1.0', NOW(), NOW()
+      )
+    `, [normalizeRequestId, normalizeRequestKey, JSON.stringify(payload), sourceRequestId, correlationId]);
+
+    const completion = await db.completeOrderNormalizeWithErpApply({
+      requestId: normalizeRequestId,
+      requestKey: normalizeRequestKey,
+      sourceErp: "HUB",
+      jobType: "ORDER_NORMALIZE",
+      correlationId,
+      payload
+    });
+
+    expect(completion).toEqual({
+      succeeded: true,
+      erpApplyJob: null,
+      outboxCreated: false,
+      erpAutoApplySkipped: true
+    });
+    const state = await pool.query<{ status: string; child_count: string; outbox_count: string }>(`
+      SELECT
+        (SELECT status FROM hub_job WHERE request_id = $1) AS status,
+        (SELECT COUNT(*) FROM hub_job WHERE parent_job_id = $1 AND job_type = 'ERP_APPLY')::text AS child_count,
+        (SELECT COUNT(*) FROM hub_job_outbox WHERE event_type = 'ERP_APPLY' AND payload ->> 'parentJobId' = $1)::text AS outbox_count
+    `, [normalizeRequestId]);
+    expect(state.rows[0]).toEqual({ status: "SUCCESS", child_count: "0", outbox_count: "0" });
+  });
   it("rolls back raw result, child job and outbox when completion fails", async () => {
     const failedRequestId = `collect-rollback-${Date.now()}`;
     const failedRequestKey = `collect-rollback-key-${Date.now()}`;

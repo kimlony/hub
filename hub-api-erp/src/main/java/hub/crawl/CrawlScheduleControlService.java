@@ -10,7 +10,7 @@ public class CrawlScheduleControlService {
     private final AtomicBoolean enabled;
 
     public CrawlScheduleControlService(
-            @Value("${hub.schedule.crawl.enabled:true}") boolean initialEnabled
+            @Value("${hub.schedule.crawl.enabled:false}") boolean initialEnabled
     ) {
         this.enabled = new AtomicBoolean(initialEnabled);
     }

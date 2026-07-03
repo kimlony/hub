@@ -3,6 +3,7 @@ package hub.support;
 import hub.external.schema.ExternalApiClientSchemaInitializer;
 import hub.order.schema.OrderNormalizeSchemaInitializer;
 import hub.schedule.schema.CollectScheduleSchemaInitializer;
+import hub.setting.schema.UserSettingSchemaInitializer;
 import hub.tenant.schema.TenantSchemaInitializer;
 import java.sql.Connection;
 import javax.sql.DataSource;
@@ -58,6 +59,7 @@ public final class IntegrationTestDatabase {
         new ExternalApiClientSchemaInitializer(jdbcTemplate).initialize();
         new CollectScheduleSchemaInitializer(jdbcTemplate).initialize();
         new OrderNormalizeSchemaInitializer(jdbcTemplate).initialize();
+        new UserSettingSchemaInitializer(jdbcTemplate).initialize();
         initializeOutbox(jdbcTemplate);
     }
 

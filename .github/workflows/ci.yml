@@ -16,6 +16,10 @@ jobs:
   fast-verification:
     name: Fast verification
     runs-on: windows-latest
+    env:
+      # Test-only defaults. These values must never be used as production secrets.
+      HUB_AES_SECRET: change-me-32-byte-secret-local!!
+      POSTGRES_PASSWORD: hub
 
     steps:
       - name: Checkout

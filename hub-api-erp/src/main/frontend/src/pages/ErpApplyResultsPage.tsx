@@ -284,7 +284,7 @@ function PipelineModal({
         </div>)}
       </div>
       <h3 className="mb-3 mt-6 text-[14px] font-extrabold text-[#191F28]">ERP 결과</h3>
-      {pipeline.erpApplyResults.length === 0 ? <p className="text-[13px] text-[#8B95A1]">ERP 결과가 없습니다.</p> : pipeline.erpApplyResults.map((result) => (
+      {pipeline.erpApplyResults.length === 0 ? <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-[13px] text-amber-700">ERP 반영 대기 · ERP_APPLY Job이 아직 생성되지 않았습니다.</div> : pipeline.erpApplyResults.map((result) => (
         <div key={`${result.requestId}-${result.normalizedOrderId}`} className={`mb-2 rounded-lg border p-4 ${result.status === 'FAILED' ? 'border-red-300 bg-red-50' : 'border-slate-100'}`}>
           <div className="flex items-center gap-3"><ErpStatus status={result.status} /><strong>{result.erpDocumentNo ?? '-'}</strong></div>
           <p className="mt-2 font-mono text-[11px] text-[#8B95A1]">{result.requestId} · order {result.normalizedOrderId}</p>

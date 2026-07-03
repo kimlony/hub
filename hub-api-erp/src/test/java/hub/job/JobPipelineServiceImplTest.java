@@ -51,6 +51,26 @@ class JobPipelineServiceImplTest {
         verify(jobMapper).selectPipelineByCorrelationIdAndCorpId("corr-1", 100L);
     }
 
+    @Test
+    void returnsNormalizeAsCurrentStageWhenErpApplyWasNotCreated() {
+        HubJob collect = job("collect-2", "ORDER_COLLECT", HubJobStatus.SUCCESS, null, null, 1);
+        HubJob normalize = job("normalize-2", "ORDER_NORMALIZE", HubJobStatus.SUCCESS,
+                "collect-2", "collect-2", 2);
+        when(jobMapper.selectByRequestId("normalize-2")).thenReturn(normalize);
+        when(jobMapper.selectPipelineByCorrelationIdAndCorpId("corr-1", 100L))
+                .thenReturn(List.of(collect, normalize));
+        when(resultMapper.selectByCorrelationIdAndCorpId("corr-1", 100L)).thenReturn(List.of());
+
+        var response = service.getPipeline("normalize-2", 100L);
+
+        assertThat(response.currentStage()).isEqualTo("ORDER_NORMALIZE");
+        assertThat(response.failedStage()).isNull();
+        assertThat(response.retryable()).isFalse();
+        assertThat(response.retryFromJobType()).isNull();
+        assertThat(response.jobs()).extracting(item -> item.jobType())
+                .containsExactly("ORDER_COLLECT", "ORDER_NORMALIZE");
+        assertThat(response.erpApplyResults()).isEmpty();
+    }
     private HubJob job(String id, String type, HubJobStatus status, String parent, String causation, int minute) {
         return HubJob.builder().requestId(id).jobType(type).status(status).parentJobId(parent)
                 .causationId(causation).correlationId("corr-1").retryCount(type.equals("ERP_APPLY") ? 3 : 0)

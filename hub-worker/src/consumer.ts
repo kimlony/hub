@@ -479,6 +479,19 @@ async function executeRegisteredHandler(jobMessage: HubJobMessage, requestId: st
           correlationId: completion.erpApplyJob.correlationId
         }
       });
+    } else if (completion.erpAutoApplySkipped) {
+      await saveJobLog({
+        requestId: jobMessage.requestId,
+        eventType: "ERP_AUTO_APPLY_DISABLED",
+        level: "INFO",
+        message: "ERP auto apply disabled. ERP_APPLY job was not created.",
+        jobType: jobMessage.jobType,
+        sourceErp: jobMessage.sourceErp,
+        requestKey: jobMessage.requestKey,
+        channelCd: getChannelCd(jobMessage),
+        mallKey: getMallKey(jobMessage),
+        detail: { autoErpApply: false }
+      });
     }
     return completion.succeeded;
   }
