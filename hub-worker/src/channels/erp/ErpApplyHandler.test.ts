@@ -60,6 +60,17 @@ describe("ErpApplyHandler token authentication", () => {
     expect(JSON.stringify(savedRequest)).not.toMatch(/accessToken|refreshToken|clientSecret|db-secret|token-1/);
   });
 
+  it("stores MANUAL trigger type from manual ERP payload", async () => {
+    const deps = dependencies();
+    await deps.handler.handle(message({ triggerType: "MANUAL", userId: 77 }));
+
+    expect(deps.store.saveResults).toHaveBeenCalledWith(expect.objectContaining({
+      deliveryType: "ERP_PUSH",
+      triggerType: "MANUAL",
+      deliveredByUserId: 77
+    }));
+  });
+
   it("refreshes once after a 401 and succeeds on the second call", async () => {
     const deps = dependencies();
     deps.adapter.apply

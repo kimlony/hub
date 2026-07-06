@@ -66,6 +66,14 @@ public class ErpApplySchemaInitializer {
                 )
                 """);
         jdbcTemplate.execute("""
+                ALTER TABLE hub_erp_apply_result
+                    ADD COLUMN IF NOT EXISTS delivery_type VARCHAR(30) NOT NULL DEFAULT 'ERP_PUSH',
+                    ADD COLUMN IF NOT EXISTS trigger_type VARCHAR(30) NOT NULL DEFAULT 'AUTO',
+                    ADD COLUMN IF NOT EXISTS external_client_id BIGINT NULL,
+                    ADD COLUMN IF NOT EXISTS delivered_by_user_id BIGINT NULL,
+                    ADD COLUMN IF NOT EXISTS delivery_note TEXT NULL
+                """);
+        jdbcTemplate.execute("""
                 CREATE INDEX IF NOT EXISTS idx_hub_erp_apply_result_request
                 ON hub_erp_apply_result(request_id)
                 """);

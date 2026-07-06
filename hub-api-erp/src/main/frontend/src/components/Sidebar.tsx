@@ -13,6 +13,7 @@ const nav: NavSection[] = [
     section: '주문수집',
     items: [
       { label: '수집 주문', to: '/orders', icon: 'R' },
+      { label: '\uC8FC\uBB38 Export', to: '/order-export', icon: 'X' },
       { label: '작업 목록', to: '/jobs', icon: 'J' },
       { label: 'ERP 반영 결과', to: '/erp-apply-results', icon: 'A' },
       { label: '배치 작업', to: '/schedules', icon: 'S' },

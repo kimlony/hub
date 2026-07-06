@@ -521,6 +521,14 @@ async function ensurePostgresSchemaUnlocked(): Promise<void> {
       UNIQUE (idempotency_key, normalized_order_id)
     )
   `);
+  await pool.query(`
+    ALTER TABLE hub_erp_apply_result
+      ADD COLUMN IF NOT EXISTS delivery_type VARCHAR(30) NOT NULL DEFAULT 'ERP_PUSH',
+      ADD COLUMN IF NOT EXISTS trigger_type VARCHAR(30) NOT NULL DEFAULT 'AUTO',
+      ADD COLUMN IF NOT EXISTS external_client_id BIGINT NULL,
+      ADD COLUMN IF NOT EXISTS delivered_by_user_id BIGINT NULL,
+      ADD COLUMN IF NOT EXISTS delivery_note TEXT NULL
+  `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_hub_erp_apply_result_request ON hub_erp_apply_result(request_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_hub_erp_apply_result_status ON hub_erp_apply_result(status, updated_at DESC)`);
   await pool.query(`
@@ -1272,6 +1280,10 @@ export async function saveErpApplyResults(input: {
   responsePayload?: Record<string, unknown>;
   errorCode?: string | null;
   errorMessage?: string | null;
+  deliveryType?: "ERP_PUSH";
+  triggerType?: "AUTO" | "MANUAL";
+  deliveredByUserId?: number | null;
+  deliveryNote?: string | null;
 }): Promise<void> {
   const client = await pool.connect();
   try {
@@ -1283,12 +1295,14 @@ export async function saveErpApplyResults(input: {
             request_id, correlation_id, normalized_order_id, erp_connection_id,
             operation, status, idempotency_key, erp_document_no,
             request_payload, response_payload, error_code, error_message,
-            attempt_count, applied_at, created_at, updated_at
+            attempt_count, applied_at, delivery_type, trigger_type,
+            delivered_by_user_id, delivery_note, created_at, updated_at
           ) VALUES (
             $1::varchar, $2::varchar, $3::bigint, $4::varchar,
             $5::varchar, $6::varchar, $7::varchar, $8::varchar,
             $9::jsonb, $10::jsonb, $11, $12, 1,
-            CASE WHEN $6::varchar = 'APPLIED' THEN NOW() ELSE NULL END, NOW(), NOW()
+            CASE WHEN $6::varchar = 'APPLIED' THEN NOW() ELSE NULL END,
+            $13::varchar, $14::varchar, $15::bigint, $16::text, NOW(), NOW()
           )
           ON CONFLICT (idempotency_key, normalized_order_id) DO UPDATE
           SET request_id = EXCLUDED.request_id,
@@ -1299,6 +1313,10 @@ export async function saveErpApplyResults(input: {
               response_payload = EXCLUDED.response_payload,
               error_code = EXCLUDED.error_code,
               error_message = EXCLUDED.error_message,
+              delivery_type = EXCLUDED.delivery_type,
+              trigger_type = EXCLUDED.trigger_type,
+              delivered_by_user_id = EXCLUDED.delivered_by_user_id,
+              delivery_note = EXCLUDED.delivery_note,
               attempt_count = hub_erp_apply_result.attempt_count + 1,
               applied_at = CASE
                 WHEN EXCLUDED.status = 'APPLIED' THEN NOW()
@@ -1318,7 +1336,11 @@ export async function saveErpApplyResults(input: {
           JSON.stringify(input.requestPayload),
           JSON.stringify(input.responsePayload ?? {}),
           input.errorCode ?? null,
-          input.errorMessage ?? null
+          input.errorMessage ?? null,
+          input.deliveryType ?? "ERP_PUSH",
+          input.triggerType ?? "AUTO",
+          input.deliveredByUserId ?? null,
+          input.deliveryNote ?? null
         ]
       );
     }

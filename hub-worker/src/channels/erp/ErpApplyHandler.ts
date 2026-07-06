@@ -101,7 +101,10 @@ export class ErpApplyHandler implements IJobHandler {
         idempotencyKey: payload.idempotencyKey,
         erpDocumentNo: response.erpDocumentNo,
         requestPayload: request as unknown as Record<string, unknown>,
-        responsePayload: response
+        responsePayload: response,
+        deliveryType: "ERP_PUSH",
+        triggerType: payload.triggerType,
+        deliveredByUserId: payload.deliveredByUserId
       });
     } catch (error) {
       const errorCode = error instanceof MockErpError || error instanceof ErpConnectionError
@@ -118,7 +121,10 @@ export class ErpApplyHandler implements IJobHandler {
         idempotencyKey: payload.idempotencyKey,
         requestPayload: request as unknown as Record<string, unknown>,
         errorCode,
-        errorMessage
+        errorMessage,
+        deliveryType: "ERP_PUSH",
+        triggerType: payload.triggerType,
+        deliveredByUserId: payload.deliveredByUserId
       });
       throw error;
     }
@@ -153,17 +159,29 @@ function parsePayload(payload: Record<string, unknown>) {
   if (!Number.isInteger(corpId) || corpId <= 0) {
     throw new Error("corpId is required for ERP_APPLY");
   }
+  const triggerType = parseTriggerType(payload.triggerType);
   return {
     normalizedOrderIds,
     corpId,
     erpConnectionId: requiredString(payload.erpConnectionId, "erpConnectionId"),
     operation: requiredString(payload.operation, "operation"),
     idempotencyKey: requiredString(payload.idempotencyKey, "idempotencyKey"),
+    triggerType,
+    deliveredByUserId: triggerType === "MANUAL" ? optionalPositiveInteger(payload.userId) : null,
     mockFail: payload.mockFail === true,
     mockErrorCode: typeof payload.mockErrorCode === "string" ? payload.mockErrorCode : undefined,
     mockAuthFailOnce: payload.mockAuthFailOnce === true,
     mockAuthFailAlways: payload.mockAuthFailAlways === true
   };
+}
+
+function parseTriggerType(value: unknown): "AUTO" | "MANUAL" {
+  return value === "MANUAL" ? "MANUAL" : "AUTO";
+}
+
+function optionalPositiveInteger(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function requiredString(value: unknown, field: string): string {

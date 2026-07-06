@@ -12,6 +12,7 @@ import ExternalApiPage from './pages/ExternalApiPage'
 import LoadTestPage from './pages/LoadTestPage'
 import CollectedOrdersPage from './pages/CollectedOrdersPage'
 import ErpApplyResultsPage from './pages/ErpApplyResultsPage'
+import OrderExportPage from './pages/OrderExportPage'
 
 export default function App() {
   return (
@@ -27,6 +28,9 @@ export default function App() {
           } />
           <Route path="/orders" element={
             <ProtectedRoute><CollectedOrdersPage /></ProtectedRoute>
+          } />
+          <Route path="/order-export" element={
+            <ProtectedRoute><OrderExportPage /></ProtectedRoute>
           } />
           <Route path="/erp-apply-results" element={
             <ProtectedRoute><ErpApplyResultsPage /></ProtectedRoute>
