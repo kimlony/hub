@@ -31,8 +31,8 @@ register("결제대기", 10, "PAYMENT_PENDING", "WAITING_FOR_PAY", "WAITING_PAYM
 register("주문접수", 15, "ORDER_RECEIVED", "ORDER_ACCEPTED", "O1", "주문접수");
 register("결제완료", 20, "PAID", "PAYED", "PAYMENT_COMPLETE", "PAYMENT_COMPLETED", "P1", "ACCEPT", "결제완료");
 register("주문완료", 25, "ORDER_CONFIRMED", "RECEIVED", "주문완료", "주문확인");
-register("상품준비중", 30, "READY_TO_SHIP", "PRODUCT_PREPARATION", "PREPARING_PRODUCT", "INSTRUCT", "G1", "READY", "상품준비중", "상품_준비중");
-register("배송준비", 35, "READY_FOR_DELIVERY", "DELIVERY_READY", "배송대기", "배송준비");
+register("상품준비중", 30, "READY_TO_SHIP", "PRODUCT_PREPARATION", "PREPARING_PRODUCT", "INSTRUCT", "G1", "READY", "상품준비중", "상품_준비중", "발주확인");
+register("배송준비", 35, "READY_FOR_DELIVERY", "DELIVERY_READY", "배송대기", "배송준비", "배송준비중");
 register("배송중", 40, "SHIPPED", "SHIPPING", "DELIVERING", "DEPARTURE", "DELIVERY_IN_PROGRESS", "D1", "배송중", "발송완료");
 register("배송완료", 50, "DELIVERED", "FINAL_DELIVERY", "DELIVERY_COMPLETE", "DELIVERY_COMPLETED", "COMPLETED", "D2", "배송완료");
 register("구매확정", 60, "PURCHASE_DECIDED", "PURCHASE_CONFIRMED", "구매확정");

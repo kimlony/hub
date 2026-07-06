@@ -13,6 +13,7 @@ import hub.exception.HubJobNotFoundException;
 import hub.job.domain.HubJob;
 import hub.job.domain.HubJobStatus;
 import hub.job.dto.request.HubJobBatchRequest;
+import hub.job.dto.request.OrderStatusSyncRequest;
 import hub.job.dto.response.HubDashboardResponse;
 import hub.job.dto.response.HubJobBatchResponse;
 import hub.job.dto.response.HubJobDetailResponse;
@@ -28,6 +29,9 @@ import hub.job.event.HubJobEvent;
 import hub.job.mapper.HubJobMapper;
 import hub.outbox.service.JobOutboxService;
 import hub.port.JobEventPort;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
@@ -69,6 +73,15 @@ public class HubJobServiceImpl implements HubJobService {
         return new HubJobBatchResponse(jobs);
     }
 
+    @Override
+    public HubJobBatchResponse createStatusSyncJobs(String username, OrderStatusSyncRequest request) {
+        HubUser user = findUserByUsername(username);
+        List<HubJobBatchResponse.JobResult> jobs = resolveStatusSyncChannelAccounts(user, request)
+                .stream()
+                .map(account -> createStatusSyncJob(user, account, request))
+                .collect(Collectors.toList());
+        return new HubJobBatchResponse(jobs);
+    }
     @Override
     public HubJobBatchResponse createScheduledBatchJobs(String username, Long scheduleRunId, HubJobBatchRequest request) {
         HubUser user = findUserByUsername(username);
@@ -146,6 +159,130 @@ public class HubJobServiceImpl implements HubJobService {
         return new HubJobBatchResponse.JobResult(requestId, mallKey, status);
     }
 
+    private HubJobBatchResponse.JobResult createStatusSyncJob(
+            HubUser user,
+            ChannelRow account,
+            OrderStatusSyncRequest request
+    ) {
+        if (!isMockMall(account.getMallKey())) {
+            throw new IllegalArgumentException("ORDER_STATUS_SYNC currently supports MOCK_MALL only");
+        }
+        String requestKey = buildStatusSyncRequestKey(account, request);
+        HubJob job = hubJobMapper.selectByRequestKey(requestKey);
+
+        if (job == null) {
+            job = HubJob.builder()
+                    .requestId(UUID.randomUUID().toString())
+                    .requestKey(requestKey)
+                    .jobType("ORDER_STATUS_SYNC")
+                    .sourceErp("HUB")
+                    .parentJobId(null)
+                    .correlationId(UUID.randomUUID().toString())
+                    .causationId(null)
+                    .schemaVersion("1.0")
+                    .payloadVersion("1.0")
+                    .channelCd(account.getMallKey())
+                    .status(HubJobStatus.QUEUED)
+                    .payload(serializeStatusSyncPayload(account, request, user))
+                    .retryCount(0)
+                    .build();
+            int inserted = hubJobMapper.insertJobIfAbsent(job);
+            if (inserted == 1) {
+                publishEvent(job);
+            } else {
+                job = hubJobMapper.selectByRequestKey(requestKey);
+                if (job == null) {
+                    throw new IllegalStateException("중복된 상태 동기화 작업이 발견되지 않았습니다.");
+                }
+            }
+        } else if (job.getStatus() != HubJobStatus.QUEUED && job.getStatus() != HubJobStatus.PROCESSING) {
+            String payload = serializeStatusSyncPayload(account, request, user);
+            job.setPayload(payload);
+            job.setStatus(HubJobStatus.QUEUED);
+            if (hubJobMapper.updateStatusToReset(requestKey, payload) != 1) {
+                throw new IllegalStateException("상태 동기화 작업 초기화가 현재 상태와 충돌했습니다.");
+            }
+            publishEvent(job);
+        }
+
+        return new HubJobBatchResponse.JobResult(
+                job.getRequestId(), account.getMallKey(), job.getStatus().name());
+    }
+
+    private String buildStatusSyncRequestKey(ChannelRow account, OrderStatusSyncRequest request) {
+        return "STATUS_SYNC_" + account.getId()
+                + "*" + account.getMallKey()
+                + "*" + request.frDt()
+                + "*" + request.toDt()
+                + "*" + statusTypesHash(request.statusTypes());
+    }
+
+    private String serializeStatusSyncPayload(
+            ChannelRow account,
+            OrderStatusSyncRequest request,
+            HubUser user
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", user.getId());
+        payload.put("corpId", user.getCorpId());
+        payload.put("channelAccountId", account.getId());
+        payload.put("mallKey", account.getMallKey());
+        payload.put("channelCd", account.getMallKey());
+        payload.put("frDt", request.frDt());
+        payload.put("toDt", request.toDt());
+        payload.put("statusTypes", request.statusTypes());
+        payload.put("syncMode", "RANGE");
+        payload.put("erpApplyEnabled", false);
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("failed to serialize status sync payload", exception);
+        }
+    }
+
+    private List<ChannelRow> resolveStatusSyncChannelAccounts(HubUser user, OrderStatusSyncRequest request) {
+        Map<Long, ChannelRow> resolved = new LinkedHashMap<>();
+        if (request.channelAccountIds() != null) {
+            request.channelAccountIds().forEach(channelAccountId -> {
+                ChannelRow account = channelMapper.findActiveByCorpIdAndId(user.getCorpId(), channelAccountId)
+                        .orElseThrow(() -> new ChannelNotFoundException(
+                                "channel account is not active: " + channelAccountId));
+                resolved.put(account.getId(), account);
+            });
+        }
+        if (request.mallKeys() != null) {
+            request.mallKeys().forEach(mallKey -> {
+                if (isMockMall(mallKey)) {
+                    ChannelRow account = ensureMockChannelAccount(user);
+                    resolved.put(account.getId(), account);
+                    return;
+                }
+                List<ChannelRow> accounts = channelMapper.findActiveByCorpIdAndMallKey(user.getCorpId(), mallKey);
+                if (accounts.isEmpty()) {
+                    throw new ChannelNotFoundException(mallKey + " channel has no active account");
+                }
+                accounts.forEach(account -> resolved.put(account.getId(), account));
+            });
+        }
+        if (resolved.isEmpty()) {
+            throw new IllegalArgumentException("mallKeys or channelAccountIds must not be empty");
+        }
+        return new ArrayList<>(resolved.values());
+    }
+
+    private String statusTypesHash(List<String> statusTypes) {
+        String source = statusTypes.stream()
+                .map(value -> value.trim().toUpperCase())
+                .sorted()
+                .collect(Collectors.joining(","));
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(source.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest).substring(0, 16);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is not available", exception);
+        }
+    }
     private HubJob buildNewJob(
             String requestKey,
             ChannelRow account,

@@ -111,11 +111,10 @@ export class CoupangApiClient {
   }
 }
 
-function buildQueryString(frDt: string, toDt: string, token?: string): string {
+export function buildQueryString(frDt: string, toDt: string, token?: string): string {
   const params = new URLSearchParams();
   params.set("createdAtFrom", `${toIsoDate(frDt)}T00:00`);
   params.set("createdAtTo", `${toIsoDate(toDt)}T23:59`);
-  params.set("status", "ACCEPT");
   params.set("searchType", "timeFrame");
   params.set("perPage", "100");
 
@@ -125,7 +124,6 @@ function buildQueryString(frDt: string, toDt: string, token?: string): string {
 
   return params.toString();
 }
-
 function createCoupangDatetime(): string {
   const now = new Date();
   const yy = pad2(now.getUTCFullYear() % 100);

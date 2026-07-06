@@ -56,14 +56,7 @@ export class GchanApiClient {
     let totalPages = 1;
 
     while (page <= totalPages) {
-      const params = {
-        startAt: toDateString(frDt),
-        endAt: toDateString(toDt),
-        page,
-        size: 100,
-        receivedStatus: "RECEIVED"
-      };
-
+            const params = buildGchanOrderParams(frDt, toDt, page);
       logger.debug({
         event: "GCHAN_API_REQUEST_STARTED",
         url: "/api/seller/sales/order/giftchance/recipients",
@@ -107,6 +100,14 @@ export class GchanApiClient {
   }
 }
 
+export function buildGchanOrderParams(frDt: string, toDt: string, page: number) {
+  return {
+    startAt: toDateString(frDt),
+    endAt: toDateString(toDt),
+    page,
+    size: 100
+  };
+}
 function normalizeOrder(raw: unknown): GchanOrder {
   const item = toRecord(raw);
 

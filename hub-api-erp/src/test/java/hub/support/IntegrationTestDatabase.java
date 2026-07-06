@@ -1,6 +1,9 @@
 package hub.support;
 
 import hub.external.schema.ExternalApiClientSchemaInitializer;
+import hub.erp.schema.ErpApplySchemaInitializer;
+import hub.erp.schema.ManualErpApplySchemaInitializer;
+import hub.job.schema.HubJobSchemaInitializer;
 import hub.order.schema.OrderNormalizeSchemaInitializer;
 import hub.schedule.schema.CollectScheduleSchemaInitializer;
 import hub.setting.schema.UserSettingSchemaInitializer;
@@ -56,9 +59,13 @@ public final class IntegrationTestDatabase {
         Long defaultCorpId = jdbcTemplate.queryForObject(
                 "SELECT id FROM hub_corp WHERE corp_cd = 'TEST-DEFAULT'", Long.class);
         jdbcTemplate.execute("ALTER TABLE users ALTER COLUMN corp_id SET DEFAULT " + defaultCorpId);
+        initializeJob(jdbcTemplate);
+        new HubJobSchemaInitializer(jdbcTemplate).initialize();
         new ExternalApiClientSchemaInitializer(jdbcTemplate).initialize();
         new CollectScheduleSchemaInitializer(jdbcTemplate).initialize();
         new OrderNormalizeSchemaInitializer(jdbcTemplate).initialize();
+        new ErpApplySchemaInitializer(jdbcTemplate).initialize();
+        new ManualErpApplySchemaInitializer(jdbcTemplate).initialize();
         new UserSettingSchemaInitializer(jdbcTemplate).initialize();
         initializeOutbox(jdbcTemplate);
     }
@@ -69,6 +76,27 @@ public final class IntegrationTestDatabase {
         } catch (Exception exception) {
             throw new IllegalStateException("failed to initialize test database from " + location, exception);
         }
+    }
+
+    private static void initializeJob(JdbcTemplate jdbcTemplate) {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS hub_job (
+                    id BIGSERIAL PRIMARY KEY,
+                    request_id VARCHAR(100) UNIQUE NOT NULL,
+                    request_key VARCHAR(200) UNIQUE,
+                    channel_cd VARCHAR(30),
+                    status VARCHAR(30) NOT NULL,
+                    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    retry_count INT NOT NULL DEFAULT 0,
+                    error_message TEXT,
+                    completed_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    job_type VARCHAR(100) NOT NULL DEFAULT 'ORDER_COLLECT',
+                    source_erp VARCHAR(100) NOT NULL DEFAULT 'HUB',
+                    next_retry_at TIMESTAMPTZ
+                )
+                """);
     }
 
     private static void initializeOutbox(JdbcTemplate jdbcTemplate) {

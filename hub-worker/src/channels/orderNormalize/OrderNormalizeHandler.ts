@@ -9,6 +9,7 @@ import {
 import type { IJobHandler, JobHandlerMessage } from "../../handlers/IJobHandler.js";
 import { logger } from "../../logger.js";
 import { NormalizerRegistry } from "./NormalizerRegistry.js";
+import { initialCollectionStatuses, isInitialCollectionStatus } from "./InitialOrderCollectionPolicy.js";
 import { firstNonBlank, isRecord, toStringValue } from "./normalizeUtils.js";
 import type { RawOrderContext } from "./types.js";
 
@@ -34,6 +35,7 @@ export class OrderNormalizeHandler implements IJobHandler {
     const context = buildContext(message, resultPayload, jobPayload, result);
     const normalizer = normalizerRegistry.get(context.channelCd);
     let normalizedCount = 0;
+    let statusSkippedCount = 0;
 
     // Normalize one raw order at a time so a channel mapper owns only field
     // translation, while persistence/idempotency stays centralized here.
@@ -54,6 +56,19 @@ export class OrderNormalizeHandler implements IJobHandler {
         continue;
       }
 
+      if (!isInitialCollectionStatus(normalized.orderStatus)) {
+        statusSkippedCount += 1;
+        logger.info({
+          event: "ORDER_NORMALIZE_STATUS_SKIPPED",
+          requestId: message.requestId,
+          sourceRequestId,
+          channelCd: context.channelCd,
+          channelOrderId: normalized.channelOrderId,
+          orderStatus: normalized.orderStatus,
+          allowedStatuses: initialCollectionStatuses()
+        }, "Order skipped by initial collection status policy");
+        continue;
+      }
       const orderId = await upsertNormalizedOrder({
         corpId: context.corpId,
         channelAccountId: context.channelAccountId,
@@ -132,6 +147,8 @@ export class OrderNormalizeHandler implements IJobHandler {
       channelCd: context.channelCd,
       detail: {
         sourceRequestId,
+        fetchedCount: orders.length,
+        statusSkippedCount,
         normalizedCount,
         normalizer: normalizer.constructor.name
       }
@@ -142,6 +159,8 @@ export class OrderNormalizeHandler implements IJobHandler {
       requestId: message.requestId,
       sourceRequestId,
       channelCd: context.channelCd,
+      fetchedCount: orders.length,
+      statusSkippedCount,
       normalizedCount,
       normalizer: normalizer.constructor.name
     }, "Order normalize completed");

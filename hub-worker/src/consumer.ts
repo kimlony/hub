@@ -24,6 +24,7 @@ import { ElevenStOrderHandler } from "./channels/elevenst/ElevenStOrderHandler.j
 import { NaverRssCrawlHandler } from "./channels/naverRss/NaverRssCrawlHandler.js";
 import { NfaOrderHandler } from "./channels/nfa/NfaOrderHandler.js";
 import { MockMallOrderHandler } from "./channels/mockMall/MockMallOrderHandler.js";
+import { OrderStatusSyncHandler } from "./channels/orderStatusSync/OrderStatusSyncHandler.js";
 import { OrderNormalizeHandler } from "./channels/orderNormalize/OrderNormalizeHandler.js";
 import { TestSleepHandler } from "./channels/test/TestSleepHandler.js";
 import { ErpApplyHandler } from "./channels/erp/ErpApplyHandler.js";
@@ -63,6 +64,7 @@ registry.register("ORDER_COLLECT", new GodoOrderHandler(), "GODO");
 registry.register("ORDER_COLLECT", new CoupangOrderHandler(), "COUPANG");
 registry.register("ORDER_COLLECT", new NfaOrderHandler(), "NSS");
 registry.register("ORDER_COLLECT", new MockMallOrderHandler(), "MOCK_MALL");
+registry.register("ORDER_STATUS_SYNC", new OrderStatusSyncHandler(), "MOCK_MALL");
 registry.register("CRAWL", new DartCrawlHandler(), "DART");
 registry.register("CRAWL", new NaverRssCrawlHandler(), "NAVER_RSS");
 registry.register("ORDER_NORMALIZE", new OrderNormalizeHandler());
@@ -440,7 +442,7 @@ async function prepareJobMessage(jobMessage: HubJobMessage): Promise<HubJobMessa
 
 async function runRegisteredHandler(jobMessage: HubJobMessage, requestId: string): Promise<boolean | null> {
   const lockKey = resolveJobLockKey(jobMessage);
-  if (!lockKey || getChannelCd(jobMessage) === "MOCK_MALL") {
+  if (!lockKey || (jobMessage.jobType === "ORDER_COLLECT" && getChannelCd(jobMessage) === "MOCK_MALL")) {
     return executeRegisteredHandler(jobMessage, requestId);
   }
   const lockAcquired = await tryAcquireJobLock(lockKey, requestId);
@@ -545,7 +547,8 @@ async function executeRegisteredHandler(jobMessage: HubJobMessage, requestId: st
 }
 
 function requiresChannelCredentials(jobMessage: HubJobMessage): boolean {
-  return jobMessage.jobType === "ORDER_COLLECT" && getChannelCd(jobMessage) !== "MOCK_MALL";
+  return (jobMessage.jobType === "ORDER_COLLECT" || jobMessage.jobType === "ORDER_STATUS_SYNC")
+    && getChannelCd(jobMessage) !== "MOCK_MALL";
 }
 
 async function enrichWithChannelCredentials(jobMessage: HubJobMessage): Promise<HubJobMessage> {

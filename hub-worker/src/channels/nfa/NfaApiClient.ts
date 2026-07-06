@@ -49,16 +49,9 @@ export class NfaApiClient {
           headers: {
             Authorization: `Bearer ${token}`
           },
-          params: {
-            from: `${day}T00:00:00.000+09:00`,
-            to: `${day}T23:59:59.999+09:00`,
-            rangeType: "ORDERED_DATETIME",
-            fulfillment: "true",
-            productOrderStatuses: "PAY_DONE"
-          }
+                    params: buildNfaOrderParams(day)
         }
       );
-
       rawOrders.push(...(response.data.data?.contents ?? []));
     }
 
@@ -96,6 +89,14 @@ export class NfaApiClient {
   }
 }
 
+export function buildNfaOrderParams(day: string) {
+  return {
+    from: `${day}T00:00:00.000+09:00`,
+    to: `${day}T23:59:59.999+09:00`,
+    rangeType: "ORDERED_DATETIME",
+    fulfillment: "true"
+  };
+}
 function getSignature(clientId: string, clientSecret: string, timestamp: string): string {
   const password = `${clientId}_${timestamp}`;
   const hashedPassword = bcrypt.hashSync(password, clientSecret);

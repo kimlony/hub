@@ -1,6 +1,7 @@
 package hub.order.dto.response;
 
 public record OrderExportItem(
+        Long normalizedOrderId,
         String requestId,
         String requestKey,
         String jobType,

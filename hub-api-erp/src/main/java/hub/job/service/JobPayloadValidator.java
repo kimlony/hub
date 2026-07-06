@@ -22,6 +22,17 @@ public class JobPayloadValidator {
                 require(payload, "mallKey");
                 require(payload, "userId");
             }
+            case "ORDER_STATUS_SYNC" -> {
+                require(payload, "userId");
+                require(payload, "corpId");
+                require(payload, "channelAccountId");
+                require(payload, "mallKey");
+                require(payload, "channelCd");
+                require(payload, "frDt");
+                require(payload, "toDt");
+                require(payload, "statusTypes");
+                require(payload, "syncMode");
+            }
             case "ORDER_NORMALIZE" -> {
                 require(payload, "sourceRequestId");
                 require(payload, "channelCd");

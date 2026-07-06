@@ -119,6 +119,7 @@ public class OrderExportServiceImpl implements OrderExportService {
         // from the channel-independent order model.
         String sql = """
                 SELECT
+                    o.id AS normalized_order_id,
                     o.request_id,
                     o.request_key,
                     'ORDER_COLLECT' AS job_type,
@@ -155,6 +156,7 @@ public class OrderExportServiceImpl implements OrderExportService {
         return jdbcTemplate.query(
                 sql,
                 (rs, rowNum) -> new OrderExportItem(
+                        rs.getLong("normalized_order_id"),
                         rs.getString("request_id"),
                         rs.getString("request_key"),
                         rs.getString("job_type"),

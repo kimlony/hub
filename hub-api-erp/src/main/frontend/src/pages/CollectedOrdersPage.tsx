@@ -1,8 +1,11 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import Layout from '../components/Layout'
 import { useAuthenticatedFetch } from '../hooks/useAuthenticatedFetch'
+import { ErpConnection, fetchErpConnections } from '../api/manualErp'
+import ManualErpApplyModal from '../components/ManualErpApplyModal'
 
 type CollectedOrder = {
+  normalizedOrderId: number
   requestId: string
   requestKey: string
   jobType: string
@@ -81,6 +84,9 @@ export default function CollectedOrdersPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
   const [detailOrder, setDetailOrder] = useState<CollectedOrder | null>(null)
+  const [erpConnections, setErpConnections] = useState<ErpConnection[]>([])
+  const [showManualErpApply, setShowManualErpApply] = useState(false)
+  const [manualApplyMessage, setManualApplyMessage] = useState<string | null>(null)
 
   const fetchOrders = useCallback(async () => {
     setLoading(true)
@@ -120,6 +126,18 @@ export default function CollectedOrdersPage() {
       }
     }
     void fetchChannels()
+  }, [authenticatedFetch])
+
+  useEffect(() => {
+    async function loadErpConnections() {
+      try {
+          const connections = await fetchErpConnections(authenticatedFetch);
+          setErpConnections(connections);
+      } catch {
+        setErpConnections([])
+      }
+    }
+    void loadErpConnections()
   }, [authenticatedFetch])
 
   const channelOptions = useMemo(() => {
@@ -182,6 +200,20 @@ export default function CollectedOrdersPage() {
       }
     >
       {detailOrder && <OrderDetailModal order={detailOrder} onClose={() => setDetailOrder(null)} />}
+      {showManualErpApply && (
+        <ManualErpApplyModal
+          selectedOrderIds={[...selectedKeys].map(Number)}
+          connections={erpConnections}
+          authenticatedFetch={authenticatedFetch}
+          onClose={() => setShowManualErpApply(false)}
+          onApplied={(message) => {
+            setManualApplyMessage(message)
+            setSelectedKeys(new Set())
+            setShowManualErpApply(false)
+            void fetchOrders()
+          }}
+        />
+      )}
 
       <form onSubmit={submitFilters} className="mb-4 flex flex-wrap items-end gap-3 border-b border-slate-200 pb-4">
         <FilterField label="채널">
@@ -242,7 +274,22 @@ export default function CollectedOrdersPage() {
           <span className="h-3 w-px bg-slate-200" />
           <span>선택 <strong className="text-[#3182F6]">{selectedKeys.size}</strong>건</span>
         </div>
-        <span className="text-[11px] text-[#8B95A1]">페이지당 {PAGE_SIZE}건</span>
+        <div className="flex items-center gap-3">
+          {manualApplyMessage && <span className="text-[11px] font-semibold text-emerald-700">{manualApplyMessage}</span>}
+          <button
+            type="button"
+            onClick={() => {
+              setManualApplyMessage(null)
+              setShowManualErpApply(true)
+            }}
+            disabled={selectedKeys.size === 0 || erpConnections.length === 0}
+            title={erpConnections.length === 0 ? '활성 ERP 연결 설정이 필요합니다.' : undefined}
+            className="h-9 rounded-lg bg-[#3182F6] px-4 text-[12px] font-bold text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ERP 수동 전송
+          </button>
+          <span className="text-[11px] text-[#8B95A1]">페이지당 {PAGE_SIZE}건</span>
+        </div>
       </div>
 
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -376,7 +423,7 @@ function DetailValue({ label, value }: { label: string; value: string }) {
 }
 
 function orderKey(order: CollectedOrder): string {
-  return `${order.requestId}:${order.channelCd}:${order.orderNo}`
+  return String(order.normalizedOrderId)
 }
 
 function toCompactDate(value: string): string {

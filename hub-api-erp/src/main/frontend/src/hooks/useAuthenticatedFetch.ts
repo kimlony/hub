@@ -19,14 +19,14 @@ export function useAuthenticatedFetch() {
       headers,
     })
 
-    if (response.status === 401) {
+    if (response.status === 401 || response.status === 403) {
       logout()
       if (!authExpiredAlertShown) {
         authExpiredAlertShown = true
-        alert('Login has expired. Please sign in again.')
+        alert('로그인 세션이 만료되었습니다. 다시 로그인해주세요.')
       }
       navigate('/login', { replace: true })
-      throw new Error('Authentication required')
+      throw new Error('인증실패: 로그인 세션이 만료되었습니다.')
     }
 
     return response

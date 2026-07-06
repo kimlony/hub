@@ -440,6 +440,52 @@ class HubJobServiceImplTest {
     }
 
     @Test
+    void retryRejectsQueuedJobWithoutCreatingOutbox() {
+        HubJob queuedJob = HubJob.builder()
+                .requestId("queued-request-id")
+                .requestKey("queued-request-key")
+                .jobType("ORDER_COLLECT")
+                .status(HubJobStatus.QUEUED)
+                .build();
+        when(hubJobMapper.selectByRequestId("queued-request-id")).thenReturn(queuedJob);
+
+        assertThatThrownBy(() -> service().retryJob("queued-request-id"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Only FAILED jobs can be retried");
+
+        verify(hubJobMapper, never()).resetFailedJobForRetry(any(String.class), any(String.class));
+        verify(jobOutboxService, never()).findLatestPartitionKey(any(String.class));
+        verify(jobOutboxService, never()).enqueue(any(HubJobEvent.class));
+    }
+
+    @Test
+    void retryInvalidPayloadDoesNotResetJobOrCreateOutbox() {
+        HubJob failedJob = HubJob.builder()
+                .requestId("invalid-normalize-request-id")
+                .requestKey("NORMALIZE_collect-invalid")
+                .jobType("ORDER_NORMALIZE")
+                .sourceErp("HUB")
+                .parentJobId("collect-invalid")
+                .correlationId("correlation-invalid")
+                .causationId("collect-invalid")
+                .schemaVersion("1.0")
+                .payloadVersion("1.0")
+                .channelCd("GODO")
+                .status(HubJobStatus.FAILED)
+                .payload("{\"channelCd\":\"GODO\"}")
+                .build();
+        when(hubJobMapper.selectByRequestId("invalid-normalize-request-id")).thenReturn(failedJob);
+
+        assertThatThrownBy(() -> service().retryJob("invalid-normalize-request-id"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("sourceRequestId is required for retry");
+
+        verify(hubJobMapper, never()).resetFailedJobForRetry(any(String.class), any(String.class));
+        verify(jobOutboxService, never()).findLatestPartitionKey(any(String.class));
+        verify(jobOutboxService, never()).enqueue(any(HubJobEvent.class));
+    }
+
+    @Test
     void retryOrderNormalizePreservesEnvelopePayloadAndPartitionKey() {
         HubJobServiceImpl service = service();
         String originalPayload = """
@@ -511,11 +557,17 @@ class HubJobServiceImplTest {
         ArgumentCaptor<HubJobEvent> eventCaptor = ArgumentCaptor.forClass(HubJobEvent.class);
         verify(jobOutboxService).enqueue(eventCaptor.capture(), eq("erp-connection:100:MOCK-100"));
         HubJobEvent event = eventCaptor.getValue();
+        assertThat(event.requestId()).isEqualTo("erp-apply-001");
+        assertThat(event.requestKey()).isEqualTo("ERP_APPLY_normalize-001");
         assertThat(event.jobType()).isEqualTo("ERP_APPLY");
         assertThat(event.parentJobId()).isEqualTo("normalize-001");
         assertThat(event.correlationId()).isEqualTo("correlation-001");
+        assertThat(event.causationId()).isEqualTo("normalize-001");
+        assertThat(event.schemaVersion()).isEqualTo("1.0");
+        assertThat(event.payloadVersion()).isEqualTo("1.0");
         assertThat(event.payload()).containsEntry("idempotencyKey", "erp-key-001");
         assertThat(event.payload()).containsEntry("mockFail", true);
+        verify(hubJobMapper).resetFailedJobForRetry(failedJob.getRequestKey(), payload);
     }
 
     @Test

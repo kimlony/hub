@@ -69,6 +69,7 @@ const PAGE_SIZE = 20
 
 const JOB_TYPE_LABELS: Record<string, string> = {
   ORDER_COLLECT: '주문수집',
+  ORDER_STATUS_SYNC: '주문상태 동기화',
   ORDER_NORMALIZE: '데이터 정제화',
   ERP_APPLY: 'ERP 반영',
 }

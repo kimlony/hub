@@ -1,6 +1,7 @@
 package hub.job.controller;
 
 import hub.job.dto.request.HubJobBatchRequest;
+import hub.job.dto.request.OrderStatusSyncRequest;
 import hub.job.dto.response.HubDashboardResponse;
 import hub.job.dto.response.HubJobBatchResponse;
 import hub.job.dto.response.HubJobDetailResponse;
@@ -33,6 +34,14 @@ public class HubJobController {
             @Valid @RequestBody HubJobBatchRequest request
     ) {
         return ResponseEntity.ok(hubJobService.createBatchJobs(username, request));
+    }
+
+    @PostMapping("/status-sync")
+    public ResponseEntity<HubJobBatchResponse> createStatusSyncJobs(
+            @AuthenticationPrincipal String username,
+            @Valid @RequestBody OrderStatusSyncRequest request
+    ) {
+        return ResponseEntity.ok(hubJobService.createStatusSyncJobs(username, request));
     }
 
     @GetMapping

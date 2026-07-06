@@ -20,27 +20,43 @@ export const HubJobMessageSchema = z.object({
   payloadVersion: z.string().optional(),
   payload: HubJobPayloadSchema
 }).superRefine((message, ctx) => {
-  if (message.jobType !== "ORDER_COLLECT") {
-    return;
-  }
-
-  if (!message.payload.mallKey) {
+  if ((message.jobType === "ORDER_COLLECT" || message.jobType === "ORDER_STATUS_SYNC")
+      && !message.payload.mallKey) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["payload", "mallKey"],
-      message: "mallKey is required for ORDER_COLLECT"
+      message: `mallKey is required for ${message.jobType}`
     });
   }
 
-  if (message.payload.userId === undefined) {
+  if ((message.jobType === "ORDER_COLLECT" || message.jobType === "ORDER_STATUS_SYNC")
+      && message.payload.userId === undefined) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["payload", "userId"],
-      message: "userId is required for ORDER_COLLECT"
+      message: `userId is required for ${message.jobType}`
     });
   }
-});
 
+  if (message.jobType === "ORDER_STATUS_SYNC") {
+    for (const field of ["corpId", "channelAccountId", "frDt", "toDt", "syncMode"] as const) {
+      if (message.payload[field] === undefined || message.payload[field] === "") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["payload", field],
+          message: `${field} is required for ORDER_STATUS_SYNC`
+        });
+      }
+    }
+    if (!Array.isArray(message.payload.statusTypes) || message.payload.statusTypes.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["payload", "statusTypes"],
+        message: "statusTypes is required for ORDER_STATUS_SYNC"
+      });
+    }
+  }
+});
 export type HubJobMessageInput = z.infer<typeof HubJobMessageSchema>;
 
 export const CollectRequestPayloadSchema = z.object({

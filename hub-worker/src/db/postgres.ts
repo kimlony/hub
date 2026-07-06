@@ -477,6 +477,29 @@ async function ensurePostgresSchemaUnlocked(): Promise<void> {
     )
   `);
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_order_status_history (
+      id BIGSERIAL PRIMARY KEY,
+      request_id VARCHAR(100) NOT NULL,
+      order_id BIGINT NOT NULL REFERENCES hub_collected_order(id) ON DELETE CASCADE,
+      before_order_status VARCHAR(80),
+      after_order_status VARCHAR(80),
+      before_claim_status VARCHAR(80),
+      after_claim_status VARCHAR(80),
+      before_delivery_status VARCHAR(80),
+      after_delivery_status VARCHAR(80),
+      raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_hub_order_status_history_order_synced
+    ON hub_order_status_history(order_id, synced_at DESC)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_hub_order_status_history_request
+    ON hub_order_status_history(request_id)
+  `);
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS hub_erp_apply_result (
       id BIGSERIAL PRIMARY KEY,
       request_id VARCHAR(100) NOT NULL,
@@ -1335,6 +1358,178 @@ export async function saveNormalizeCheckpoint(input: {
   );
 }
 
+export type OrderStatusSyncTarget = {
+  channelOrderId: string;
+  orderStatus: string | null;
+};
+
+export async function findOrdersForStatusSync(input: {
+  channelAccountId: number;
+  from: Date;
+  toExclusive: Date;
+}): Promise<OrderStatusSyncTarget[]> {
+  const result = await pool.query<{
+    channel_order_id: string;
+    order_status: string | null;
+  }>(
+    `
+      SELECT channel_order_id, order_status
+      FROM hub_collected_order
+      WHERE channel_account_id = $1
+        AND order_date >= $2
+        AND order_date < $3
+      ORDER BY id
+    `,
+    [input.channelAccountId, input.from, input.toExclusive]
+  );
+  return result.rows.map((row) => ({
+    channelOrderId: row.channel_order_id,
+    orderStatus: row.order_status
+  }));
+}
+export type OrderStatusUpdate = {
+  channelOrderId: string;
+  orderStatus?: string | null;
+  claimStatus?: string | null;
+  deliveryStatus?: string | null;
+  deliveryCompany?: string | null;
+  trackingNumber?: string | null;
+  rawPayload: Record<string, unknown>;
+};
+
+export type OrderStatusUpdateResult = {
+  fetchedCount: number;
+  updatedCount: number;
+  skippedCount: number;
+};
+
+export async function applyOrderStatusUpdates(input: {
+  requestId: string;
+  channelAccountId: number;
+  updates: OrderStatusUpdate[];
+}): Promise<OrderStatusUpdateResult> {
+  const client = await pool.connect();
+  let updatedCount = 0;
+  let skippedCount = 0;
+  try {
+    await client.query("BEGIN");
+    for (const update of input.updates) {
+      const orderResult = await client.query<{
+        id: number;
+        order_status: string | null;
+        claim_status: string | null;
+      }>(
+        `
+          SELECT id, order_status, claim_status
+          FROM hub_collected_order
+          WHERE channel_account_id = $1 AND channel_order_id = $2
+          FOR UPDATE
+        `,
+        [input.channelAccountId, update.channelOrderId]
+      );
+      const order = orderResult.rows[0];
+      if (!order) {
+        skippedCount += 1;
+        continue;
+      }
+
+      const deliveryResult = await client.query<{
+        delivery_status: string | null;
+        delivery_company: string | null;
+        tracking_number: string | null;
+      }>(
+        `
+          SELECT delivery_status, delivery_company, tracking_number
+          FROM hub_collected_order_delivery
+          WHERE order_id = $1
+          FOR UPDATE
+        `,
+        [order.id]
+      );
+      const delivery = deliveryResult.rows[0];
+      const nextOrderStatus = update.orderStatus === undefined ? order.order_status : update.orderStatus;
+      const nextClaimStatus = update.claimStatus === undefined ? order.claim_status : update.claimStatus;
+      const nextDeliveryStatus = update.deliveryStatus === undefined
+        ? delivery?.delivery_status ?? null
+        : update.deliveryStatus;
+      const nextDeliveryCompany = update.deliveryCompany === undefined
+        ? delivery?.delivery_company ?? null
+        : update.deliveryCompany;
+      const nextTrackingNumber = update.trackingNumber === undefined
+        ? delivery?.tracking_number ?? null
+        : update.trackingNumber;
+
+      const changed = order.order_status !== nextOrderStatus
+        || order.claim_status !== nextClaimStatus
+        || (delivery?.delivery_status ?? null) !== nextDeliveryStatus
+        || (delivery?.delivery_company ?? null) !== nextDeliveryCompany
+        || (delivery?.tracking_number ?? null) !== nextTrackingNumber;
+      if (!changed) {
+        skippedCount += 1;
+        continue;
+      }
+
+      await client.query(
+        `
+          UPDATE hub_collected_order
+          SET order_status = $1,
+              claim_status = $2,
+              updated_at = NOW()
+          WHERE id = $3
+        `,
+        [nextOrderStatus, nextClaimStatus, order.id]
+      );
+
+      if (delivery || nextDeliveryStatus !== null || nextDeliveryCompany !== null || nextTrackingNumber !== null) {
+        await client.query(
+          `
+            INSERT INTO hub_collected_order_delivery (
+              order_id, delivery_status, delivery_company, tracking_number, raw_payload
+            ) VALUES ($1, $2, $3, $4, $5::jsonb)
+            ON CONFLICT (order_id) DO UPDATE
+              SET delivery_status = EXCLUDED.delivery_status,
+                  delivery_company = EXCLUDED.delivery_company,
+                  tracking_number = EXCLUDED.tracking_number,
+                  updated_at = NOW()
+          `,
+          [order.id, nextDeliveryStatus, nextDeliveryCompany, nextTrackingNumber,
+            JSON.stringify(update.rawPayload)]
+        );
+      }
+
+      await client.query(
+        `
+          INSERT INTO hub_order_status_history (
+            request_id, order_id,
+            before_order_status, after_order_status,
+            before_claim_status, after_claim_status,
+            before_delivery_status, after_delivery_status,
+            raw_payload, synced_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, NOW())
+        `,
+        [
+          input.requestId,
+          order.id,
+          order.order_status,
+          nextOrderStatus,
+          order.claim_status,
+          nextClaimStatus,
+          delivery?.delivery_status ?? null,
+          nextDeliveryStatus,
+          JSON.stringify(update.rawPayload)
+        ]
+      );
+      updatedCount += 1;
+    }
+    await client.query("COMMIT");
+    return { fetchedCount: input.updates.length, updatedCount, skippedCount };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 export async function upsertNormalizedOrder(input: {
   corpId: number;
   channelAccountId: number;
