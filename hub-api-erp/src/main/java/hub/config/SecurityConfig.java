@@ -44,6 +44,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/hub/erp/**").authenticated()
                 .requestMatchers("/api/hub/settings/**").authenticated()
                 .requestMatchers("/api/hub/schedules/**").authenticated()
+                .requestMatchers("/api/hub/status-sync-schedules/**").authenticated()
                 .requestMatchers("/api/hub/orders/**").authenticated()
                 .requestMatchers("/api/hub/external/**").authenticated()
                 .requestMatchers("/api/hub/notices/**").authenticated()

@@ -5,9 +5,11 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Pattern;
 import java.util.List;
 
-public record CollectScheduleRequest(
+public record OrderStatusSyncScheduleRequest(
         @NotBlank String scheduleName,
-        @NotEmpty List<@NotBlank String> mallKeys,
+        List<@NotBlank String> mallKeys,
+        List<Long> channelAccountIds,
+        @NotEmpty List<@NotBlank String> statusTypes,
         String scheduleMode,
         Integer intervalHours,
         @NotBlank String dateRangeType,

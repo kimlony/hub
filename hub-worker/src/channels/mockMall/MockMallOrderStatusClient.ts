@@ -1,27 +1,7 @@
-import type { OrderStatusSyncTarget } from "../../db/postgres.js";
-
-export type MockMallOrderStatus = {
-  channelOrderId: string;
-  orderStatus: string;
-  claimStatus?: string | null;
-  deliveryStatus?: string | null;
-  deliveryCompany?: string | null;
-  trackingNumber?: string | null;
-  rawPayload: Record<string, unknown>;
-};
-
-export interface OrderStatusClient {
-  fetchOrderStatuses(input: {
-    targets: OrderStatusSyncTarget[];
-    statusTypes: string[];
-  }): Promise<MockMallOrderStatus[]>;
-}
+import type { OrderStatusCandidate, OrderStatusClient, OrderStatusFetchInput } from "../orderStatusSync/OrderStatusClient.js";
 
 export class MockMallOrderStatusClient implements OrderStatusClient {
-  async fetchOrderStatuses(input: {
-    targets: OrderStatusSyncTarget[];
-    statusTypes: string[];
-  }): Promise<MockMallOrderStatus[]> {
+  async fetchOrderStatuses(input: OrderStatusFetchInput): Promise<OrderStatusCandidate[]> {
     return input.targets.map((target) => {
       const cancelled = stableNumber(target.channelOrderId) % 2 === 0;
       const orderStatus = cancelled ? "CANCELLED" : "SHIPPED";

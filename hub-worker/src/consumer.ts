@@ -64,7 +64,7 @@ registry.register("ORDER_COLLECT", new GodoOrderHandler(), "GODO");
 registry.register("ORDER_COLLECT", new CoupangOrderHandler(), "COUPANG");
 registry.register("ORDER_COLLECT", new NfaOrderHandler(), "NSS");
 registry.register("ORDER_COLLECT", new MockMallOrderHandler(), "MOCK_MALL");
-registry.register("ORDER_STATUS_SYNC", new OrderStatusSyncHandler(), "MOCK_MALL");
+registry.register("ORDER_STATUS_SYNC", new OrderStatusSyncHandler());
 registry.register("CRAWL", new DartCrawlHandler(), "DART");
 registry.register("CRAWL", new NaverRssCrawlHandler(), "NAVER_RSS");
 registry.register("ORDER_NORMALIZE", new OrderNormalizeHandler());

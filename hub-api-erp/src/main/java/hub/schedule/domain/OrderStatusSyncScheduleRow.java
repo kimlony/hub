@@ -7,12 +7,14 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class CollectScheduleRow {
+public class OrderStatusSyncScheduleRow {
     private Long id;
     private Long userId;
     private String username;
     private String scheduleName;
     private String mallKeysJson;
+    private String channelAccountIdsJson;
+    private String statusTypesJson;
     private String dateRangeType;
     private LocalTime runTime;
     private String runTimeText;

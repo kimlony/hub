@@ -50,6 +50,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class HubJobServiceImpl implements HubJobService {
 
+    private static final List<String> STATUS_SYNC_SUPPORTED_MALL_KEYS = List.of(
+            "MOCK_MALL", "11ST", "COUPANG", "GODO", "GCHAN", "WCHAN", "ONRY"
+    );
+
     private final HubJobMapper hubJobMapper;
 //    private final JobEventPort jobEventPort;
 //  Kafka 직접 발행 대신 Outbox에 이벤트를 저장하고, OutboxPublisher가 Kafka 발행을 담당한다.
@@ -164,8 +168,8 @@ public class HubJobServiceImpl implements HubJobService {
             ChannelRow account,
             OrderStatusSyncRequest request
     ) {
-        if (!isMockMall(account.getMallKey())) {
-            throw new IllegalArgumentException("ORDER_STATUS_SYNC currently supports MOCK_MALL only");
+        if (!isStatusSyncSupportedMall(account.getMallKey())) {
+            throw new IllegalArgumentException("ORDER_STATUS_SYNC is not supported for mall: " + account.getMallKey());
         }
         String requestKey = buildStatusSyncRequestKey(account, request);
         HubJob job = hubJobMapper.selectByRequestKey(requestKey);
@@ -811,6 +815,10 @@ public class HubJobServiceImpl implements HubJobService {
 
     private boolean isMockMall(String mallKey) {
         return "MOCK_MALL".equals(mallKey);
+    }
+
+    private boolean isStatusSyncSupportedMall(String mallKey) {
+        return STATUS_SYNC_SUPPORTED_MALL_KEYS.contains(mallKey);
     }
 
     private void putIfNotNull(Map<String, Object> payload, String key, Object value) {

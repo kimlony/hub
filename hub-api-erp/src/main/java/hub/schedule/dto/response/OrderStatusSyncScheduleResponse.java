@@ -2,10 +2,12 @@ package hub.schedule.dto.response;
 
 import java.util.List;
 
-public record CollectScheduleResponse(
+public record OrderStatusSyncScheduleResponse(
         Long id,
         String scheduleName,
         List<String> mallKeys,
+        List<Long> channelAccountIds,
+        List<String> statusTypes,
         String scheduleMode,
         Integer intervalHours,
         String dateRangeType,

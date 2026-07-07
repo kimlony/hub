@@ -72,9 +72,11 @@ public class CollectScheduleServiceImpl implements CollectScheduleService {
         row.setScheduleName(request.scheduleName().trim());
         row.setMallKeysJson(toJson(request.mallKeys()));
         row.setDateRangeType(normalizeDateRangeType(request.dateRangeType()));
+        row.setScheduleMode(normalizeScheduleMode(request.scheduleMode()));
+        row.setIntervalHours(normalizeIntervalHours(row.getScheduleMode(), request.intervalHours()));
         row.setRunTime(LocalTime.parse(request.runTime()));
         row.setEnabledYn(normalizeEnabledYn(request.enabledYn()));
-        row.setNextRunAtValue(nextDailyRun(LocalDateTime.now(), row.getRunTime()));
+        row.setNextRunAtValue(nextRunAtFor(row, LocalDateTime.now()));
         collectScheduleMapper.insert(row);
 
         return toResponse(collectScheduleMapper.findByUserIdAndId(user.getId(), row.getId()));
@@ -93,9 +95,11 @@ public class CollectScheduleServiceImpl implements CollectScheduleService {
         row.setScheduleName(request.scheduleName().trim());
         row.setMallKeysJson(toJson(request.mallKeys()));
         row.setDateRangeType(normalizeDateRangeType(request.dateRangeType()));
+        row.setScheduleMode(normalizeScheduleMode(request.scheduleMode()));
+        row.setIntervalHours(normalizeIntervalHours(row.getScheduleMode(), request.intervalHours()));
         row.setRunTime(LocalTime.parse(request.runTime()));
         row.setEnabledYn(normalizeEnabledYn(request.enabledYn()));
-        row.setNextRunAtValue(nextDailyRun(LocalDateTime.now(), row.getRunTime()));
+        row.setNextRunAtValue(nextRunAtFor(row, LocalDateTime.now()));
         collectScheduleMapper.update(row);
 
         return toResponse(collectScheduleMapper.findByUserIdAndId(user.getId(), id));
@@ -106,12 +110,11 @@ public class CollectScheduleServiceImpl implements CollectScheduleService {
     public void updateEnabled(String username, Long id, CollectScheduleEnabledRequest request) {
         HubUser user = findUser(username);
         CollectScheduleRow existing = ensureScheduleExists(user.getId(), id);
-        LocalTime runTime = parseRunTime(existing);
         collectScheduleMapper.updateEnabled(
                 user.getId(),
                 id,
                 normalizeEnabledYn(request.enabledYn()),
-                nextDailyRun(LocalDateTime.now(), runTime)
+                nextRunAtFor(existing, LocalDateTime.now())
         );
     }
 
@@ -137,8 +140,7 @@ public class CollectScheduleServiceImpl implements CollectScheduleService {
     }
 
     private void runSchedule(CollectScheduleRow schedule) {
-        LocalTime runTime = parseRunTime(schedule);
-        LocalDateTime nextRunAt = nextDailyRun(LocalDateTime.now(), runTime);
+        LocalDateTime nextRunAt = nextRunAtFor(schedule, LocalDateTime.now());
         HubJobBatchRequest request = toJobRequest(schedule);
         CollectScheduleRunLogRow runLog = buildRunLog(schedule, request);
         collectScheduleMapper.insertRunLog(runLog);
@@ -223,7 +225,32 @@ public class CollectScheduleServiceImpl implements CollectScheduleService {
         };
     }
 
-    private String normalizeEnabledYn(String value) {
+private String normalizeScheduleMode(String value) {
+        String normalized = value == null || value.isBlank() ? "FIXED_TIME" : value.trim().toUpperCase();
+        return switch (normalized) {
+            case "FIXED_TIME", "INTERVAL" -> normalized;
+            default -> throw new IllegalArgumentException("invalid scheduleMode: " + value);
+        };
+    }
+
+    private Integer normalizeIntervalHours(String scheduleMode, Integer intervalHours) {
+        if (!"INTERVAL".equals(scheduleMode)) {
+            return null;
+        }
+        if (intervalHours == null || intervalHours < 1 || intervalHours > 24) {
+            throw new IllegalArgumentException("intervalHours must be between 1 and 24");
+        }
+        return intervalHours;
+    }
+
+    private LocalDateTime nextRunAtFor(CollectScheduleRow row, LocalDateTime now) {
+        if ("INTERVAL".equals(normalizeScheduleMode(row.getScheduleMode()))) {
+            return now.plusHours(normalizeIntervalHours("INTERVAL", row.getIntervalHours()));
+        }
+        return nextDailyRun(now, parseRunTime(row));
+    }
+
+private String normalizeEnabledYn(String value) {
         return "N".equalsIgnoreCase(value) ? "N" : "Y";
     }
 
@@ -263,6 +290,8 @@ public class CollectScheduleServiceImpl implements CollectScheduleService {
                 row.getId(),
                 row.getScheduleName(),
                 fromJson(row.getMallKeysJson()),
+                normalizeScheduleMode(row.getScheduleMode()),
+                row.getIntervalHours(),
                 row.getDateRangeType(),
                 row.getRunTimeText() != null ? row.getRunTimeText().substring(0, 5) : row.getRunTime().toString(),
                 row.getEnabledYn(),

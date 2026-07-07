@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
-<mapper namespace="hub.schedule.mapper.CollectScheduleMapper">
+<mapper namespace="hub.schedule.mapper.OrderStatusSyncScheduleMapper">
 
     <sql id="scheduleColumns">
         s.id,
@@ -10,6 +10,8 @@
         u.username,
         s.schedule_name,
         s.mall_keys::text AS mall_keys_json,
+        s.channel_account_ids::text AS channel_account_ids_json,
+        s.status_types::text AS status_types_json,
         COALESCE(s.schedule_mode, 'FIXED_TIME') AS schedule_mode,
         s.interval_hours,
         s.date_range_type,
@@ -23,15 +25,15 @@
         to_char(s.updated_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS updated_at
     </sql>
 
-    <select id="findByUserId" resultType="hub.schedule.domain.CollectScheduleRow">
+    <select id="findByUserId" resultType="hub.schedule.domain.OrderStatusSyncScheduleRow">
         SELECT <include refid="scheduleColumns" />
-        FROM hub_collect_schedule s
+        FROM hub_order_status_sync_schedule s
         JOIN users u ON u.id = s.user_id
         WHERE s.user_id = #{userId}
         ORDER BY s.enabled_yn DESC, s.run_time ASC, s.id DESC
     </select>
 
-    <select id="findRunLogsByUserId" resultType="hub.schedule.domain.CollectScheduleRunLogRow">
+    <select id="findRunLogsByUserId" resultType="hub.schedule.domain.OrderStatusSyncScheduleRunLogRow">
         SELECT
             id,
             schedule_id,
@@ -39,6 +41,8 @@
             schedule_name,
             status,
             mall_keys::text AS mall_keys_json,
+            channel_account_ids::text AS channel_account_ids_json,
+            status_types::text AS status_types_json,
             date_range_type,
             fr_dt,
             to_dt,
@@ -48,36 +52,57 @@
             to_char(started_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS started_at,
             to_char(finished_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS finished_at,
             to_char(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS created_at
-        FROM hub_collect_schedule_run_log
+        FROM hub_order_status_sync_schedule_run_log
         WHERE user_id = #{userId}
         ORDER BY created_at DESC
         LIMIT #{limit}
     </select>
 
-    <select id="findByUserIdAndId" resultType="hub.schedule.domain.CollectScheduleRow">
+    <select id="findByUserIdAndId" resultType="hub.schedule.domain.OrderStatusSyncScheduleRow">
         SELECT <include refid="scheduleColumns" />
-        FROM hub_collect_schedule s
+        FROM hub_order_status_sync_schedule s
         JOIN users u ON u.id = s.user_id
         WHERE s.user_id = #{userId}
           AND s.id = #{id}
     </select>
 
-    <insert id="insert" parameterType="hub.schedule.domain.CollectScheduleRow" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO hub_collect_schedule (
-            user_id, schedule_name, mall_keys, schedule_mode, interval_hours, date_range_type, run_time, enabled_yn, next_run_at
+    <insert id="insert" parameterType="hub.schedule.domain.OrderStatusSyncScheduleRow" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO hub_order_status_sync_schedule (
+            user_id,
+            schedule_name,
+            mall_keys,
+            channel_account_ids,
+            status_types,
+            schedule_mode,
+            interval_hours,
+            date_range_type,
+            run_time,
+            enabled_yn,
+            next_run_at
         ) VALUES (
-            #{userId}, #{scheduleName}, CAST(#{mallKeysJson} AS jsonb), #{scheduleMode}, #{intervalHours}, #{dateRangeType},
-            #{runTime}, #{enabledYn}, #{nextRunAtValue}
+            #{userId},
+            #{scheduleName},
+            CAST(#{mallKeysJson} AS jsonb),
+            CAST(#{channelAccountIdsJson} AS jsonb),
+            CAST(#{statusTypesJson} AS jsonb),
+            #{scheduleMode},
+            #{intervalHours},
+            #{dateRangeType},
+            #{runTime},
+            #{enabledYn},
+            #{nextRunAtValue}
         )
     </insert>
 
-    <insert id="insertRunLog" parameterType="hub.schedule.domain.CollectScheduleRunLogRow" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO hub_collect_schedule_run_log (
+    <insert id="insertRunLog" parameterType="hub.schedule.domain.OrderStatusSyncScheduleRunLogRow" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO hub_order_status_sync_schedule_run_log (
             schedule_id,
             user_id,
             schedule_name,
             status,
             mall_keys,
+            channel_account_ids,
+            status_types,
             date_range_type,
             fr_dt,
             to_dt,
@@ -89,6 +114,8 @@
             #{scheduleName},
             #{status},
             CAST(#{mallKeysJson} AS jsonb),
+            CAST(#{channelAccountIdsJson} AS jsonb),
+            CAST(#{statusTypesJson} AS jsonb),
             #{dateRangeType},
             #{frDt},
             #{toDt},
@@ -97,10 +124,12 @@
         )
     </insert>
 
-    <update id="update" parameterType="hub.schedule.domain.CollectScheduleRow">
-        UPDATE hub_collect_schedule
+    <update id="update" parameterType="hub.schedule.domain.OrderStatusSyncScheduleRow">
+        UPDATE hub_order_status_sync_schedule
         SET schedule_name = #{scheduleName},
             mall_keys = CAST(#{mallKeysJson} AS jsonb),
+            channel_account_ids = CAST(#{channelAccountIdsJson} AS jsonb),
+            status_types = CAST(#{statusTypesJson} AS jsonb),
             schedule_mode = #{scheduleMode},
             interval_hours = #{intervalHours},
             date_range_type = #{dateRangeType},
@@ -115,7 +144,7 @@
     </update>
 
     <update id="updateEnabled">
-        UPDATE hub_collect_schedule
+        UPDATE hub_order_status_sync_schedule
         SET enabled_yn = #{enabledYn},
             running_yn = 'N',
             next_run_at = #{nextRunAt},
@@ -125,13 +154,13 @@
     </update>
 
     <delete id="delete">
-        DELETE FROM hub_collect_schedule
+        DELETE FROM hub_order_status_sync_schedule
         WHERE user_id = #{userId}
           AND id = #{id}
     </delete>
 
     <update id="skipStaleDueSchedules">
-        UPDATE hub_collect_schedule
+        UPDATE hub_order_status_sync_schedule
         SET running_yn = 'N',
             next_run_at = CASE
                 WHEN COALESCE(schedule_mode, 'FIXED_TIME') = 'INTERVAL'
@@ -147,10 +176,10 @@
           AND next_run_at &lt;= NOW() - (CAST(#{maxCatchUpMinutes} AS int) * INTERVAL '1 minute')
     </update>
 
-    <select id="claimDueSchedules" resultType="hub.schedule.domain.CollectScheduleRow">
+    <select id="claimDueSchedules" resultType="hub.schedule.domain.OrderStatusSyncScheduleRow">
         WITH picked AS (
             SELECT id
-            FROM hub_collect_schedule
+            FROM hub_order_status_sync_schedule
             WHERE enabled_yn = 'Y'
               AND (running_yn = 'N' OR updated_at &lt; NOW() - INTERVAL '30 minutes')
               AND next_run_at &lt;= NOW()
@@ -159,7 +188,7 @@
             LIMIT #{limit}
         ),
         updated AS (
-            UPDATE hub_collect_schedule s
+            UPDATE hub_order_status_sync_schedule s
             SET running_yn = 'Y',
                 updated_at = NOW()
             FROM picked
@@ -172,6 +201,8 @@
             updated.id,
             updated.schedule_name,
             updated.mall_keys::text AS mall_keys_json,
+            updated.channel_account_ids::text AS channel_account_ids_json,
+            updated.status_types::text AS status_types_json,
             COALESCE(updated.schedule_mode, 'FIXED_TIME') AS schedule_mode,
             updated.interval_hours,
             updated.date_range_type,
@@ -188,7 +219,7 @@
     </select>
 
     <update id="markRunSuccess">
-        UPDATE hub_collect_schedule
+        UPDATE hub_order_status_sync_schedule
         SET running_yn = 'N',
             last_run_at = NOW(),
             next_run_at = #{nextRunAt},
@@ -198,7 +229,7 @@
     </update>
 
     <update id="markRunFailed">
-        UPDATE hub_collect_schedule
+        UPDATE hub_order_status_sync_schedule
         SET running_yn = 'N',
             next_run_at = #{nextRunAt},
             last_error_message = #{errorMessage},
@@ -207,7 +238,7 @@
     </update>
 
     <update id="markRunLogSuccess">
-        UPDATE hub_collect_schedule_run_log
+        UPDATE hub_order_status_sync_schedule_run_log
         SET status = 'SUCCESS',
             job_count = #{jobCount},
             request_ids = CAST(#{requestIdsJson} AS jsonb),
@@ -217,7 +248,7 @@
     </update>
 
     <update id="markRunLogFailed">
-        UPDATE hub_collect_schedule_run_log
+        UPDATE hub_order_status_sync_schedule_run_log
         SET status = 'FAILED',
             finished_at = NOW(),
             error_message = #{errorMessage}

@@ -10,7 +10,10 @@ export type CoupangOrderItem = {
 export type CoupangOrder = {
   orderId: string;
   orderStatus: string;
+  status?: string;
   orderedAt: string;
+  deliveryCompanyName?: string | null;
+  invoiceNumber?: string | null;
   receiverName: string;
   receiverPhone: string;
   receiverAddress: string;

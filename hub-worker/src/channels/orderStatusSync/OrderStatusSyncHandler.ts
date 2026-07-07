@@ -7,11 +7,9 @@ import {
 } from "../../db/postgres.js";
 import type { IJobHandler, JobHandlerMessage } from "../../handlers/IJobHandler.js";
 import { logger } from "../../logger.js";
-import {
-  MockMallOrderStatusClient,
-  type OrderStatusClient
-} from "../mockMall/MockMallOrderStatusClient.js";
 import { normalizeOrderStatus } from "../orderNormalize/OrderStatusNormalizer.js";
+import { createOrderStatusClientRegistry } from "./createOrderStatusClientRegistry.js";
+import { OrderStatusClientRegistry } from "./OrderStatusClientRegistry.js";
 
 type FindTargets = typeof findOrdersForStatusSync;
 type ApplyUpdates = typeof applyOrderStatusUpdates;
@@ -19,7 +17,7 @@ type SaveLog = typeof saveJobLog;
 
 export class OrderStatusSyncHandler implements IJobHandler {
   constructor(
-    private readonly client: OrderStatusClient = new MockMallOrderStatusClient(),
+    private readonly clients: OrderStatusClientRegistry = createOrderStatusClientRegistry(),
     private readonly findTargets: FindTargets = findOrdersForStatusSync,
     private readonly applyUpdates: ApplyUpdates = applyOrderStatusUpdates,
     private readonly saveLog: SaveLog = saveJobLog
@@ -32,9 +30,11 @@ export class OrderStatusSyncHandler implements IJobHandler {
       from: parseCompactDate(payload.frDt),
       toExclusive: dayAfter(parseCompactDate(payload.toDt))
     });
-    const fetched = await this.client.fetchOrderStatuses({
+    const client = this.clients.get(payload.channelCd);
+    const fetched = await client.fetchOrderStatuses({
       targets,
-      statusTypes: payload.statusTypes
+      statusTypes: payload.statusTypes,
+      payload: message.payload
     });
     const result: OrderStatusUpdateResult = await this.applyUpdates({
       requestId: message.requestId,

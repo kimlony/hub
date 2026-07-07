@@ -15,8 +15,11 @@ type CoupangApiOrderItem = {
 
 type CoupangApiOrder = {
   orderId?: unknown;
+  status?: unknown;
   orderStatus?: unknown;
   orderedAt?: unknown;
+  deliveryCompanyName?: unknown;
+  invoiceNumber?: unknown;
   receiver?: {
     name?: unknown;
     safeNumber?: unknown;
@@ -158,7 +161,10 @@ function mapOrder(item: CoupangApiOrder): CoupangOrder {
   return {
     orderId: normalizeString(item.orderId),
     orderStatus: normalizeString(item.orderStatus),
+    status: normalizeString(item.status),
     orderedAt: normalizeString(item.orderedAt),
+    deliveryCompanyName: normalizeString(item.deliveryCompanyName) || null,
+    invoiceNumber: normalizeString(item.invoiceNumber) || null,
     receiverName: normalizeString(receiver.name),
     receiverPhone: normalizeString(receiver.safeNumber) || normalizeString(receiver.phone),
     receiverAddress: `${addr1} ${addr2}`.trim(),
