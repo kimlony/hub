@@ -143,6 +143,23 @@ describe("order normalizers", () => {
     expect(order?.delivery?.receiverName).toBe("Coupang Receiver");
   });
 
+  it("falls back to shipmentBoxId and generated item ids for Coupang orders", () => {
+    const normalizer = new CoupangOrderNormalizer();
+    const order = normalizer.normalize({
+      shipmentBoxId: "SHIP-ONLY-001",
+      status: "PAID",
+      orderItems: [
+        { sellerProductName: "Fallback Item" }
+      ]
+    }, { ...context, channelCd: "COUPANG", mallKey: "COUPANG" });
+
+    expect(order?.channelOrderId).toBe("SHIP-ONLY-001");
+    expect(order?.items[0]).toMatchObject({
+      channelOrderItemId: "SHIP-ONLY-001-1",
+      productName: "Fallback Item"
+    });
+  });
+
   it("normalizes flat commerce orders used by 11ST and GODO", () => {
     const normalizer = new FlatCommerceOrderNormalizer();
     const order = normalizer.normalize({
@@ -189,6 +206,37 @@ describe("order normalizers", () => {
       receiverZipCode: "00000",
       receiverAddr1: "Sample City"
     });
+  });
+
+  it("falls back to generated item ids for flat commerce orders without item identifiers", () => {
+    const normalizer = new FlatCommerceOrderNormalizer();
+    const order = normalizer.normalize({
+      orderNo: "GODO-ORDER-1",
+      orderStatus: "PAID",
+      orderItems: [
+        { productName: "First product", quantity: 1 },
+        { productName: "Second product", quantity: 2 }
+      ]
+    }, { ...context, channelCd: "GODO", mallKey: "GODO" });
+
+    expect(order?.items.map((item) => item.channelOrderItemId)).toEqual([
+      "GODO-ORDER-1-1",
+      "GODO-ORDER-1-2"
+    ]);
+  });
+
+  it("uses recipient fallback ids for GCHAN orders missing orderCode", () => {
+    const normalizer = new GiftOrderNormalizer();
+    const order = normalizer.normalize({
+      recipientId: 77,
+      itemId: 88,
+      paymentStatus: "PAID",
+      recipientName: "Fallback Receiver"
+    }, context);
+
+    expect(order?.channelOrderId).toBe("77");
+    expect(order?.items[0].channelOrderItemId).toBe("recipient-77-item-88");
+    expect(order?.delivery?.receiverName).toBe("Fallback Receiver");
   });
 
   it("skips raw orders without a channel order id", () => {
