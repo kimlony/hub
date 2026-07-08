@@ -141,6 +141,53 @@ const pool = new Pool({
 });
 
 export async function ensurePostgresSchema(): Promise<void> {
+  if (process.env.RUN_INTEGRATION_TESTS === "true" || process.env.WORKER_SCHEMA_INIT_MODE === "legacy") {
+    await ensurePostgresSchemaLegacy();
+    return;
+  }
+
+  await waitForFlywaySchema();
+}
+
+async function waitForFlywaySchema(): Promise<void> {
+  const maxAttempts = Number(process.env.WORKER_SCHEMA_WAIT_ATTEMPTS ?? 60);
+  const delayMs = Number(process.env.WORKER_SCHEMA_WAIT_MS ?? 2000);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const result = await pool.query<{
+      flyway_ready: boolean;
+      job_ready: boolean;
+      heartbeat_ready: boolean;
+    }>(`
+      SELECT
+        to_regclass('public.flyway_schema_history') IS NOT NULL AS flyway_ready,
+        to_regclass('public.hub_job') IS NOT NULL AS job_ready,
+        to_regclass('public.hub_worker_heartbeat') IS NOT NULL AS heartbeat_ready
+    `);
+    const row = result.rows[0];
+    if (row?.flyway_ready && row.job_ready && row.heartbeat_ready) {
+      return;
+    }
+
+    logger.warn({
+      event: "POSTGRES_SCHEMA_WAITING_FOR_FLYWAY",
+      attempt,
+      maxAttempts,
+      flywayReady: row?.flyway_ready ?? false,
+      jobReady: row?.job_ready ?? false,
+      heartbeatReady: row?.heartbeat_ready ?? false
+    }, "Waiting for Flyway-managed Postgres schema");
+    await sleep(delayMs);
+  }
+
+  throw new Error("Flyway-managed Postgres schema was not ready before worker startup timeout");
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function ensurePostgresSchemaLegacy(): Promise<void> {
   const client = await pool.connect();
   let locked = false;
 

@@ -67,6 +67,11 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${SERVER_PORT:-3000}/health >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
     networks:
       - hub-net
 
@@ -103,6 +108,8 @@ services:
       DART_API_KEY: ${DART_API_KEY:-}
       NAVER_RSS_URLS: ${NAVER_RSS_URLS:-}
     depends_on:
+      hub-api:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       kafka:
@@ -133,6 +140,8 @@ services:
       WORKER_HEARTBEAT_INTERVAL_SECONDS: ${WORKER_HEARTBEAT_INTERVAL_SECONDS:-10}
       GRACEFUL_SHUTDOWN_TIMEOUT_MS: ${GRACEFUL_SHUTDOWN_TIMEOUT_MS:-60000}
     depends_on:
+      hub-api:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       kafka:
@@ -162,6 +171,8 @@ services:
       WORKER_HEARTBEAT_INTERVAL_SECONDS: ${WORKER_HEARTBEAT_INTERVAL_SECONDS:-10}
       GRACEFUL_SHUTDOWN_TIMEOUT_MS: ${GRACEFUL_SHUTDOWN_TIMEOUT_MS:-60000}
     depends_on:
+      hub-api:
+        condition: service_healthy
       postgres:
         condition: service_healthy
     healthcheck:
