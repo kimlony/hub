@@ -4,9 +4,14 @@ import { buildNfaOrderParams } from "../nfa/NfaApiClient.js";
 import { normalizeOrderStatus } from "./OrderStatusNormalizer.js";
 
 describe("initial order API query policy", () => {
-  it("does not send a Coupang status filter", () => {
+  it("sends required Coupang status and page size parameters", () => {
     const query = new URLSearchParams(buildQueryString("20260701", "20260706"));
-    expect(query.has("status")).toBe(false);
+    expect(query.get("createdAtFrom")).toBe("2026-07-01");
+    expect(query.get("createdAtTo")).toBe("2026-07-06");
+    expect(query.get("status")).toBe("ACCEPT");
+    expect(query.get("maxPerPage")).toBe("50");
+    expect(query.has("perPage")).toBe(false);
+    expect(query.has("searchType")).toBe(false);
   });
 
   it("does not send a GCHAN received status filter", () => {

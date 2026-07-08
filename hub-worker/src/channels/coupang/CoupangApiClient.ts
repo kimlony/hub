@@ -4,6 +4,15 @@ import crypto from "node:crypto";
 import { logger } from "../../logger.js";
 import type { CoupangOrder, CoupangOrderItem } from "./types.js";
 
+export const COUPANG_ORDER_STATUSES = [
+  "ACCEPT",
+  "INSTRUCT",
+  "DEPARTURE",
+  "DELIVERING",
+  "FINAL_DELIVERY",
+  "NONE_TRACKING"
+] as const;
+
 type CoupangApiOrderItem = {
   orderItemId?: unknown;
   productId?: unknown;
@@ -56,70 +65,88 @@ export class CoupangApiClient {
     toDt: string
   ): Promise<CoupangOrder[]> {
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${vendorId}/ordersheets`;
-    const orders: CoupangOrder[] = [];
-    let nextToken: string | undefined;
+    const ordersById = new Map<string, CoupangOrder>();
+    const ordersWithoutId: CoupangOrder[] = [];
 
-    do {
-      const queryString = buildQueryString(frDt, toDt, nextToken);
-      const datetime = createCoupangDatetime();
-      const signature = createSignature(secretKey, datetime, "GET", path, queryString);
-      const authorization = createAuthorization(apiKey, datetime, signature);
+    for (const status of COUPANG_ORDER_STATUSES) {
+      let nextToken: string | undefined;
 
-      logger.debug({
-        event: "COUPANG_API_REQUEST_SIGNED",
-        method: "GET",
-        path,
-        queryString,
-        datetime,
-        authorizationPreview: createAuthorization(
-          maskSecret(apiKey),
+      do {
+        const queryString = buildQueryString(frDt, toDt, status, nextToken);
+        const datetime = createCoupangDatetime();
+        const signature = createSignature(secretKey, datetime, "GET", path, queryString);
+        const authorization = createAuthorization(apiKey, datetime, signature);
+
+        logger.debug({
+          event: "COUPANG_API_REQUEST_SIGNED",
+          method: "GET",
+          path,
+          queryString,
           datetime,
-          `${signature.slice(0, 8)}...${signature.slice(-8)}`
-        ),
-        token: nextToken ?? null
-      }, "COUPANG request signed");
+          authorizationPreview: createAuthorization(
+            maskSecret(apiKey),
+            datetime,
+            `${signature.slice(0, 8)}...${signature.slice(-8)}`
+          ),
+          status,
+          token: nextToken ?? null
+        }, "COUPANG request signed");
 
-      let response;
-      try {
-        response = await this.client.get<CoupangApiResponse>(`${path}?${queryString}`, {
-          headers: {
-            Authorization: authorization,
-            "Content-Type": "application/json;charset=UTF-8"
+        let response;
+        try {
+          response = await this.client.get<CoupangApiResponse>(`${path}?${queryString}`, {
+            headers: {
+              Authorization: authorization,
+              "Content-Type": "application/json;charset=UTF-8"
+            }
+          });
+        } catch (error) {
+          if (error instanceof AxiosError) {
+            logger.error({
+              event: "COUPANG_API_REQUEST_FAILED",
+              errorName: error.name,
+              errorCode: error.code,
+              errorMessage: error.message,
+              status: error.response?.status,
+              statusText: error.response?.statusText,
+              responseData: error.response?.data,
+              path,
+              queryString,
+              datetime
+            }, "COUPANG request failed");
           }
-        });
-      } catch (error) {
-        if (error instanceof AxiosError) {
-          logger.error({
-            event: "COUPANG_API_REQUEST_FAILED",
-            err: error,
-            status: error.response?.status,
-            statusText: error.response?.statusText,
-            responseData: error.response?.data,
-            path,
-            queryString,
-            datetime
-          }, "COUPANG request failed");
+
+          throw error;
         }
 
-        throw error;
-      }
+        const data = response.data.data ?? [];
+        for (const order of data.map(mapOrder)) {
+          if (order.orderId) {
+            ordersById.set(order.orderId, order);
+          } else {
+            ordersWithoutId.push(order);
+          }
+        }
 
-      const data = response.data.data ?? [];
-      orders.push(...data.map(mapOrder));
+        nextToken = normalizeOptionalString(response.data.nextToken);
+      } while (nextToken);
+    }
 
-      nextToken = normalizeOptionalString(response.data.nextToken);
-    } while (nextToken);
-
-    return orders;
+    return [...ordersById.values(), ...ordersWithoutId];
   }
 }
 
-export function buildQueryString(frDt: string, toDt: string, token?: string): string {
+export function buildQueryString(
+  frDt: string,
+  toDt: string,
+  status: string = COUPANG_ORDER_STATUSES[0],
+  token?: string
+): string {
   const params = new URLSearchParams();
-  params.set("createdAtFrom", `${toIsoDate(frDt)}T00:00`);
-  params.set("createdAtTo", `${toIsoDate(toDt)}T23:59`);
-  params.set("searchType", "timeFrame");
-  params.set("perPage", "100");
+  params.set("createdAtFrom", toIsoDate(frDt));
+  params.set("createdAtTo", toIsoDate(toDt));
+  params.set("status", status);
+  params.set("maxPerPage", "50");
 
   if (token) {
     params.set("token", token);
