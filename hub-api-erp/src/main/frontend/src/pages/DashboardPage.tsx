@@ -579,53 +579,80 @@ function LatencyLineChart({ points }: { points: PerformancePoint[] }) {
 
   const width = 860
   const height = 260
-  const paddingLeft = 54
-  const paddingRight = 54
-  const paddingTop = 28
-  const paddingBottom = 38
+  const paddingLeft = 64
+  const paddingRight = 78
+  const paddingTop = 58
+  const paddingBottom = 42
   const innerWidth = width - paddingLeft - paddingRight
   const innerHeight = height - paddingTop - paddingBottom
   const maxLatency = Math.max(...points.map((point) => point.p95DurationMs), 1)
   const maxCompleted = Math.max(...points.map((point) => point.completedJobs), 1)
   const step = points.length > 1 ? innerWidth / (points.length - 1) : innerWidth
-  const barWidth = Math.max(10, Math.min(34, innerWidth / points.length * 0.52))
-  const path = points.map((point, index) => {
+  const barWidth = Math.max(8, Math.min(28, innerWidth / points.length * 0.46))
+  const chartPoints = points.map((point, index) => {
     const x = paddingLeft + index * step
     const y = paddingTop + innerHeight - (point.p95DurationMs / maxLatency) * innerHeight
-    return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`
-  }).join(' ')
+    return { point, x, y }
+  })
+  const path = chartPoints.map(({ x, y }, index) => (
+    `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`
+  )).join(' ')
   const avgLatency = points.reduce((sum, point) => sum + point.avgDurationMs, 0) / points.length
   const avgY = paddingTop + innerHeight - (avgLatency / maxLatency) * innerHeight
   const gridTicks = [0, 0.25, 0.5, 0.75, 1]
-  const labelEvery = Math.max(1, Math.ceil(points.length / 8))
+  const labelEvery = Math.max(1, Math.ceil(points.length / 6))
+  const lastPoint = chartPoints[chartPoints.length - 1]
+  const p95Text = `P95 ${formatDuration(lastPoint.point.p95DurationMs)}`
+  const badgeWidth = Math.max(82, p95Text.length * 6.6 + 22)
+  const badgeX = Math.min(width - paddingRight - badgeWidth, Math.max(paddingLeft, lastPoint.x + 12))
+  const badgeY = Math.max(
+    paddingTop + 6,
+    Math.min(paddingTop + innerHeight - 28, lastPoint.y > paddingTop + 42 ? lastPoint.y - 34 : lastPoint.y + 12)
+  )
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full overflow-visible">
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full overflow-hidden rounded-lg">
       <defs>
         <linearGradient id="completedBars" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#3182F6" stopOpacity="0.95" />
-          <stop offset="100%" stopColor="#93C5FD" stopOpacity="0.55" />
+          <stop offset="0%" stopColor="#60A5FA" stopOpacity="0.92" />
+          <stop offset="100%" stopColor="#BFDBFE" stopOpacity="0.30" />
         </linearGradient>
         <linearGradient id="latencyArea" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#F97316" stopOpacity="0.20" />
-          <stop offset="100%" stopColor="#F97316" stopOpacity="0.02" />
+          <stop offset="0%" stopColor="#F97316" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="#F97316" stopOpacity="0.00" />
         </linearGradient>
+        <filter id="chartGlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="8" stdDeviation="7" floodColor="#F97316" floodOpacity="0.16" />
+        </filter>
       </defs>
+
+      <rect x="0" y="0" width={width} height={height} rx="14" fill="#FBFCFE" />
+      <rect
+        x={paddingLeft}
+        y={paddingTop}
+        width={innerWidth}
+        height={innerHeight}
+        rx="10"
+        fill="#FFFFFF"
+        stroke="#EEF2F7"
+      />
 
       {gridTicks.map((tick) => {
         const y = paddingTop + innerHeight - tick * innerHeight
         return (
           <g key={tick}>
-            <line x1={paddingLeft} y1={y} x2={width - paddingRight} y2={y} stroke="#EDF2F7" strokeWidth="1" />
-            <text x={paddingLeft - 10} y={y + 4} textAnchor="end" fill="#8B95A1" fontSize="10">
+            <line x1={paddingLeft} y1={y} x2={width - paddingRight} y2={y} stroke="#E8EEF6" strokeWidth="1" />
+            <text x={paddingLeft - 12} y={y + 4} textAnchor="end" fill="#6B7280" fontSize="10" fontWeight="700">
               {formatDuration(maxLatency * tick)}
+            </text>
+            <text x={width - paddingRight + 12} y={y + 4} fill="#94A3B8" fontSize="10" fontWeight="700">
+              {formatNumber(maxCompleted * tick)}
             </text>
           </g>
         )
       })}
 
-      {points.map((point, index) => {
-        const x = paddingLeft + index * step
+      {chartPoints.map(({ point, x }) => {
         const barHeight = (point.completedJobs / maxCompleted) * innerHeight
         return (
           <rect
@@ -649,24 +676,17 @@ function LatencyLineChart({ points }: { points: PerformancePoint[] }) {
         y1={avgY}
         x2={width - paddingRight}
         y2={avgY}
-        stroke="#F97316"
+        stroke="#FDBA74"
         strokeDasharray="5 5"
         strokeWidth="1.5"
       />
-      <path d={path} fill="none" stroke="#F97316" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-      {points.map((point, index) => {
-        const x = paddingLeft + index * step
-        const y = paddingTop + innerHeight - (point.p95DurationMs / maxLatency) * innerHeight
+      <path d={path} fill="none" stroke="#F97316" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" filter="url(#chartGlow)" />
+      {chartPoints.map(({ point, x, y }, index) => {
         return (
           <g key={`${point.bucket}-${index}`}>
-            <circle cx={x} cy={y} r="4.5" fill="#FFF7ED" stroke="#F97316" strokeWidth="2.5" />
-            {index === points.length - 1 && (
-              <text x={Math.min(width - 112, x + 10)} y={Math.max(14, y - 10)} fill="#9A3412" fontSize="12" fontWeight="800">
-                P95 {formatDuration(point.p95DurationMs)}
-              </text>
-            )}
+            <circle cx={x} cy={y} r="4.8" fill="#FFFFFF" stroke="#F97316" strokeWidth="2.6" />
             {index % labelEvery === 0 && (
-              <text x={x} y={height - 12} textAnchor="middle" fill="#8B95A1" fontSize="10">
+              <text x={x} y={height - 13} textAnchor="middle" fill="#64748B" fontSize="10" fontWeight="700">
                 {point.bucket}
               </text>
             )}
@@ -674,11 +694,25 @@ function LatencyLineChart({ points }: { points: PerformancePoint[] }) {
         )
       })}
 
+      <rect x={badgeX} y={badgeY} width={badgeWidth} height="24" rx="12" fill="#FFF7ED" stroke="#FED7AA" />
+      <text x={badgeX + badgeWidth / 2} y={badgeY + 16} textAnchor="middle" fill="#9A3412" fontSize="11" fontWeight="900">
+        {p95Text}
+      </text>
+
       <line x1={paddingLeft} y1={paddingTop + innerHeight} x2={width - paddingRight} y2={paddingTop + innerHeight} stroke="#DDE3EA" strokeWidth="1" />
-      <text x={paddingLeft} y={18} fill="#4E5968" fontSize="11" fontWeight="800">P95 처리시간</text>
-      <text x={width - paddingRight} y={18} textAnchor="end" fill="#4E5968" fontSize="11" fontWeight="800">완료 건수</text>
-      <circle cx={paddingLeft + 78} cy={14} r="4" fill="#F97316" />
-      <rect x={width - paddingRight - 72} y="8" width="10" height="10" rx="2" fill="#3182F6" />
+      <g>
+        <rect x={paddingLeft} y="16" width="112" height="24" rx="12" fill="#FFF7ED" stroke="#FED7AA" />
+        <circle cx={paddingLeft + 15} cy="28" r="4" fill="#F97316" />
+        <text x={paddingLeft + 26} y="32" fill="#9A3412" fontSize="11" fontWeight="900">P95 처리시간</text>
+      </g>
+      <g>
+        <rect x={paddingLeft + 124} y="16" width="92" height="24" rx="12" fill="#EFF6FF" stroke="#BFDBFE" />
+        <rect x={paddingLeft + 139} y="24" width="8" height="8" rx="2" fill="#3B82F6" />
+        <text x={paddingLeft + 156} y="32" fill="#1D4ED8" fontSize="11" fontWeight="900">완료 건수</text>
+      </g>
+      <text x={width - paddingRight} y="32" textAnchor="end" fill="#94A3B8" fontSize="10" fontWeight="800">
+        평균 {formatDuration(avgLatency)}
+      </text>
     </svg>
   )
 }
