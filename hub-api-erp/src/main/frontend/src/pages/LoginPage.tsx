@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth, UserRole } from '../context/AuthContext'
 
 export default function LoginPage() {
   const { login }    = useAuth()
@@ -24,8 +24,8 @@ export default function LoginPage() {
         const body = await res.json()
         throw new Error(body.message ?? '로그인에 실패했습니다.')
       }
-      const { token, username: name } = await res.json()
-      login(token, name)
+      const { token, username: name, role } = await res.json()
+      login(token, name, role as UserRole)
       navigate('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : '로그인에 실패했습니다.')
