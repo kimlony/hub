@@ -154,7 +154,7 @@ fi
 
 set -a
 # shellcheck disable=SC1090
-source "$ENV_FILE"
+source <(sed '1s/^\xEF\xBB\xBF//' "$ENV_FILE")
 set +a
 
 API_PORT="${HUB_API_PORT:-3000}"
@@ -179,7 +179,11 @@ echo "[1/10] Removing compose stack and volumes..."
 compose down -v
 
 echo "[2/10] Building and starting compose stack..."
-compose up -d --build
+if ! compose up -d --build; then
+  echo "docker compose up failed." >&2
+  print_diagnostics
+  exit 1
+fi
 
 echo "[3/10] Waiting for postgres healthy..."
 wait_for_health postgres healthy

@@ -12,7 +12,7 @@ WITH demo_corp AS (
     INSERT INTO users (corp_id, username, password)
     SELECT id,
            'demo',
-           '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy'
+           '$2b$10$J1ybJvpDINgxwUq/Jt8xKO14IAmRoj0p84kNRVQY4OpToCw4W4gmi'
     FROM demo_corp
     ON CONFLICT (username) DO UPDATE
         SET corp_id = EXCLUDED.corp_id,
