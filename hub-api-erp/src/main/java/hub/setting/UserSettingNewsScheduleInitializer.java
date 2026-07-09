@@ -8,7 +8,7 @@ import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Component;
 
 @Component
-@DependsOn("userSettingSchemaInitializer")
+@DependsOn("flywayInitializer")
 @RequiredArgsConstructor
 public class UserSettingNewsScheduleInitializer {
     private final UserSettingMapper userSettingMapper;

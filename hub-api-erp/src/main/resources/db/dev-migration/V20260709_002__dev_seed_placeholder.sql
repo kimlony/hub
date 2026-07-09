@@ -1,0 +1,3 @@
+-- Development-only seed migration placeholder.
+-- Keep production-safe schema changes under db/migration.
+-- Add local/dev-only seed data here only when it is intentionally excluded from production.

@@ -6,7 +6,6 @@ import hub.job.service.HubJobService;
 import hub.loadtest.dto.request.MockMallLoadTestRequest;
 import hub.loadtest.dto.response.MockMallLoadTestStartResponse;
 import hub.loadtest.dto.response.MockMallLoadTestStatusResponse;
-import jakarta.annotation.PostConstruct;
 import java.sql.Timestamp;
 import java.time.format.DateTimeFormatter;
 import java.time.Instant;
@@ -31,15 +30,9 @@ public class MockMallLoadTestService {
     private final HubJobService hubJobService;
     private final JdbcTemplate jdbcTemplate;
 
-    @PostConstruct
-    public void initializeSchema() {
-        ensureLoadTestSchema();
-    }
 
     @Transactional
     public MockMallLoadTestStartResponse start(String username, MockMallLoadTestRequest request) {
-        ensureLoadTestSchema();
-
         int orders = positive(request.orders(), 100000);
         int pageSize = positive(request.pageSize(), 100);
         int totalPages = (int) Math.ceil(orders / (double) pageSize);
@@ -82,8 +75,6 @@ public class MockMallLoadTestService {
 
     @Transactional
     public MockMallLoadTestStatusResponse status(String runId) {
-        ensureLoadTestSchema();
-
         RunRecord run = runRecord(runId);
         CollectStats collectStats = collectStats(runId);
         NormalizeStats normalizeStats = normalizeStats(runId);
@@ -141,60 +132,7 @@ public class MockMallLoadTestService {
 
     @Transactional
     public List<MockMallLoadTestStatusResponse.RunSummary> history() {
-        ensureLoadTestSchema();
         return recentRuns();
-    }
-
-    private void ensureLoadTestSchema() {
-        jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS hub_load_test_run (
-                  id BIGSERIAL PRIMARY KEY,
-                  run_id VARCHAR(80) NOT NULL UNIQUE,
-                  mode VARCHAR(30) NOT NULL,
-                  total_requested INTEGER NOT NULL,
-                  total_jobs INTEGER NOT NULL,
-                  completed_jobs INTEGER NOT NULL,
-                  success_jobs INTEGER NOT NULL,
-                  failed_jobs INTEGER NOT NULL,
-                  elapsed_ms BIGINT NOT NULL,
-                  throughput_per_minute DOUBLE PRECISION NOT NULL,
-                  avg_duration_ms DOUBLE PRECISION NOT NULL,
-                  p50_duration_ms DOUBLE PRECISION NOT NULL,
-                  p95_duration_ms DOUBLE PRECISION NOT NULL,
-                  max_duration_ms DOUBLE PRECISION NOT NULL,
-                  params JSONB NOT NULL DEFAULT '{}'::jsonb,
-                  result_path VARCHAR(500),
-                  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                )
-                """);
-        jdbcTemplate.execute("""
-                ALTER TABLE hub_load_test_run
-                    ADD COLUMN IF NOT EXISTS scenario VARCHAR(120),
-                    ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'SUCCESS',
-                    ADD COLUMN IF NOT EXISTS page_size INTEGER,
-                    ADD COLUMN IF NOT EXISTS total_collect_jobs INTEGER NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS total_normalize_jobs INTEGER NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS completed_normalize_jobs INTEGER NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS normalized_orders INTEGER NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS orders_per_second DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS jobs_per_second DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS outbox_total INTEGER NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS outbox_pending INTEGER NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS outbox_publishing INTEGER NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS outbox_sent INTEGER NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS outbox_failed INTEGER NOT NULL DEFAULT 0,
-                    ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ,
-                    ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ,
-                    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                """);
-        jdbcTemplate.execute("""
-                CREATE INDEX IF NOT EXISTS idx_hub_load_test_run_created_at
-                ON hub_load_test_run(created_at DESC)
-                """);
-        jdbcTemplate.execute("""
-                CREATE INDEX IF NOT EXISTS idx_hub_load_test_run_status
-                ON hub_load_test_run(status, created_at DESC)
-                """);
     }
 
     private void insertStartedRun(

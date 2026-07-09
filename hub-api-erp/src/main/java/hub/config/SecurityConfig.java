@@ -53,6 +53,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/hub/kafka/**").authenticated()
                 .requestMatchers("/api/hub/workers/**").authenticated()
                 .requestMatchers("/api/hub/outbox/**").authenticated()
+                .requestMatchers("/api/admin/**").authenticated()
                 .anyRequest().permitAll()
             )
             .addFilterBefore(externalApiAuthFilter, UsernamePasswordAuthenticationFilter.class)

@@ -3,9 +3,11 @@ package hub.notice.schema;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 @Component
+@Profile("legacy-schema-init")
 @RequiredArgsConstructor
 public class ChannelNoticeSchemaInitializer {
 

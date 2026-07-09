@@ -13,6 +13,7 @@ import LoadTestPage from './pages/LoadTestPage'
 import CollectedOrdersPage from './pages/CollectedOrdersPage'
 import ErpApplyResultsPage from './pages/ErpApplyResultsPage'
 import OrderExportPage from './pages/OrderExportPage'
+import DbMigrationsPage from './pages/DbMigrationsPage'
 
 export default function App() {
   return (
@@ -52,6 +53,9 @@ export default function App() {
           } />
           <Route path="/load-test" element={
             <ProtectedRoute><LoadTestPage /></ProtectedRoute>
+          } />
+          <Route path="/db-migrations" element={
+            <ProtectedRoute><DbMigrationsPage /></ProtectedRoute>
           } />
         </Routes>
       </BrowserRouter>

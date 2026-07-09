@@ -648,7 +648,7 @@ function writeResult(result) {
 }
 
 async function saveLoadTestRun(result, files) {
-  await ensureLoadTestSchema();
+  await assertFlywayLoadTestSchema();
   await pool.query(
     `
       INSERT INTO hub_load_test_run (
@@ -726,34 +726,19 @@ async function saveLoadTestRun(result, files) {
   );
 }
 
-async function ensureLoadTestSchema() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS hub_load_test_run (
-      id BIGSERIAL PRIMARY KEY,
-      run_id VARCHAR(80) NOT NULL UNIQUE,
-      mode VARCHAR(30) NOT NULL,
-      total_requested INTEGER NOT NULL,
-      total_jobs INTEGER NOT NULL,
-      completed_jobs INTEGER NOT NULL,
-      success_jobs INTEGER NOT NULL,
-      failed_jobs INTEGER NOT NULL,
-      elapsed_ms BIGINT NOT NULL,
-      throughput_per_minute DOUBLE PRECISION NOT NULL,
-      avg_duration_ms DOUBLE PRECISION NOT NULL,
-      p50_duration_ms DOUBLE PRECISION NOT NULL,
-      p95_duration_ms DOUBLE PRECISION NOT NULL,
-      max_duration_ms DOUBLE PRECISION NOT NULL,
-      params JSONB NOT NULL DEFAULT '{}'::jsonb,
-      result_path VARCHAR(500),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
+async function assertFlywayLoadTestSchema() {
+  const result = await pool.query(`
+    SELECT
+      to_regclass('public.flyway_schema_history') IS NOT NULL AS flyway_ready,
+      to_regclass('public.hub_load_test_run') IS NOT NULL AS load_test_ready
   `);
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_hub_load_test_run_created_at
-      ON hub_load_test_run(created_at DESC)
-  `);
+  const row = result.rows[0] ?? {};
+  if (!row.flyway_ready || !row.load_test_ready) {
+    throw new Error(
+      `Flyway-managed load test schema is not ready: flyway=${Boolean(row.flyway_ready)}, hub_load_test_run=${Boolean(row.load_test_ready)}`
+    );
+  }
 }
-
 function printResult(result) {
   console.log(JSON.stringify({
     runId: result.runId,

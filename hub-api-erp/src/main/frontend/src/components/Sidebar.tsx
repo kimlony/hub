@@ -33,6 +33,7 @@ const nav: NavSection[] = [
       { label: 'Kafka 현황', to: '/monitor', icon: 'K' },
       { label: 'Outbox', to: '/outbox', icon: 'O' },
       { label: '대용량 데이터 테스트', to: '/load-test', icon: 'L' },
+      { label: 'DB Migration', to: '/db-migrations', icon: 'M' },
     ],
   },
 ]
