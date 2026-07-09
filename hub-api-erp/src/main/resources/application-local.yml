@@ -15,5 +15,4 @@ hub:
     secret: ${HUB_JWT_SECRET:change-me-jwt-secret-local-256bits}
     expiry-ms: 86400000
   aes:
-    # Must be exactly 32 bytes.
     secret: ${HUB_AES_SECRET:change-me-32-byte-secret-local!!}

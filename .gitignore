@@ -25,7 +25,6 @@ npm-debug.log*
 worker-codex.log
 load-test-results/
 
-hub-api-erp/src/main/resources/application-local.yml
 hub-api-erp/src/main/resources/application-*.local.yml
 hub-api-erp/srctestjavacombizbeehubHashGenTest.java
 hub-api-erp/src/main/frontend/src/**/*.js

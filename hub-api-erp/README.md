@@ -157,28 +157,54 @@ GET /api/hub/load-tests/{runId}
 
 ## Local run
 
-인프라 실행:
+### Full Docker
 
 ```powershell
-cd C:\Users\Scrap-2\bizbee-hub
-docker compose up -d
+cd C:\hub-git
+Copy-Item .env.dev.example .env.dev
+docker compose -f docker-compose.server.yml -f docker-compose.dev.yml --env-file .env.dev up -d --build
 ```
 
-API 실행:
+API URL:
+
+```text
+http://localhost:${HUB_API_PORT:-3000}
+```
+
+The API container uses `postgres:5432` and `kafka:9092` inside the compose network.
+
+### Local IntelliJ API
+
+Run only PostgreSQL/Kafka in Docker and run the API from IntelliJ or Gradle. The dev compose publishes PostgreSQL to `${POSTGRES_HOST_PORT:-5432}` and Kafka to `${KAFKA_HOST_PORT:-19092}` for Windows host access.
 
 ```powershell
-cd C:\Users\Scrap-2\bizbee-hub\hub-api-erp
-.\gradlew.bat bootRun --args='--spring.profiles.active=local'
+cd C:\hub-git
+Copy-Item .env.dev.example .env.dev
+docker compose -f docker-compose.server.yml -f docker-compose.dev.yml --env-file .env.dev up -d postgres kafka
 ```
 
-IntelliJ 실행 시:
+IntelliJ:
 
 ```text
 Main class: hub.BizbeeHubApplication
 Active profiles: local
 ```
 
-`HUB_AES_SECRET`은 정확히 32 bytes여야 합니다. `application-local.yml` 또는 환경변수에서 설정합니다.
+PowerShell:
+
+```powershell
+cd C:\hub-git\hub-api-erp
+.\gradlew.bat bootRun --args='--spring.profiles.active=local'
+```
+
+`application-local.yml` uses:
+
+```text
+PostgreSQL: localhost:${POSTGRES_HOST_PORT:-5432}
+Kafka: localhost:${KAFKA_HOST_PORT:-19092}
+```
+
+`HUB_AES_SECRET` must be exactly 32 bytes. Configure it in `application-local.yml` or environment variables.
 
 Frontend:
 

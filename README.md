@@ -153,39 +153,62 @@ powershell -ExecutionPolicy Bypass -File scripts/test-integration.ps1
 
 통합 테스트는 GitHub Actions에서 Testcontainers로 임시 PostgreSQL/Kafka를 띄우기 때문에 운영 DB나 로컬 Docker Compose 데이터에 의존하지 않습니다.
 
-## 로컬 실행
+## Local Run
 
-### 1. 인프라 실행
+### Full Docker
+
+API, PostgreSQL, Kafka, Worker를 모두 Docker로 실행합니다. 컨테이너 내부 API는 PostgreSQL을 `postgres:5432`, Kafka를 `kafka:9092`로 사용합니다.
 
 ```powershell
-docker compose up -d
+Copy-Item .env.dev.example .env.dev
+docker compose -f docker-compose.server.yml -f docker-compose.dev.yml --env-file .env.dev up -d --build
 ```
 
-EC2 dev compose 기준으로 빈 DB 배포를 검증할 때는 `.env.dev`를 준비한 뒤 실행합니다.
+API URL:
+
+```text
+http://localhost:${HUB_API_PORT:-3000}
+```
+
+빈 DB 배포 검증은 `.env.dev` 준비 후 아래 스크립트를 사용할 수 있습니다.
 
 ```bash
 ./scripts/verify-empty-db-compose.sh --yes
 ```
 
-### 2. API 실행
+### Local IntelliJ API
 
-IntelliJ에서 실행할 경우:
+API는 IntelliJ 또는 Gradle로 직접 실행하고, PostgreSQL/Kafka만 Docker로 실행합니다. Windows host에서 접근할 수 있도록 dev compose가 PostgreSQL을 `${POSTGRES_HOST_PORT:-5432}`, Kafka를 `${KAFKA_HOST_PORT:-19092}`로 publish합니다.
+
+```powershell
+Copy-Item .env.dev.example .env.dev
+docker compose -f docker-compose.server.yml -f docker-compose.dev.yml --env-file .env.dev up -d postgres kafka
+```
+
+IntelliJ Run Configuration:
 
 ```text
 Main class: hub.BizbeeHubApplication
 Active profiles: local
 ```
 
-PowerShell에서 실행할 경우:
+PowerShell 실행:
 
 ```powershell
 cd hub-api-erp
 .\gradlew.bat bootRun --args='--spring.profiles.active=local'
 ```
 
+`application-local.yml`은 기본적으로 아래 주소를 사용합니다.
+
+```text
+PostgreSQL: localhost:${POSTGRES_HOST_PORT:-5432}
+Kafka: localhost:${KAFKA_HOST_PORT:-19092}
+```
+
 `HUB_AES_SECRET`은 정확히 32 bytes여야 합니다. 로컬에서는 `application-local.yml` 또는 환경변수로 설정합니다.
 
-### 3. Frontend 실행
+### Frontend
 
 ```powershell
 cd hub-api-erp/src/main/frontend
@@ -193,7 +216,7 @@ npm install
 npm run dev
 ```
 
-### 4. Worker 실행
+### Worker
 
 ```powershell
 cd hub-worker
