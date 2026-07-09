@@ -5,14 +5,14 @@
 <mapper namespace="hub.auth.mapper.UserMapper">
 
     <select id="findById" resultType="hub.auth.domain.HubUser">
-        SELECT u.id, u.corp_id, c.corp_cd, u.username, u.password
+        SELECT u.id, u.corp_id, c.corp_cd, u.username, u.password, u.role
         FROM users u
         JOIN hub_corp c ON c.id = u.corp_id
         WHERE u.id = #{id}
     </select>
 
     <select id="findByUsername" resultType="hub.auth.domain.HubUser">
-        SELECT u.id, u.corp_id, c.corp_cd, u.username, u.password
+        SELECT u.id, u.corp_id, c.corp_cd, u.username, u.password, u.role
         FROM users u
         JOIN hub_corp c ON c.id = u.corp_id
         WHERE u.username = #{username}

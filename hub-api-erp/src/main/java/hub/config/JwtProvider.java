@@ -13,6 +13,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class JwtProvider {
 
+    private static final String DEFAULT_ROLE = "USER";
+
     private final JwtProperties props;
 
     private SecretKey key() {
@@ -20,9 +22,14 @@ public class JwtProvider {
     }
 
     public String generate(String username) {
+        return generate(username, DEFAULT_ROLE);
+    }
+
+    public String generate(String username, String role) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
                 .subject(username)
+                .claim("role", normalizeRole(role))
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + props.getExpiryMs()))
                 .signWith(key())
@@ -31,6 +38,10 @@ public class JwtProvider {
 
     public String extractUsername(String token) {
         return claims(token).getSubject();
+    }
+
+    public String extractRole(String token) {
+        return normalizeRole(claims(token).get("role", String.class));
     }
 
     public Claims extractClaims(String token) {
@@ -44,6 +55,13 @@ public class JwtProvider {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private String normalizeRole(String role) {
+        if (role == null || role.isBlank()) {
+            return DEFAULT_ROLE;
+        }
+        return role.trim().toUpperCase();
     }
 
     private Claims claims(String token) {

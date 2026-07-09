@@ -46,16 +46,16 @@ export default function App() {
             <ProtectedRoute><ExternalApiPage /></ProtectedRoute>
           } />
           <Route path="/monitor" element={
-            <ProtectedRoute><MonitorPage /></ProtectedRoute>
+            <ProtectedRoute requiredRole="SYSTEM_ADMIN"><MonitorPage /></ProtectedRoute>
           } />
           <Route path="/outbox" element={
-            <ProtectedRoute><OutboxPage /></ProtectedRoute>
+            <ProtectedRoute requiredRole="SYSTEM_ADMIN"><OutboxPage /></ProtectedRoute>
           } />
           <Route path="/load-test" element={
-            <ProtectedRoute><LoadTestPage /></ProtectedRoute>
+            <ProtectedRoute requiredRole="SYSTEM_ADMIN"><LoadTestPage /></ProtectedRoute>
           } />
           <Route path="/db-migrations" element={
-            <ProtectedRoute><DbMigrationsPage /></ProtectedRoute>
+            <ProtectedRoute requiredRole="SYSTEM_ADMIN"><DbMigrationsPage /></ProtectedRoute>
           } />
         </Routes>
       </BrowserRouter>

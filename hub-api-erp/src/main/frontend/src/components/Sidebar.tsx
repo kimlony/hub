@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
-type NavItem = { label: string; to: string; icon: string; badge?: number }
+type NavItem = { label: string; to: string; icon: string; badge?: number; requiredRole?: 'SYSTEM_ADMIN' }
 type NavSection = { section: string; items: NavItem[] }
 
 const nav: NavSection[] = [
@@ -30,16 +30,16 @@ const nav: NavSection[] = [
   {
     section: '모니터링',
     items: [
-      { label: 'Kafka 현황', to: '/monitor', icon: 'K' },
-      { label: 'Outbox', to: '/outbox', icon: 'O' },
-      { label: '대용량 데이터 테스트', to: '/load-test', icon: 'L' },
-      { label: 'DB Migration', to: '/db-migrations', icon: 'M' },
+      { label: 'Kafka 현황', to: '/monitor', icon: 'K', requiredRole: 'SYSTEM_ADMIN' },
+      { label: 'Outbox', to: '/outbox', icon: 'O', requiredRole: 'SYSTEM_ADMIN' },
+      { label: '대용량 데이터 테스트', to: '/load-test', icon: 'L', requiredRole: 'SYSTEM_ADMIN' },
+      { label: 'DB Migration', to: '/db-migrations', icon: 'M', requiredRole: 'SYSTEM_ADMIN' },
     ],
   },
 ]
 
 export default function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
-  const { username } = useAuth()
+  const { username, isSystemAdmin } = useAuth()
   return (
     <aside className="w-56 flex flex-col flex-shrink-0 bg-white border-r border-slate-100 h-screen">
       <div className="px-5 py-6">
@@ -55,36 +55,40 @@ export default function Sidebar({ onOpenSettings }: { onOpenSettings: () => void
       </div>
 
       <nav className="flex-1 px-3 overflow-y-auto">
-        {nav.map(({ section, items }) => (
-          <div key={section} className="mb-5">
-            <p className="px-2 mb-1.5 text-[10px] font-semibold text-[#B0B8C1] uppercase tracking-wider">
-              {section}
-            </p>
-            {items.map(({ label, to, icon, badge }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={to === '/'}
-                className={({ isActive }) =>
-                  `flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] mb-0.5 transition-all ` +
-                  (isActive
-                    ? 'bg-[#EBF3FE] text-[#3182F6] font-bold'
-                    : 'text-[#8B95A1] hover:bg-slate-50 hover:text-[#191F28] font-medium')
-                }
-              >
-                <span className="text-[11px] w-5 h-5 rounded-md bg-slate-100 flex items-center justify-center font-extrabold">
-                  {icon}
-                </span>
-                <span className="flex-1">{label}</span>
-                {badge !== undefined && (
-                  <span className="bg-[#FF6B6B] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                    {badge}
+        {nav.map(({ section, items }) => {
+          const visibleItems = items.filter(({ requiredRole }) => !requiredRole || isSystemAdmin)
+          if (visibleItems.length === 0) return null
+          return (
+            <div key={section} className="mb-5">
+              <p className="px-2 mb-1.5 text-[10px] font-semibold text-[#B0B8C1] uppercase tracking-wider">
+                {section}
+              </p>
+              {visibleItems.map(({ label, to, icon, badge }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={to === '/'}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] mb-0.5 transition-all ` +
+                    (isActive
+                      ? 'bg-[#EBF3FE] text-[#3182F6] font-bold'
+                      : 'text-[#8B95A1] hover:bg-slate-50 hover:text-[#191F28] font-medium')
+                  }
+                >
+                  <span className="text-[11px] w-5 h-5 rounded-md bg-slate-100 flex items-center justify-center font-extrabold">
+                    {icon}
                   </span>
-                )}
-              </NavLink>
-            ))}
-          </div>
-        ))}
+                  <span className="flex-1">{label}</span>
+                  {badge !== undefined && (
+                    <span className="bg-[#FF6B6B] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                      {badge}
+                    </span>
+                  )}
+                </NavLink>
+              ))}
+            </div>
+          )
+        })}
       </nav>
 
       <div className="px-3 py-3 border-t border-slate-100">

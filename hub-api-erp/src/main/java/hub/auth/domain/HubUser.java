@@ -12,5 +12,6 @@ public class HubUser {
     private String       corpCd;
     private String       username;
     private String       password;
+    private String       role;
     private List<String> mallKeys;
 }

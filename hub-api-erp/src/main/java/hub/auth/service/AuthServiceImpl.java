@@ -30,8 +30,8 @@ public class AuthServiceImpl implements AuthService {
             throw new AuthException("사용자를 찾을 수 없습니다.");
         }
 
-        String token = jwtProvider.generate(user.getUsername());
-        return new LoginResponse(token, user.getUsername());
+        String token = jwtProvider.generate(user.getUsername(), user.getRole());
+        return new LoginResponse(token, user.getUsername(), user.getRole());
     }
 
     @Override
