@@ -161,6 +161,12 @@ powershell -ExecutionPolicy Bypass -File scripts/test-integration.ps1
 docker compose up -d
 ```
 
+EC2 dev compose 기준으로 빈 DB 배포를 검증할 때는 `.env.dev`를 준비한 뒤 실행합니다.
+
+```bash
+./scripts/verify-empty-db-compose.sh --yes
+```
+
 ### 2. API 실행
 
 IntelliJ에서 실행할 경우:

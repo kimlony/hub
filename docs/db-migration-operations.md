@@ -45,7 +45,28 @@ spring:
 
 ## 빈 DB 배포 검증 명령
 
-EC2 dev 배포 또는 로컬 full compose 검증 전, 필요한 경우 `.env.dev`를 준비한 뒤 아래 순서로 확인한다.
+EC2 dev 배포 또는 로컬 full compose 검증 전, 필요한 경우 `.env.dev`를 준비한 뒤 자동 검증 스크립트를 실행한다.
+
+```bash
+./scripts/verify-empty-db-compose.sh
+```
+
+기본 실행은 `down -v` 위험 경고와 확인 입력을 요구한다. CI나 명시적인 검증에서는 다음처럼 확인을 생략할 수 있다.
+
+```bash
+./scripts/verify-empty-db-compose.sh --yes
+```
+
+스크립트는 아래 흐름을 자동으로 검증한다.
+
+1. `docker compose down -v`
+2. `docker compose up -d --build`
+3. PostgreSQL/Kafka healthcheck
+4. API/Worker 기동 상태
+5. hub-api Flyway 성공 로그
+6. `/api/admin/db-migrations`의 `schemaUpToDate=true`
+
+수동 확인이 필요하면 같은 compose 기준으로 아래 명령을 사용할 수 있다.
 
 ```bash
 docker compose -f docker-compose.server.yml -f docker-compose.dev.yml --env-file .env.dev down -v

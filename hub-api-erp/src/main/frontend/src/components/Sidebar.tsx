@@ -48,7 +48,7 @@ export default function Sidebar({ onOpenSettings }: { onOpenSettings: () => void
             B
           </div>
           <div>
-            <p className="text-[#191F28] font-extrabold text-[15px] leading-tight">BizBee HUB</p>
+            <p className="text-[#191F28] font-extrabold text-[15px] leading-tight">Easy HUB</p>
             <p className="text-[#8B95A1] text-[11px]">주문수집 플랫폼</p>
           </div>
         </div>

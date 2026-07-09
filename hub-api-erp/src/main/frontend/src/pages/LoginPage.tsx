@@ -41,7 +41,7 @@ export default function LoginPage() {
           <div className="w-10 h-10 bg-[#3182F6] rounded-xl flex items-center justify-center mx-auto mb-3">
             <span className="text-white font-extrabold text-[14px]">B</span>
           </div>
-          <h1 className="text-[18px] font-extrabold text-[#191F28]">BizBee HUB</h1>
+          <h1 className="text-[18px] font-extrabold text-[#191F28]">Easy HUB</h1>
           <p className="text-[13px] text-[#8B95A1] mt-1">주문수집 자동화 플랫폼</p>
         </div>
 
