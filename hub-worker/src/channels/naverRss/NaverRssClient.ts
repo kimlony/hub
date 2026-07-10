@@ -4,8 +4,8 @@ import { logger } from "../../logger.js";
 import type { RssItem } from "./types.js";
 
 const DEFAULT_RSS_URLS = [
-  "https://feeds.feedburner.com/yonhapnewseconomy",
-  "https://rss.hankyung.com/economy.xml"
+  "https://www.yna.co.kr/rss/economy.xml",
+  "https://www.hankyung.com/feed/economy"
 ];
 
 export class NaverRssClient {
@@ -14,7 +14,14 @@ export class NaverRssClient {
 
     for (const url of getRssUrls()) {
       try {
-        items.push(...await this.fetchOne(url));
+        const fetchedItems = await this.fetchOne(url);
+        if (fetchedItems.length === 0) {
+          logger.warn({
+            event: "NAVER_RSS_EMPTY_FEED",
+            url
+          }, "Naver RSS feed returned no items");
+        }
+        items.push(...fetchedItems);
       } catch (error) {
         logger.warn({
           event: "NAVER_RSS_FETCH_FAILED",
@@ -22,6 +29,10 @@ export class NaverRssClient {
           url
         }, "Naver RSS fetch failed");
       }
+    }
+
+    if (items.length === 0) {
+      throw new Error("NAVER_RSS returned no items");
     }
 
     return items;
@@ -56,7 +67,9 @@ export class NaverRssClient {
 }
 
 function getRssUrls(): string[] {
-  return (process.env.NAVER_RSS_URLS ?? DEFAULT_RSS_URLS.join(","))
+  const configuredUrls = process.env.NAVER_RSS_URLS?.trim();
+
+  return (configuredUrls || DEFAULT_RSS_URLS.join(","))
     .split(",")
     .map((url) => url.trim())
     .filter(Boolean);

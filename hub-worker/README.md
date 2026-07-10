@@ -77,7 +77,7 @@ KAFKA_CLIENT_ID=hub-worker
 
 ELEVENST_API_KEY_OVERRIDE=
 DART_API_KEY=
-NAVER_RSS_URLS=https://feeds.feedburner.com/yonhapnewseconomy,https://rss.hankyung.com/economy.xml
+NAVER_RSS_URLS=https://www.yna.co.kr/rss/economy.xml,https://www.hankyung.com/feed/economy
 ```
 
 `HUB_AES_SECRET` must be exactly 32 bytes and must match the API service.

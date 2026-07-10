@@ -55,6 +55,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       HUB_KAFKA_TOPICS_JOBS: ${HUB_KAFKA_TOPICS_JOBS:-hub.jobs}
       HUB_JOBS_DLQ_TOPIC: ${HUB_JOBS_DLQ_TOPIC:-hub.jobs.dlq}
+      HUB_KAFKA_CONSUMER_GROUP: ${KAFKA_GROUP_ID:-hub-worker-group}
       HUB_SECURITY_ENABLED: ${HUB_SECURITY_ENABLED:-true}
       HUB_API_KEY: ${HUB_API_KEY:?HUB_API_KEY is required}
       HUB_JWT_SECRET: ${HUB_JWT_SECRET:?HUB_JWT_SECRET is required}
@@ -139,6 +140,16 @@ services:
       KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-hub-worker}
       WORKER_HEARTBEAT_INTERVAL_SECONDS: ${WORKER_HEARTBEAT_INTERVAL_SECONDS:-10}
       GRACEFUL_SHUTDOWN_TIMEOUT_MS: ${GRACEFUL_SHUTDOWN_TIMEOUT_MS:-60000}
+      JOB_LOCK_TTL_MINUTES: ${JOB_LOCK_TTL_MINUTES:-30}
+      JOB_RETRY_BACKOFF_MS: ${JOB_RETRY_BACKOFF_MS:-60000,300000,900000}
+      GODO_BASE_URL: ${GODO_BASE_URL:-http://openhub.godo.co.kr/godomall5}
+      GODO_PAGE_SIZE: ${GODO_PAGE_SIZE:-100}
+      GCHAN_BASE_URL: ${GCHAN_BASE_URL:-https://example.invalid/gchan}
+      WCHAN_BASE_URL: ${WCHAN_BASE_URL:-https://scmdev.buyis.co.kr}
+      ONRY_BASE_URL: ${ONRY_BASE_URL:-https://api.onnurichance.com}
+      ONRY_X_API_KEY: ${ONRY_X_API_KEY:-}
+      DART_API_KEY: ${DART_API_KEY:-}
+      NAVER_RSS_URLS: ${NAVER_RSS_URLS:-}
     depends_on:
       hub-api:
         condition: service_healthy

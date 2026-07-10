@@ -22,6 +22,25 @@
         <result property="updatedAt"    column="updated_at"/>
     </resultMap>
 
+    <sql id="hubJobColumns">
+        request_id,
+        request_key,
+        job_type,
+        source_erp,
+        parent_job_id,
+        correlation_id,
+        causation_id,
+        schema_version,
+        payload_version,
+        channel_cd,
+        status,
+        payload,
+        retry_count,
+        error_message,
+        completed_at AT TIME ZONE 'Asia/Seoul' AS completed_at,
+        created_at AT TIME ZONE 'Asia/Seoul' AS created_at,
+        updated_at AT TIME ZONE 'Asia/Seoul' AS updated_at
+    </sql>
     <resultMap id="hubJobLogResultMap" type="hub.job.dto.response.HubJobLogItem">
         <constructor>
             <idArg     column="id"              javaType="java.lang.Long"/>
@@ -92,22 +111,22 @@
     </insert>
 
     <select id="selectByRequestId" resultMap="hubJobResultMap">
-        SELECT * FROM hub_job WHERE request_id = #{requestId}
+        SELECT <include refid="hubJobColumns"/> FROM hub_job WHERE request_id = #{requestId}
     </select>
 
     <select id="selectByRequestKey" resultMap="hubJobResultMap">
-        SELECT * FROM hub_job WHERE request_key = #{requestKey}
+        SELECT <include refid="hubJobColumns"/> FROM hub_job WHERE request_key = #{requestKey}
     </select>
 
     <select id="selectPipelineByCorrelationIdAndCorpId" resultMap="hubJobResultMap">
-        SELECT * FROM hub_job
+        SELECT <include refid="hubJobColumns"/> FROM hub_job
         WHERE correlation_id = #{correlationId}
           AND payload ->> 'corpId' = CAST(#{corpId} AS varchar)
         ORDER BY created_at ASC, request_id ASC
     </select>
 
     <select id="selectByStatus" resultMap="hubJobResultMap">
-        SELECT * FROM hub_job WHERE status = #{status}
+        SELECT <include refid="hubJobColumns"/> FROM hub_job WHERE status = #{status}
     </select>
 
     <select id="selectJobLogs" resultMap="hubJobLogResultMap">
@@ -130,7 +149,7 @@
     </select>
 
     <select id="selectJobList" resultMap="hubJobResultMap">
-        SELECT * FROM hub_job
+        SELECT <include refid="hubJobColumns"/> FROM hub_job
         <where>
             <if test="status != null and status != ''">AND status = #{status}</if>
             <if test="channelCd != null and channelCd != ''">AND channel_cd = #{channelCd}</if>
