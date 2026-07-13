@@ -1,19 +1,9 @@
 package hub.support;
 
-import hub.external.schema.ExternalApiClientSchemaInitializer;
-import hub.erp.schema.ErpApplySchemaInitializer;
-import hub.erp.schema.ManualErpApplySchemaInitializer;
-import hub.job.schema.HubJobSchemaInitializer;
-import hub.order.schema.OrderNormalizeSchemaInitializer;
-import hub.schedule.schema.CollectScheduleSchemaInitializer;
-import hub.setting.schema.UserSettingSchemaInitializer;
-import hub.tenant.schema.TenantSchemaInitializer;
-import java.sql.Connection;
 import javax.sql.DataSource;
-import org.springframework.core.io.ClassPathResource;
+import org.flywaydb.core.Flyway;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 public final class IntegrationTestDatabase {
@@ -48,9 +38,13 @@ public final class IntegrationTestDatabase {
     }
 
     private static void initializeSchema(DataSource dataSource) {
+        Flyway.configure()
+                .dataSource(dataSource)
+                .locations("classpath:db/migration")
+                .load()
+                .migrate();
+
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
-        runScript(dataSource, "db/init-auth.sql");
-        new TenantSchemaInitializer(jdbcTemplate).initialize();
         jdbcTemplate.update("""
                 INSERT INTO hub_corp (corp_cd, corp_name)
                 VALUES ('TEST-DEFAULT', 'Integration Test Corp')
@@ -59,70 +53,5 @@ public final class IntegrationTestDatabase {
         Long defaultCorpId = jdbcTemplate.queryForObject(
                 "SELECT id FROM hub_corp WHERE corp_cd = 'TEST-DEFAULT'", Long.class);
         jdbcTemplate.execute("ALTER TABLE users ALTER COLUMN corp_id SET DEFAULT " + defaultCorpId);
-        initializeJob(jdbcTemplate);
-        new HubJobSchemaInitializer(jdbcTemplate).initialize();
-        new ExternalApiClientSchemaInitializer(jdbcTemplate).initialize();
-        new CollectScheduleSchemaInitializer(jdbcTemplate).initialize();
-        new OrderNormalizeSchemaInitializer(jdbcTemplate).initialize();
-        new ErpApplySchemaInitializer(jdbcTemplate).initialize();
-        new ManualErpApplySchemaInitializer(jdbcTemplate).initialize();
-        new UserSettingSchemaInitializer(jdbcTemplate).initialize();
-        initializeOutbox(jdbcTemplate);
-    }
-
-    private static void runScript(DataSource dataSource, String location) {
-        try (Connection connection = dataSource.getConnection()) {
-            ScriptUtils.executeSqlScript(connection, new ClassPathResource(location));
-        } catch (Exception exception) {
-            throw new IllegalStateException("failed to initialize test database from " + location, exception);
-        }
-    }
-
-    private static void initializeJob(JdbcTemplate jdbcTemplate) {
-        jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS hub_job (
-                    id BIGSERIAL PRIMARY KEY,
-                    request_id VARCHAR(100) UNIQUE NOT NULL,
-                    request_key VARCHAR(200) UNIQUE,
-                    channel_cd VARCHAR(30),
-                    status VARCHAR(30) NOT NULL,
-                    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    retry_count INT NOT NULL DEFAULT 0,
-                    error_message TEXT,
-                    completed_at TIMESTAMPTZ,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    job_type VARCHAR(100) NOT NULL DEFAULT 'ORDER_COLLECT',
-                    source_erp VARCHAR(100) NOT NULL DEFAULT 'HUB',
-                    next_retry_at TIMESTAMPTZ
-                )
-                """);
-    }
-
-    private static void initializeOutbox(JdbcTemplate jdbcTemplate) {
-        jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS hub_job_outbox (
-                    id BIGSERIAL PRIMARY KEY,
-                    request_id VARCHAR(100) NOT NULL,
-                    event_type VARCHAR(50) NOT NULL,
-                    topic VARCHAR(120) NOT NULL,
-                    partition_key VARCHAR(200) NOT NULL,
-                    payload JSONB NOT NULL,
-                    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-                    retry_count INT NOT NULL DEFAULT 0,
-                    max_retry_count INT NOT NULL DEFAULT 5,
-                    next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    locked_by VARCHAR(120),
-                    locked_at TIMESTAMPTZ,
-                    last_error TEXT,
-                    published_at TIMESTAMPTZ,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                )
-                """);
-        jdbcTemplate.execute("""
-                CREATE INDEX IF NOT EXISTS idx_hub_job_outbox_status_retry
-                ON hub_job_outbox (status, next_retry_at)
-                """);
     }
 }
