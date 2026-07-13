@@ -1,4 +1,5 @@
 import { jest } from "@jest/globals";
+import { StaleJobAttemptError } from "../../db/postgres.js";
 import type { saveErpApplyResults } from "../../db/postgres.js";
 import type { JobHandlerMessage } from "../../handlers/IJobHandler.js";
 import type { ErpConnection, ErpConnectionRepository } from "./ErpConnectionRepository.js";
@@ -35,6 +36,7 @@ function dependencies(current: ErpConnection | null = connection()) {
   };
   const store = {
     areAlreadyApplied: jest.fn(async () => false),
+    assertCurrentExecution: jest.fn(async () => undefined),
     findOrders: jest.fn(async () => [{
       id: 11, channelOrderId: "ORDER-11", orderStatus: "PAID",
       orderAmount: "1000", buyerName: "Buyer", items: []
@@ -109,5 +111,22 @@ describe("ErpApplyHandler token authentication", () => {
       code: "ERP_CONNECTION_INACTIVE"
     }));
     expect(deps.adapter.apply).not.toHaveBeenCalled();
+  });
+
+  it("does not call ERP when the preflight execution token is stale", async () => {
+    const deps = dependencies();
+    deps.store.assertCurrentExecution.mockRejectedValueOnce(
+      new StaleJobAttemptError({
+        requestId: "erp-job-1",
+        attemptId: "00000000-0000-0000-0000-000000000001",
+        workerId: "worker-old",
+        fencingToken: 1,
+        leaseUntil: new Date()
+      })
+    );
+
+    await expect(deps.handler.handle(message())).rejects.toBeInstanceOf(StaleJobAttemptError);
+    expect(deps.adapter.apply).not.toHaveBeenCalled();
+    expect(deps.store.saveResults).not.toHaveBeenCalled();
   });
 });

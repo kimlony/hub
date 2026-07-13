@@ -126,3 +126,21 @@ GET /api/admin/db-migrations
 - 운영 DB에서 임의로 `repair` 또는 history 삭제를 수행하지 않는다.
 - 기존 DB에 처음 Flyway를 붙이는 경우 `baseline-on-migrate` 설정과 현재 스키마 상태를 사전에 확인한다.
 - Worker는 Flyway schema가 준비될 때까지 대기해야 하며, 기본 실행 경로에서 테이블을 직접 생성하지 않는다.
+
+## Job 처리 권한 Fencing migration
+
+`V20260713_001__add_job_processing_attempt_fencing.sql`은 `hub_job`에 처리 시도와 lease/fencing 정보를 추가한다. 기존 row에는 nullable 처리 권한 컬럼과 `fencing_token=0` 기본값이 적용되므로 기존 데이터가 있어도 migration이 가능하다.
+
+배포 후 확인:
+
+```sql
+SELECT version, description, success
+FROM flyway_schema_history
+WHERE version = '20260713.001';
+
+SELECT processing_attempt_id, claimed_by, lease_until, fencing_token
+FROM hub_job
+WHERE status = 'PROCESSING';
+```
+
+Worker의 기본 lease는 `JOB_LEASE_MINUTES=30`이며 운영/개발 compose에 같은 값을 사용한다. 상세한 보장 범위와 Recovery 운영 방식은 [Job 처리 권한 Fencing](./job-processing-fencing.md)을 참고한다.

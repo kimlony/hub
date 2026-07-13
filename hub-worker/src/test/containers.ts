@@ -93,7 +93,12 @@ async function initializePostgresBaseSchema(): Promise<void> {
         causation_id VARCHAR(100),
         schema_version VARCHAR(20) NOT NULL DEFAULT '1.0',
         payload_version VARCHAR(20) NOT NULL DEFAULT '1.0',
-        next_retry_at TIMESTAMPTZ
+        next_retry_at TIMESTAMPTZ,
+        processing_attempt_id UUID,
+        claimed_by VARCHAR(120),
+        lease_until TIMESTAMPTZ,
+        processing_started_at TIMESTAMPTZ,
+        fencing_token BIGINT NOT NULL DEFAULT 0
       )
     `);
     await pool.query(`

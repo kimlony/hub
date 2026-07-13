@@ -8,12 +8,14 @@ import {
   findActiveChannelAccountIdentity,
   findActiveChannelCredentials,
   releaseJobLock,
+  runWithJobExecutionToken,
   retryOrFailJob,
   saveJobLog,
   succeedJob,
   tryAcquireJobLock,
   tryMarkProcessing
 } from "./db/postgres.js";
+import type { JobExecutionToken } from "./db/postgres.js";
 import { CoupangOrderHandler } from "./channels/coupang/CoupangOrderHandler.js";
 import { GchanOrderHandler } from "./channels/gchan/GchanOrderHandler.js";
 import { WchanOrderHandler } from "./channels/wchan/WchanOrderHandler.js";
@@ -161,7 +163,7 @@ export async function processJobMessage(
   jobMessage: HubJobMessage,
   source: "consumer" | "recovery" = "consumer",
   options: {
-    alreadyClaimed?: boolean;
+    executionToken?: JobExecutionToken;
     kafka?: {
       topic: string;
       partition: number;
@@ -172,6 +174,7 @@ export async function processJobMessage(
   } = {}
 ): Promise<void> {
   const { requestId, jobType } = jobMessage;
+  let executionToken: JobExecutionToken | null = options.executionToken ?? null;
 
   try {
     logger.info({
@@ -203,8 +206,8 @@ export async function processJobMessage(
       }
     });
 
-    const processing = options.alreadyClaimed ? true : await tryMarkProcessing(requestId);
-    if (!processing) {
+    executionToken = executionToken ?? await tryMarkProcessing(requestId);
+    if (!executionToken) {
       logger.info({
         event: "JOB_PROCESSING_SKIPPED",
         requestId,
@@ -234,7 +237,9 @@ export async function processJobMessage(
     }
 
     const handledMessage = await prepareJobMessage(jobMessage);
-    const succeeded = await runRegisteredHandler(handledMessage, requestId);
+    const succeeded = await runWithJobExecutionToken(executionToken, () =>
+      runRegisteredHandler(handledMessage, executionToken!)
+    );
 
     if (succeeded === null) {
       return;
@@ -291,9 +296,19 @@ export async function processJobMessage(
       }
     });
   } catch (error) {
+    if (!executionToken) {
+      logger.error({
+        event: "JOB_PROCESSING_FAILED_BEFORE_CLAIM",
+        err: error,
+        requestId,
+        jobType,
+        source
+      }, "Job processing failed before claim");
+      return;
+    }
     const retryClassification = classifyRetry(error);
     const errorMessage = retryClassification.errorMessage;
-    const decision = await retryOrFailJob(requestId, errorMessage, {
+    const decision = await retryOrFailJob(executionToken, errorMessage, {
       retryable: retryClassification.retryable
     });
 
@@ -440,30 +455,33 @@ async function prepareJobMessage(jobMessage: HubJobMessage): Promise<HubJobMessa
   return enrichWithChannelCredentials(jobMessage);
 }
 
-async function runRegisteredHandler(jobMessage: HubJobMessage, requestId: string): Promise<boolean | null> {
+async function runRegisteredHandler(jobMessage: HubJobMessage, executionToken: JobExecutionToken): Promise<boolean | null> {
   const lockKey = resolveJobLockKey(jobMessage);
   if (!lockKey || (jobMessage.jobType === "ORDER_COLLECT" && getChannelCd(jobMessage) === "MOCK_MALL")) {
-    return executeRegisteredHandler(jobMessage, requestId);
+    return executeRegisteredHandler(jobMessage, executionToken);
   }
-  const lockAcquired = await tryAcquireJobLock(lockKey, requestId);
+  const lockAcquired = await tryAcquireJobLock(lockKey, executionToken.requestId);
 
   if (!lockAcquired) {
-    await deferJobForLockConflict(requestId, lockKey);
+    await deferJobForLockConflict(executionToken, lockKey);
     return null;
   }
 
   try {
-    return await executeRegisteredHandler(jobMessage, requestId);
+    return await executeRegisteredHandler(jobMessage, executionToken);
   } finally {
-    await releaseJobLock(lockKey, requestId);
+    await releaseJobLock(lockKey, executionToken.requestId);
   }
 }
 
-async function executeRegisteredHandler(jobMessage: HubJobMessage, requestId: string): Promise<boolean> {
+async function executeRegisteredHandler(jobMessage: HubJobMessage, executionToken: JobExecutionToken): Promise<boolean> {
   const handler = registry.get(jobMessage.jobType, getChannelCd(jobMessage));
   if (jobMessage.jobType === "ORDER_NORMALIZE") {
-    await handler.handle(jobMessage);
-    const completion = await completeOrderNormalizeWithErpApply(jobMessage);
+    const completion = await completeOrderNormalizeWithErpApply(
+      jobMessage,
+      executionToken,
+      (client) => (handler as OrderNormalizeHandler).handle(jobMessage, { client })
+    );
     if (completion.erpApplyJob) {
       await saveJobLog({
         requestId: jobMessage.requestId,
@@ -499,11 +517,11 @@ async function executeRegisteredHandler(jobMessage: HubJobMessage, requestId: st
   }
   if (jobMessage.jobType !== "ORDER_COLLECT") {
     await handler.handle(jobMessage);
-    return succeedJob(requestId);
+    return succeedJob(executionToken);
   }
 
   const resultPayload = await captureOrderCollectResult(jobMessage, () => handler.handle(jobMessage));
-  const completion = await completeOrderCollectWithNormalize(jobMessage, resultPayload);
+  const completion = await completeOrderCollectWithNormalize(jobMessage, resultPayload, executionToken);
   if (completion.succeeded) {
     await saveJobLog({
       requestId: jobMessage.requestId,

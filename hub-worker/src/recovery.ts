@@ -121,7 +121,7 @@ async function processStuckJob(job: HubJobRow): Promise<void> {
     schemaVersion: job.schemaVersion,
     payloadVersion: job.payloadVersion,
     payload: job.payload
-  }, "recovery", { alreadyClaimed: true });
+  }, "recovery", { executionToken: job.executionToken });
 }
 
 async function processZombieProcessingJob(job: HubJobRow): Promise<void> {
@@ -142,5 +142,5 @@ async function processZombieProcessingJob(job: HubJobRow): Promise<void> {
     schemaVersion: job.schemaVersion,
     payloadVersion: job.payloadVersion,
     payload: job.payload
-  }, "recovery", { alreadyClaimed: true });
+  }, "recovery", { executionToken: job.executionToken });
 }

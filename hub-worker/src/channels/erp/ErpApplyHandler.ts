@@ -1,8 +1,10 @@
 import {
   areErpOrdersAlreadyApplied,
+  assertCurrentJobExecutionAuthority,
   findNormalizedOrdersForErp,
   saveErpApplyResults
 } from "../../db/postgres.js";
+import { StaleJobAttemptError } from "../../db/postgres.js";
 import type { IJobHandler, JobHandlerMessage } from "../../handlers/IJobHandler.js";
 import {
   PostgresErpConnectionRepository,
@@ -19,12 +21,14 @@ import {
 
 type ErpApplyStore = {
   areAlreadyApplied: typeof areErpOrdersAlreadyApplied;
+  assertCurrentExecution: typeof assertCurrentJobExecutionAuthority;
   findOrders: typeof findNormalizedOrdersForErp;
   saveResults: typeof saveErpApplyResults;
 };
 
 const postgresStore: ErpApplyStore = {
   areAlreadyApplied: areErpOrdersAlreadyApplied,
+  assertCurrentExecution: assertCurrentJobExecutionAuthority,
   findOrders: findNormalizedOrdersForErp,
   saveResults: saveErpApplyResults
 };
@@ -80,12 +84,14 @@ export class ErpApplyHandler implements IJobHandler {
       };
       let response;
       try {
+        await this.store.assertCurrentExecution(message.requestId);
         response = await this.adapter.apply(connection, token, request, options);
       } catch (error) {
         if (!(error instanceof MockErpError) || !error.isAuthFailure || connection.authType !== "TOKEN") {
           throw error;
         }
         const refreshedToken = await this.tokenProvider.forceRefreshToken(connection);
+        await this.store.assertCurrentExecution(message.requestId);
         response = await this.adapter.apply(connection, refreshedToken, request, {
           ...options,
           authAttempt: 1
@@ -107,6 +113,9 @@ export class ErpApplyHandler implements IJobHandler {
         deliveredByUserId: payload.deliveredByUserId
       });
     } catch (error) {
+      if (error instanceof StaleJobAttemptError) {
+        throw error;
+      }
       const errorCode = error instanceof MockErpError || error instanceof ErpConnectionError
         ? error.code
         : "ERP_TECHNICAL_ERROR";

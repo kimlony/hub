@@ -1,3 +1,4 @@
+import type pg from "pg";
 import {
   findJobResultForNormalize,
   saveJobLog,
@@ -16,7 +17,8 @@ import type { RawOrderContext } from "./types.js";
 const normalizerRegistry = new NormalizerRegistry();
 
 export class OrderNormalizeHandler implements IJobHandler {
-  async handle(message: JobHandlerMessage): Promise<void> {
+  async handle(message: JobHandlerMessage, options: { client?: pg.PoolClient } = {}): Promise<void> {
+    const client = options.client;
     const sourceRequestId = requireString(message.payload.sourceRequestId, "sourceRequestId");
     const result = await findJobResultForNormalize(sourceRequestId);
     const resultPayload = result.resultPayload;
@@ -27,7 +29,8 @@ export class OrderNormalizeHandler implements IJobHandler {
       await saveNormalizeCheckpoint({
         sourceRequestId,
         status: "SUCCESS",
-        normalizedCount: 0
+        normalizedCount: 0,
+        client
       });
       return;
     }
@@ -90,7 +93,8 @@ export class OrderNormalizeHandler implements IJobHandler {
         productAmount: normalized.productAmount,
         deliveryFee: normalized.deliveryFee,
         discountAmount: normalized.discountAmount,
-        rawPayload: normalized.rawPayload
+        rawPayload: normalized.rawPayload,
+        client
       });
 
       for (const item of normalized.items) {
@@ -108,7 +112,8 @@ export class OrderNormalizeHandler implements IJobHandler {
           itemAmount: item.itemAmount,
           discountAmount: item.discountAmount,
           expectedSettlementAmount: item.expectedSettlementAmount,
-          rawPayload: item.rawPayload
+          rawPayload: item.rawPayload,
+          client
         });
       }
 
@@ -124,7 +129,8 @@ export class OrderNormalizeHandler implements IJobHandler {
           deliveryCompany: normalized.delivery.deliveryCompany,
           trackingNumber: normalized.delivery.trackingNumber,
           deliveryStatus: normalized.delivery.deliveryStatus,
-          rawPayload: normalized.delivery.rawPayload
+          rawPayload: normalized.delivery.rawPayload,
+          client
         });
       }
 
@@ -134,7 +140,8 @@ export class OrderNormalizeHandler implements IJobHandler {
     await saveNormalizeCheckpoint({
       sourceRequestId,
       status: "SUCCESS",
-      normalizedCount
+      normalizedCount,
+      client
     });
     await saveJobLog({
       requestId: message.requestId,

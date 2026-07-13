@@ -30,6 +30,15 @@ export type HubJobRow = {
   schemaVersion: string;
   payloadVersion: string;
   payload: Record<string, unknown>;
+  executionToken: JobExecutionToken;
+};
+
+export type JobExecutionToken = {
+  requestId: string;
+  attemptId: string;
+  workerId: string;
+  fencingToken: number;
+  leaseUntil: Date;
 };
 
 export type RetryDecision = {
@@ -47,6 +56,15 @@ type CapturedJobResult = {
   requestId: string;
   resultPayload?: Record<string, unknown>;
 };
+
+export class StaleJobAttemptError extends Error {
+  readonly code = "STALE_JOB_ATTEMPT_REJECTED";
+
+  constructor(readonly executionToken: JobExecutionToken) {
+    super("Stale job attempt rejected: " + executionToken.requestId + "/" + executionToken.attemptId);
+    this.name = "StaleJobAttemptError";
+  }
+}
 
 export type CompleteOrderCollectResult = {
   succeeded: boolean;
@@ -124,8 +142,10 @@ const MAX_RETRY_COUNT = 3;
 const DEFAULT_RETRY_BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000];
 const RETRY_BACKOFF_MS = parseRetryBackoffMs();
 const LOCK_TTL_MINUTES = Number(process.env.JOB_LOCK_TTL_MINUTES ?? 30);
+const JOB_LEASE_MINUTES = Number(process.env.JOB_LEASE_MINUTES ?? 30);
 const WORKER_ID = getWorkerId();
 const jobResultCapture = new AsyncLocalStorage<CapturedJobResult>();
+const jobExecutionContext = new AsyncLocalStorage<JobExecutionToken>();
 const SCHEMA_INIT_LOCK_KEY = 2026060201;
 
 const { Pool } = pg;
@@ -678,48 +698,133 @@ export async function saveWorkerHeartbeat(input: {
   );
 }
 
-export async function tryMarkProcessing(requestId: string): Promise<boolean> {
-  const result = await pool.query(
+function toJobExecutionToken(
+  requestId: string,
+  row: { processing_attempt_id: string; claimed_by: string; fencing_token: string; lease_until: Date }
+): JobExecutionToken {
+  return {
+    requestId,
+    attemptId: row.processing_attempt_id,
+    workerId: row.claimed_by,
+    fencingToken: Number(row.fencing_token),
+    leaseUntil: new Date(row.lease_until)
+  };
+}
+
+function requireExecutionToken(requestId: string): JobExecutionToken {
+  const token = jobExecutionContext.getStore();
+  if (!token || token.requestId !== requestId) {
+    throw new Error("Job execution token is required: " + requestId);
+  }
+  return token;
+}
+async function resolveExecutionTokenForCompatibility(
+  tokenOrRequestId: JobExecutionToken | string
+): Promise<JobExecutionToken> {
+  if (typeof tokenOrRequestId !== "string") {
+    return tokenOrRequestId;
+  }
+  if (process.env.RUN_INTEGRATION_TESTS !== "true") {
+    throw new Error("A JobExecutionToken is required outside integration tests");
+  }
+  const attemptId = randomUUID();
+  const result = await pool.query<{
+    processing_attempt_id: string;
+    claimed_by: string;
+    fencing_token: string;
+    lease_until: Date;
+  }>(
+    `
+      UPDATE hub_job
+      SET processing_attempt_id = COALESCE(processing_attempt_id, $2::uuid),
+          claimed_by = COALESCE(claimed_by, $3),
+          lease_until = COALESCE(lease_until, NOW() + ($4 * INTERVAL '1 minute')),
+          processing_started_at = COALESCE(processing_started_at, NOW()),
+          fencing_token = CASE WHEN processing_attempt_id IS NULL THEN fencing_token + 1 ELSE fencing_token END
+      WHERE request_id = $1 AND status = 'PROCESSING'
+      RETURNING processing_attempt_id, claimed_by, fencing_token, lease_until
+    `,
+    [tokenOrRequestId, attemptId, "integration-test", JOB_LEASE_MINUTES]
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error("Integration test Job is not PROCESSING: " + tokenOrRequestId);
+  }
+  return toJobExecutionToken(tokenOrRequestId, row);
+}
+export function runWithJobExecutionToken<T>(
+  executionToken: JobExecutionToken,
+  work: () => Promise<T>
+): Promise<T> {
+  return jobExecutionContext.run(executionToken, work);
+}
+
+export async function tryMarkProcessing(
+  requestId: string,
+  workerId = WORKER_ID
+): Promise<JobExecutionToken | null> {
+  const attemptId = randomUUID();
+  const result = await pool.query<{
+    processing_attempt_id: string;
+    claimed_by: string;
+    fencing_token: string;
+    lease_until: Date;
+  }>(
     `
       UPDATE hub_job
       SET status = 'PROCESSING',
           error_message = NULL,
           next_retry_at = NULL,
+          processing_attempt_id = $2::uuid,
+          claimed_by = $3,
+          lease_until = NOW() + ($4 * INTERVAL '1 minute'),
+          processing_started_at = NOW(),
+          fencing_token = fencing_token + 1,
           updated_at = NOW()
       WHERE request_id = $1
         AND status = 'QUEUED'
+      RETURNING processing_attempt_id, claimed_by, fencing_token, lease_until
     `,
-    [requestId]
+    [requestId, attemptId, workerId, JOB_LEASE_MINUTES]
   );
 
-  const updated = result.rowCount === 1;
+  const row = result.rows[0];
+  const executionToken = row ? toJobExecutionToken(requestId, row) : null;
   logger.info({
-    event: updated ? "JOB_STATUS_PROCESSING" : "JOB_STATUS_PROCESSING_SKIPPED",
+    event: executionToken ? "JOB_STATUS_PROCESSING" : "JOB_STATUS_PROCESSING_SKIPPED",
     requestId,
     fromStatus: "QUEUED",
     toStatus: "PROCESSING",
-    rowCount: result.rowCount
-  }, updated ? "Job marked as processing" : "Job was not marked as processing");
+    rowCount: result.rowCount,
+    attemptId: executionToken?.attemptId,
+    workerId: executionToken?.workerId,
+    fencingToken: executionToken?.fencingToken,
+    leaseUntil: executionToken?.leaseUntil
+  }, executionToken ? "Job marked as processing" : "Job was not marked as processing");
 
   await saveJobLog({
     requestId,
-    eventType: updated ? "JOB_STATUS_PROCESSING" : "JOB_STATUS_PROCESSING_SKIPPED",
+    eventType: executionToken ? "JOB_STATUS_PROCESSING" : "JOB_STATUS_PROCESSING_SKIPPED",
     level: "INFO",
-    message: updated ? "Job marked as processing" : "Job was not marked as processing",
+    message: executionToken ? "Job marked as processing" : "Job was not marked as processing",
     detail: {
       fromStatus: "QUEUED",
       toStatus: "PROCESSING",
-      rowCount: result.rowCount
+      rowCount: result.rowCount,
+      attemptId: executionToken?.attemptId,
+      workerId: executionToken?.workerId,
+      fencingToken: executionToken?.fencingToken,
+      leaseUntil: executionToken?.leaseUntil.toISOString()
     }
   });
 
-  return updated;
+  return executionToken;
 }
-
 export async function saveJobResult(
   message: HubJobMessage,
   resultPayload: Record<string, unknown>
 ): Promise<SaveJobResultStatus> {
+    const executionToken = requireExecutionToken(message.requestId);
   const capture = jobResultCapture.getStore();
   if (capture?.requestId === message.requestId) {
     capture.resultPayload = resultPayload;
@@ -742,6 +847,9 @@ export async function saveJobResult(
         FROM hub_job
         WHERE request_id = $1::varchar
           AND status = 'PROCESSING'
+          AND processing_attempt_id = $6::uuid
+          AND claimed_by = $7
+          AND fencing_token = $8
       )
       ON CONFLICT (request_id) DO NOTHING
     `,
@@ -750,10 +858,16 @@ export async function saveJobResult(
       message.requestKey ?? null,
       message.jobType,
       message.sourceErp,
-      JSON.stringify(resultPayload)
+      JSON.stringify(resultPayload),
+      executionToken.attemptId,
+      executionToken.workerId,
+      executionToken.fencingToken
     ]
   );
   const saveStatus: SaveJobResultStatus = result.rowCount === 1 ? "INSERTED" : "SKIPPED";
+  if (saveStatus === "SKIPPED") {
+    await logStaleAttempt("RESULT", executionToken);
+  }
 
   logger.info({
     event: saveStatus === "INSERTED" ? "JOB_RESULT_SAVE_SUCCESS" : "JOB_RESULT_SAVE_SKIPPED",
@@ -794,8 +908,10 @@ export async function captureOrderCollectResult(
 
 export async function completeOrderCollectWithNormalize(
   message: HubJobMessage,
-  resultPayload: Record<string, unknown>
+  resultPayload: Record<string, unknown>,
+  tokenOrRequestId?: JobExecutionToken | string
 ): Promise<CompleteOrderCollectResult> {
+  const executionToken = await resolveExecutionTokenForCompatibility(tokenOrRequestId ?? message.requestId);
   if (message.jobType !== "ORDER_COLLECT") {
     throw new Error(`Expected ORDER_COLLECT but received ${message.jobType}`);
   }
@@ -814,9 +930,12 @@ export async function completeOrderCollectWithNormalize(
         FROM hub_job
         WHERE request_id = $1
           AND status = 'PROCESSING'
+          AND processing_attempt_id = $2::uuid
+          AND claimed_by = $3
+          AND fencing_token = $4
         FOR UPDATE
       `,
-      [message.requestId]
+      [message.requestId, executionToken.attemptId, executionToken.workerId, executionToken.fencingToken]
     );
     const parent = parentResult.rows[0];
     if (!parent) {
@@ -886,13 +1005,17 @@ export async function completeOrderCollectWithNormalize(
       `
         UPDATE hub_job
         SET status = 'SUCCESS', error_message = NULL, next_retry_at = NULL,
-            completed_at = NOW(), updated_at = NOW()
+            completed_at = NOW(), processing_attempt_id = NULL, claimed_by = NULL,
+            lease_until = NULL, updated_at = NOW()
         WHERE request_id = $1 AND status = 'PROCESSING'
+          AND processing_attempt_id = $2::uuid
+          AND claimed_by = $3
+          AND fencing_token = $4
       `,
-      [message.requestId]
+      [message.requestId, executionToken.attemptId, executionToken.workerId, executionToken.fencingToken]
     );
     if (successResult.rowCount !== 1) {
-      throw new Error(`ORDER_COLLECT success transition failed: ${message.requestId}`);
+      throw new StaleJobAttemptError(executionToken);
     }
 
     await client.query("COMMIT");
@@ -906,8 +1029,11 @@ export async function completeOrderCollectWithNormalize(
 }
 
 export async function completeOrderNormalizeWithErpApply(
-  message: HubJobMessage
+  message: HubJobMessage,
+  tokenOrRequestId?: JobExecutionToken | string,
+  normalizeWork?: (client: pg.PoolClient) => Promise<void>
 ): Promise<CompleteOrderNormalizeResult> {
+  const executionToken = await resolveExecutionTokenForCompatibility(tokenOrRequestId ?? message.requestId);
   if (message.jobType !== "ORDER_NORMALIZE") {
     throw new Error(`Expected ORDER_NORMALIZE but received ${message.jobType}`);
   }
@@ -925,15 +1051,20 @@ export async function completeOrderNormalizeWithErpApply(
         SELECT request_id, request_key, correlation_id
         FROM hub_job
         WHERE request_id = $1 AND status = 'PROCESSING'
+          AND processing_attempt_id = $2::uuid
+          AND claimed_by = $3
+          AND fencing_token = $4
         FOR UPDATE
       `,
-      [message.requestId]
+      [message.requestId, executionToken.attemptId, executionToken.workerId, executionToken.fencingToken]
     );
     const parent = parentResult.rows[0];
     if (!parent) {
       await client.query("ROLLBACK");
       return { succeeded: false, erpApplyJob: null, outboxCreated: false, erpAutoApplySkipped: false };
     }
+
+    await normalizeWork?.(client);
 
     const normalized = await client.query<{
       id: number; corp_id: number; user_id: number; channel_account_id: number; channel_cd: string;
@@ -1053,13 +1184,17 @@ export async function completeOrderNormalizeWithErpApply(
       `
         UPDATE hub_job
         SET status = 'SUCCESS', error_message = NULL, next_retry_at = NULL,
-            completed_at = NOW(), updated_at = NOW()
+            completed_at = NOW(), processing_attempt_id = NULL, claimed_by = NULL,
+            lease_until = NULL, updated_at = NOW()
         WHERE request_id = $1 AND status = 'PROCESSING'
+          AND processing_attempt_id = $2::uuid
+          AND claimed_by = $3
+          AND fencing_token = $4
       `,
-      [message.requestId]
+      [message.requestId, executionToken.attemptId, executionToken.workerId, executionToken.fencingToken]
     );
     if (success.rowCount !== 1) {
-      throw new Error(`ORDER_NORMALIZE success transition failed: ${message.requestId}`);
+      throw new StaleJobAttemptError(executionToken);
     }
     await client.query("COMMIT");
     return { succeeded: true, erpApplyJob, outboxCreated, erpAutoApplySkipped };
@@ -1314,6 +1449,26 @@ export async function areErpOrdersAlreadyApplied(
   return Number(result.rows[0]?.applied_count ?? 0) === normalizedOrderIds.length;
 }
 
+export async function assertCurrentJobExecutionAuthority(requestId: string): Promise<void> {
+  const executionToken = requireExecutionToken(requestId);
+  const result = await pool.query(
+    `
+      SELECT 1
+      FROM hub_job
+      WHERE request_id = $1
+        AND status = 'PROCESSING'
+        AND processing_attempt_id = $2::uuid
+        AND claimed_by = $3
+        AND fencing_token = $4
+        AND lease_until > NOW()
+    `,
+    [requestId, executionToken.attemptId, executionToken.workerId, executionToken.fencingToken]
+  );
+  if (result.rowCount !== 1) {
+    await logStaleAttempt("RESULT", executionToken);
+    throw new StaleJobAttemptError(executionToken);
+  }
+}
 export async function saveErpApplyResults(input: {
   requestId: string;
   correlationId: string;
@@ -1332,9 +1487,26 @@ export async function saveErpApplyResults(input: {
   deliveredByUserId?: number | null;
   deliveryNote?: string | null;
 }): Promise<void> {
+    const executionToken = jobExecutionContext.getStore()
+    ?? await resolveExecutionTokenForCompatibility(input.requestId);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const authority = await client.query(
+      `
+        SELECT 1 FROM hub_job
+        WHERE request_id = $1
+          AND status = 'PROCESSING'
+          AND processing_attempt_id = $2::uuid
+          AND claimed_by = $3
+          AND fencing_token = $4
+        FOR UPDATE
+      `,
+      [input.requestId, executionToken.attemptId, executionToken.workerId, executionToken.fencingToken]
+    );
+    if (authority.rowCount !== 1) {
+      throw new StaleJobAttemptError(executionToken);
+    }
     for (const normalizedOrderId of input.normalizedOrderIds) {
       await client.query(
         `
@@ -1405,8 +1577,9 @@ export async function saveNormalizeCheckpoint(input: {
   status: "SUCCESS" | "FAILED";
   normalizedCount: number;
   errorMessage?: string | null;
+  client?: pg.PoolClient;
 }): Promise<void> {
-  await pool.query(
+  await (input.client ?? pool).query(
     `
       INSERT INTO hub_order_normalize_checkpoint (
         request_id,
@@ -1621,6 +1794,7 @@ export async function upsertNormalizedOrder(input: {
   deliveryFee?: number | null;
   discountAmount?: number | null;
   rawPayload: Record<string, unknown>;
+  client?: pg.PoolClient;
 }): Promise<number> {
   const result = await pool.query<{ id: number }>(
     `
@@ -1713,8 +1887,9 @@ export async function upsertNormalizedOrderItem(input: {
   discountAmount?: number | null;
   expectedSettlementAmount?: number | null;
   rawPayload: Record<string, unknown>;
+  client?: pg.PoolClient;
 }): Promise<void> {
-  await pool.query(
+  await (input.client ?? pool).query(
     `
       INSERT INTO hub_collected_order_item (
         order_id,
@@ -1780,8 +1955,9 @@ export async function upsertNormalizedDelivery(input: {
   trackingNumber?: string | null;
   deliveryStatus?: string | null;
   rawPayload: Record<string, unknown>;
+  client?: pg.PoolClient;
 }): Promise<void> {
-  await pool.query(
+  await (input.client ?? pool).query(
     `
       INSERT INTO hub_collected_order_delivery (
         order_id,
@@ -2112,46 +2288,35 @@ export async function releaseJobLock(
 }
 
 export async function deferJobForLockConflict(
-  requestId: string,
+  executionToken: JobExecutionToken,
   lockKey: string
 ): Promise<boolean> {
+  const requestId = executionToken.requestId;
   const message = "Same channel account is already collecting";
   const result = await pool.query(
     `
       UPDATE hub_job
       SET status = 'QUEUED',
-          error_message = $2,
+          error_message = $5,
           next_retry_at = NULL,
+          processing_attempt_id = NULL,
+          claimed_by = NULL,
+          lease_until = NULL,
           updated_at = NOW()
       WHERE request_id = $1
         AND status = 'PROCESSING'
+        AND processing_attempt_id = $2::uuid
+        AND claimed_by = $3
+        AND fencing_token = $4
     `,
-    [requestId, message]
+    [requestId, executionToken.attemptId, executionToken.workerId, executionToken.fencingToken, message]
   );
-
   const deferred = result.rowCount === 1;
-  logger.warn({
-    event: deferred ? "JOB_LOCK_CONFLICT_DEFERRED" : "JOB_LOCK_CONFLICT_DEFER_SKIPPED",
-    requestId,
-    lockKey,
-    rowCount: result.rowCount
-  }, deferred ? "Job deferred because lock is held" : "Job defer skipped after lock conflict");
-
-  await saveJobLog({
-    requestId,
-    eventType: deferred ? "JOB_LOCK_CONFLICT_DEFERRED" : "JOB_LOCK_CONFLICT_DEFER_SKIPPED",
-    level: "WARN",
-    message: deferred ? "Job deferred because same channel account is collecting" : "Job defer skipped after lock conflict",
-    errorMessage: message,
-    detail: {
-      lockKey,
-      rowCount: result.rowCount
-    }
-  });
-
+  if (!deferred) {
+    await logStaleAttempt("RETRY", executionToken);
+  }
   return deferred;
 }
-
 function decryptAes(cipherText: string | null): string | null {
   if (!cipherText) {
     return null;
@@ -2223,7 +2388,34 @@ function optionalPayloadString(payload: Record<string, unknown> | undefined, fie
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-export async function succeedJob(requestId: string): Promise<boolean> {
+async function logStaleAttempt(
+  action: "SUCCESS" | "RETRY" | "FAILED" | "RESULT",
+  executionToken: JobExecutionToken
+): Promise<void> {
+  logger.warn({
+    event: "STALE_JOB_ATTEMPT_REJECTED",
+    action,
+    requestId: executionToken.requestId,
+    attemptId: executionToken.attemptId,
+    workerId: executionToken.workerId,
+    fencingToken: executionToken.fencingToken
+  }, "Stale job attempt rejected");
+  await saveJobLog({
+    requestId: executionToken.requestId,
+    eventType: "STALE_JOB_ATTEMPT_REJECTED",
+    level: "WARN",
+    message: "Stale job attempt rejected",
+    detail: {
+      action,
+      attemptId: executionToken.attemptId,
+      workerId: executionToken.workerId,
+      fencingToken: executionToken.fencingToken
+    }
+  });
+}
+
+export async function succeedJob(tokenOrRequestId: JobExecutionToken | string): Promise<boolean> {
+  const executionToken = await resolveExecutionTokenForCompatibility(tokenOrRequestId);
   const result = await pool.query(
     `
       UPDATE hub_job
@@ -2231,146 +2423,85 @@ export async function succeedJob(requestId: string): Promise<boolean> {
           error_message = NULL,
           next_retry_at = NULL,
           completed_at = NOW(),
+          processing_attempt_id = NULL,
+          claimed_by = NULL,
+          lease_until = NULL,
           updated_at = NOW()
       WHERE request_id = $1
         AND status = 'PROCESSING'
+        AND processing_attempt_id = $2::uuid
+        AND claimed_by = $3
+        AND fencing_token = $4
     `,
-    [requestId]
+    [executionToken.requestId, executionToken.attemptId, executionToken.workerId, executionToken.fencingToken]
   );
-  const updated = result.rowCount === 1;
-
-  logger.info({
-    event: updated ? "JOB_STATUS_SUCCESS" : "JOB_STATUS_SUCCESS_SKIPPED",
-    requestId,
-    fromStatus: "PROCESSING",
-    toStatus: "SUCCESS",
-    rowCount: result.rowCount
-  }, updated ? "Job marked as success" : "Job success update skipped");
-
-  await saveJobLog({
-    requestId,
-    eventType: updated ? "JOB_STATUS_SUCCESS" : "JOB_STATUS_SUCCESS_SKIPPED",
-    level: "INFO",
-    message: updated ? "Job marked as success" : "Job success update skipped",
-    detail: {
-      fromStatus: "PROCESSING",
-      toStatus: "SUCCESS",
-      rowCount: result.rowCount,
-      workerInstanceId: WORKER_ID
-    }
-  });
-
-  return updated;
+  if (result.rowCount !== 1) {
+    await logStaleAttempt("SUCCESS", executionToken);
+    return false;
+  }
+  return true;
 }
 
 export async function retryOrFailJob(
-  requestId: string,
+  tokenOrRequestId: JobExecutionToken | string,
   errorMessage: string,
-  options: {
-    retryable?: boolean;
-  } = {}
+  options: { retryable?: boolean } = {}
 ): Promise<RetryDecision> {
+  const executionToken = await resolveExecutionTokenForCompatibility(tokenOrRequestId);
   const retryable = options.retryable ?? true;
   const retryResult = await pool.query<{ retry_count: number }>(
     `
       SELECT retry_count
       FROM hub_job
       WHERE request_id = $1
+        AND status = 'PROCESSING'
+        AND processing_attempt_id = $2::uuid
+        AND claimed_by = $3
+        AND fencing_token = $4
     `,
-    [requestId]
+    [executionToken.requestId, executionToken.attemptId, executionToken.workerId, executionToken.fencingToken]
   );
+  const row = retryResult.rows[0];
+  if (!row) {
+    await logStaleAttempt(retryable ? "RETRY" : "FAILED", executionToken);
+    return { status: "SKIPPED", retryCount: 0, maxRetryCount: MAX_RETRY_COUNT, retryable };
+  }
 
-  const retryCount = retryResult.rows[0]?.retry_count ?? MAX_RETRY_COUNT;
-
+  const retryCount = row.retry_count;
   if (retryable && retryCount < MAX_RETRY_COUNT) {
     const nextRetryCount = retryCount + 1;
     const backoffMs = getBackoffMs(nextRetryCount);
     const nextRetryAt = new Date(Date.now() + backoffMs);
-
     const result = await pool.query(
       `
         UPDATE hub_job
         SET status = 'QUEUED',
             retry_count = retry_count + 1,
-            error_message = $2,
-            next_retry_at = $3,
+            error_message = $5,
+            next_retry_at = $6,
+            processing_attempt_id = NULL,
+            claimed_by = NULL,
+            lease_until = NULL,
             updated_at = NOW()
         WHERE request_id = $1
           AND status = 'PROCESSING'
+          AND processing_attempt_id = $2::uuid
+          AND claimed_by = $3
+          AND fencing_token = $4
       `,
-      [requestId, errorMessage, nextRetryAt]
+      [
+        executionToken.requestId,
+        executionToken.attemptId,
+        executionToken.workerId,
+        executionToken.fencingToken,
+        errorMessage,
+        nextRetryAt
+      ]
     );
-    const updated = result.rowCount === 1;
-
-    if (!updated) {
-      logger.warn({
-        event: "JOB_STATUS_RETRY_SKIPPED",
-        requestId,
-        fromStatus: "PROCESSING",
-        toStatus: "QUEUED",
-        retryCount: nextRetryCount,
-        maxRetryCount: MAX_RETRY_COUNT,
-        nextRetryAt,
-        backoffMs,
-        errorMessage,
-        rowCount: result.rowCount
-      }, "Job retry update skipped");
-
-      await saveJobLog({
-        requestId,
-        eventType: "JOB_STATUS_RETRY_SKIPPED",
-        level: "WARN",
-        message: "Job retry update skipped",
-        retryCount: nextRetryCount,
-        maxRetryCount: MAX_RETRY_COUNT,
-        errorMessage,
-        detail: {
-          fromStatus: "PROCESSING",
-          toStatus: "QUEUED",
-          nextRetryAt: nextRetryAt.toISOString(),
-          backoffMs,
-          rowCount: result.rowCount,
-          workerInstanceId: WORKER_ID
-        }
-      });
-
-      return {
-        status: "SKIPPED",
-        retryCount,
-        maxRetryCount: MAX_RETRY_COUNT,
-        retryable
-      };
+    if (result.rowCount !== 1) {
+      await logStaleAttempt("RETRY", executionToken);
+      return { status: "SKIPPED", retryCount, maxRetryCount: MAX_RETRY_COUNT, retryable };
     }
-
-    logger.warn({
-      event: "JOB_STATUS_RETRY",
-      requestId,
-      fromStatus: "PROCESSING",
-      toStatus: "QUEUED",
-      retryCount: nextRetryCount,
-      maxRetryCount: MAX_RETRY_COUNT,
-      nextRetryAt,
-      backoffMs,
-      errorMessage
-    }, "Job marked for retry");
-
-    await saveJobLog({
-      requestId,
-      eventType: "JOB_STATUS_RETRY",
-      level: "WARN",
-      message: "Job marked for retry",
-      retryCount: nextRetryCount,
-      maxRetryCount: MAX_RETRY_COUNT,
-      errorMessage,
-      detail: {
-        fromStatus: "PROCESSING",
-        toStatus: "QUEUED",
-        nextRetryAt: nextRetryAt.toISOString(),
-        backoffMs,
-        workerInstanceId: WORKER_ID
-      }
-    });
-
     return {
       status: "RETRY",
       retryCount: nextRetryCount,
@@ -2384,57 +2515,31 @@ export async function retryOrFailJob(
     `
       UPDATE hub_job
       SET status = 'FAILED',
-          error_message = $2,
+          error_message = $5,
           next_retry_at = NULL,
           completed_at = NOW(),
+          processing_attempt_id = NULL,
+          claimed_by = NULL,
+          lease_until = NULL,
           updated_at = NOW()
       WHERE request_id = $1
         AND status = 'PROCESSING'
+        AND processing_attempt_id = $2::uuid
+        AND claimed_by = $3
+        AND fencing_token = $4
     `,
-    [requestId, errorMessage]
+    [
+      executionToken.requestId,
+      executionToken.attemptId,
+      executionToken.workerId,
+      executionToken.fencingToken,
+      errorMessage
+    ]
   );
-  const updated = result.rowCount === 1;
-
-  logger.error({
-    event: updated ? "JOB_STATUS_FAILED" : "JOB_STATUS_FAILED_SKIPPED",
-    requestId,
-    fromStatus: "PROCESSING",
-    toStatus: "FAILED",
-    retryCount,
-    maxRetryCount: MAX_RETRY_COUNT,
-    retryable,
-    reason: retryable ? "retry_exhausted" : "non_retryable",
-    errorMessage,
-    rowCount: result.rowCount
-  }, updated ? "Job marked as failed" : "Job failed update skipped");
-
-  await saveJobLog({
-    requestId,
-    eventType: updated ? "JOB_STATUS_FAILED" : "JOB_STATUS_FAILED_SKIPPED",
-    level: "ERROR",
-    message: updated ? "Job marked as failed" : "Job failed update skipped",
-    retryCount,
-    maxRetryCount: MAX_RETRY_COUNT,
-    errorMessage,
-    detail: {
-      fromStatus: "PROCESSING",
-      toStatus: "FAILED",
-      retryable,
-      reason: retryable ? "retry_exhausted" : "non_retryable",
-      rowCount: result.rowCount,
-      workerInstanceId: WORKER_ID
-    }
-  });
-
-  if (!updated) {
-    return {
-      status: "SKIPPED",
-      retryCount,
-      maxRetryCount: MAX_RETRY_COUNT,
-      retryable
-    };
+  if (result.rowCount !== 1) {
+    await logStaleAttempt("FAILED", executionToken);
+    return { status: "SKIPPED", retryCount, maxRetryCount: MAX_RETRY_COUNT, retryable };
   }
-
   return {
     status: "FAILED",
     retryCount,
@@ -2443,20 +2548,40 @@ export async function retryOrFailJob(
     reason: retryable ? "retry_exhausted" : "non_retryable"
   };
 }
+type ClaimedHubJobDbRow = {
+  request_id: string;
+  source_erp: string;
+  job_type: string;
+  request_key: string;
+  parent_job_id: string | null;
+  correlation_id: string;
+  causation_id: string | null;
+  schema_version: string;
+  payload_version: string;
+  payload: Record<string, unknown>;
+  processing_attempt_id: string;
+  claimed_by: string;
+  fencing_token: string;
+  lease_until: Date;
+};
 
-export async function claimStuckQueuedJobs(): Promise<HubJobRow[]> {
-  const result = await pool.query<{
-    request_id: string;
-    source_erp: string;
-    job_type: string;
-    request_key: string;
-    parent_job_id: string | null;
-    correlation_id: string;
-    causation_id: string | null;
-    schema_version: string;
-    payload_version: string;
-    payload: Record<string, unknown>;
-  }>(
+function toHubJobRow(row: ClaimedHubJobDbRow): HubJobRow {
+  return {
+    requestId: row.request_id,
+    sourceErp: row.source_erp,
+    jobType: row.job_type,
+    requestKey: row.request_key,
+    parentJobId: row.parent_job_id,
+    correlationId: row.correlation_id,
+    causationId: row.causation_id,
+    schemaVersion: row.schema_version,
+    payloadVersion: row.payload_version,
+    payload: row.payload,
+    executionToken: toJobExecutionToken(row.request_id, row)
+  };
+}
+export async function claimStuckQueuedJobs(workerId = WORKER_ID): Promise<HubJobRow[]> {
+  const result = await pool.query<ClaimedHubJobDbRow>(
     `
       WITH picked AS (
         SELECT request_id
@@ -2473,29 +2598,23 @@ export async function claimStuckQueuedJobs(): Promise<HubJobRow[]> {
       UPDATE hub_job h
       SET status = 'PROCESSING',
           error_message = NULL,
+          processing_attempt_id = gen_random_uuid(),
+          claimed_by = $1,
+          lease_until = NOW() + ($2 * INTERVAL '1 minute'),
+          processing_started_at = NOW(),
+          fencing_token = h.fencing_token + 1,
           updated_at = NOW()
       FROM picked
       WHERE h.request_id = picked.request_id
       RETURNING h.request_id, h.source_erp, h.job_type, h.request_key,
                 h.parent_job_id, h.correlation_id, h.causation_id,
-                h.schema_version, h.payload_version, h.payload
-    `
+                h.schema_version, h.payload_version, h.payload,
+                h.processing_attempt_id, h.claimed_by, h.fencing_token, h.lease_until
+    `,
+    [workerId, JOB_LEASE_MINUTES]
   );
-
-  return result.rows.map((row) => ({
-    requestId: row.request_id,
-    sourceErp: row.source_erp,
-    jobType: row.job_type,
-    requestKey: row.request_key,
-    parentJobId: row.parent_job_id,
-    correlationId: row.correlation_id,
-    causationId: row.causation_id,
-    schemaVersion: row.schema_version,
-    payloadVersion: row.payload_version,
-    payload: row.payload
-  }));
+  return result.rows.map(toHubJobRow);
 }
-
 export async function findQueuedNormalizeJobsWithoutOutbox(limit = 20): Promise<Array<{
   requestId: string;
   requestKey: string;
@@ -2520,54 +2639,37 @@ export async function findQueuedNormalizeJobsWithoutOutbox(limit = 20): Promise<
   return result.rows.map((row) => ({ requestId: row.request_id, requestKey: row.request_key }));
 }
 
-export async function claimZombieProcessingJobs(): Promise<HubJobRow[]> {
-  const result = await pool.query<{
-    request_id: string;
-    source_erp: string;
-    job_type: string;
-    request_key: string;
-    parent_job_id: string | null;
-    correlation_id: string;
-    causation_id: string | null;
-    schema_version: string;
-    payload_version: string;
-    payload: Record<string, unknown>;
-  }>(
+export async function claimZombieProcessingJobs(workerId = WORKER_ID): Promise<HubJobRow[]> {
+  const result = await pool.query<ClaimedHubJobDbRow>(
     `
       WITH picked AS (
         SELECT request_id
         FROM hub_job
         WHERE status = 'PROCESSING'
-          AND updated_at < NOW() - INTERVAL '30 minutes'
-        ORDER BY updated_at ASC
+          AND lease_until <= NOW()
+        ORDER BY lease_until ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 20
       )
       UPDATE hub_job h
-      SET updated_at = NOW(),
+      SET processing_attempt_id = gen_random_uuid(),
+          claimed_by = $1,
+          lease_until = NOW() + ($2 * INTERVAL '1 minute'),
+          processing_started_at = NOW(),
+          fencing_token = h.fencing_token + 1,
+          updated_at = NOW(),
           error_message = COALESCE(error_message, 'Recovered stale PROCESSING job')
       FROM picked
       WHERE h.request_id = picked.request_id
       RETURNING h.request_id, h.source_erp, h.job_type, h.request_key,
                 h.parent_job_id, h.correlation_id, h.causation_id,
-                h.schema_version, h.payload_version, h.payload
-    `
+                h.schema_version, h.payload_version, h.payload,
+                h.processing_attempt_id, h.claimed_by, h.fencing_token, h.lease_until
+    `,
+    [workerId, JOB_LEASE_MINUTES]
   );
-
-  return result.rows.map((row) => ({
-    requestId: row.request_id,
-    sourceErp: row.source_erp,
-    jobType: row.job_type,
-    requestKey: row.request_key,
-    parentJobId: row.parent_job_id,
-    correlationId: row.correlation_id,
-    causationId: row.causation_id,
-    schemaVersion: row.schema_version,
-    payloadVersion: row.payload_version,
-    payload: row.payload
-  }));
+  return result.rows.map(toHubJobRow);
 }
-
 export async function closePostgresPool(): Promise<void> {
   await pool.end();
 }
