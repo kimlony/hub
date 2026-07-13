@@ -8,8 +8,10 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+@EnabledIfEnvironmentVariable(named = "RUN_DB_INTEGRATION_TESTS", matches = "true")
 class JobExecutionQueryRepositoryIntegrationTest {
 
     private JdbcTemplate jdbcTemplate;
@@ -19,29 +21,8 @@ class JobExecutionQueryRepositoryIntegrationTest {
     void setUp() {
         jdbcTemplate = new JdbcTemplate(IntegrationTestDatabase.dataSource());
         repository = new JobExecutionQueryRepository(jdbcTemplate);
-        jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS hub_job_attempt (
-                    id BIGSERIAL PRIMARY KEY,
-                    attempt_id UUID NOT NULL UNIQUE,
-                    request_id VARCHAR(100) NOT NULL,
-                    job_type VARCHAR(100) NOT NULL,
-                    fencing_token BIGINT NOT NULL,
-                    worker_id VARCHAR(120) NOT NULL,
-                    claim_source VARCHAR(20) NOT NULL,
-                    status VARCHAR(20) NOT NULL,
-                    claimed_at TIMESTAMPTZ NOT NULL,
-                    lease_until TIMESTAMPTZ NOT NULL,
-                    completed_at TIMESTAMPTZ,
-                    duration_ms BIGINT,
-                    error_code VARCHAR(100),
-                    error_message TEXT,
-                    stale_rejected_at TIMESTAMPTZ,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    UNIQUE (request_id, fencing_token)
-                )
-                """);
         jdbcTemplate.update("DELETE FROM hub_job_attempt WHERE request_id LIKE 'attempt-metrics-%'");
+        jdbcTemplate.update("DELETE FROM hub_job WHERE request_id LIKE 'attempt-metrics-%'");
         insertAttempt("attempt-metrics-1", "ORDER_COLLECT", 1, "KAFKA", "SUCCESS", 100, false);
         insertAttempt("attempt-metrics-2", "ORDER_COLLECT", 1, "KAFKA", "SUCCESS", 200, false);
         insertAttempt("attempt-metrics-3", "ORDER_COLLECT", 1, "RECOVERY", "RETRY", 300, false);
@@ -93,6 +74,13 @@ class JobExecutionQueryRepositoryIntegrationTest {
             long durationMs,
             boolean staleRejected
     ) {
+        jdbcTemplate.update("""
+                INSERT INTO hub_job (
+                    request_id, request_key, channel_cd, status, payload, retry_count,
+                    job_type, source_erp, correlation_id, schema_version, payload_version,
+                    created_at, updated_at
+                ) VALUES (?, ?, 'TEST', 'SUCCESS', '{}'::jsonb, 0, ?, 'HUB', ?, '1.0', '1.0', NOW(), NOW())
+                """, requestId, "TEST_" + requestId, jobType, requestId);
         jdbcTemplate.update("""
                 INSERT INTO hub_job_attempt (
                     attempt_id, request_id, job_type, fencing_token, worker_id, claim_source,
