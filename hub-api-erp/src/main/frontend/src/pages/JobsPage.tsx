@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import Layout from '../components/Layout'
 import StatusBadge from '../components/StatusBadge'
 import CollectRequestModal from '../components/CollectRequestModal'
+import JobAttemptPanel from '../components/JobAttemptPanel'
+import { useAuth } from '../context/AuthContext'
 import { useAuthenticatedFetch } from '../hooks/useAuthenticatedFetch'
 
 type Job = {
@@ -144,6 +146,7 @@ function parseFailureInfo(errorMessage: string | null): FailureInfo | null {
 
 export default function JobsPage() {
   const authenticatedFetch = useAuthenticatedFetch()
+  const { isSystemAdmin } = useAuth()
   const [statusFilter, setStatusFilter] = useState('')
   const [channelFilter, setChannelFilter] = useState('')
   const [page, setPage] = useState(1)
@@ -216,6 +219,7 @@ export default function JobsPage() {
         <JobLogModal
           requestId={logRequestId}
           onClose={() => setLogRequestId(null)}
+          canViewAttempts={isSystemAdmin}
         />
       )}
       <Layout
@@ -405,7 +409,7 @@ function FailureBadge({ info, message }: { info: FailureInfo; message: string | 
   )
 }
 
-function JobLogModal({ requestId, onClose }: { requestId: string; onClose: () => void }) {
+function JobLogModal({ requestId, onClose, canViewAttempts }: { requestId: string; onClose: () => void; canViewAttempts: boolean }) {
   const authenticatedFetch = useAuthenticatedFetch()
   const [logs, setLogs] = useState<JobLog[]>([])
   const [loading, setLoading] = useState(true)
@@ -491,6 +495,7 @@ function JobLogModal({ requestId, onClose }: { requestId: string; onClose: () =>
               })}
             </div>
           )}
+          {canViewAttempts && <JobAttemptPanel jobId={requestId} />}
         </div>
       </div>
     </div>,

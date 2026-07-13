@@ -34,6 +34,7 @@ const nav: NavSection[] = [
       { label: 'Outbox', to: '/outbox', icon: 'O', requiredRole: 'SYSTEM_ADMIN' },
       { label: '대용량 데이터 테스트', to: '/load-test', icon: 'L', requiredRole: 'SYSTEM_ADMIN' },
       { label: 'DB Migration', to: '/db-migrations', icon: 'M', requiredRole: 'SYSTEM_ADMIN' },
+      { label: 'Job 실행 지표', to: '/job-execution-metrics', icon: 'T', requiredRole: 'SYSTEM_ADMIN' },
     ],
   },
 ]

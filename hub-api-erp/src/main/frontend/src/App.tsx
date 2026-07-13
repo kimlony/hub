@@ -14,6 +14,7 @@ import CollectedOrdersPage from './pages/CollectedOrdersPage'
 import ErpApplyResultsPage from './pages/ErpApplyResultsPage'
 import OrderExportPage from './pages/OrderExportPage'
 import DbMigrationsPage from './pages/DbMigrationsPage'
+import JobExecutionMetricsPage from './pages/JobExecutionMetricsPage'
 
 export default function App() {
   return (
@@ -56,6 +57,9 @@ export default function App() {
           } />
           <Route path="/db-migrations" element={
             <ProtectedRoute requiredRole="SYSTEM_ADMIN"><DbMigrationsPage /></ProtectedRoute>
+          } />
+          <Route path="/job-execution-metrics" element={
+            <ProtectedRoute requiredRole="SYSTEM_ADMIN"><JobExecutionMetricsPage /></ProtectedRoute>
           } />
         </Routes>
       </BrowserRouter>

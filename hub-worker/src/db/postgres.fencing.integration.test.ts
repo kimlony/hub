@@ -26,6 +26,7 @@ describeIntegration("job processing attempt fencing", () => {
 
   afterAll(async () => {
     if (requestIds.length > 0) {
+      await pool?.query("DELETE FROM hub_job_attempt WHERE request_id = ANY($1)", [requestIds]);
       await pool?.query("DELETE FROM hub_job_log WHERE request_id = ANY($1)", [requestIds]);
       await pool?.query("DELETE FROM hub_job_result WHERE request_id = ANY($1)", [requestIds]).catch(() => undefined);
       await pool?.query("DELETE FROM hub_job WHERE request_id = ANY($1)", [requestIds]);
@@ -129,6 +130,15 @@ describeIntegration("job processing attempt fencing", () => {
       [retryId]: "QUEUED",
       [failedId]: "FAILED"
     });
+
+    const attempts = await pool.query(
+      "SELECT request_id, status, error_code FROM hub_job_attempt WHERE request_id = ANY($1)",
+      [[retryId, failedId]]
+    );
+    expect(Object.fromEntries(attempts.rows.map((row) => [row.request_id, row]))).toEqual({
+      [retryId]: { request_id: retryId, status: "RETRY", error_code: "RETRY_SCHEDULED" },
+      [failedId]: { request_id: failedId, status: "FAILED", error_code: "NON_RETRYABLE" }
+    });
   });
 
   it("uses lease_until only for zombie recovery after compatibility backfill", async () => {
@@ -146,5 +156,38 @@ describeIntegration("job processing attempt fencing", () => {
     const recovered = await db.claimZombieProcessingJobs("worker-recovery");
     expect(recovered.find((job) => job.requestId === nullLeaseId)?.executionToken.fencingToken)
       .toBe(nullLeaseToken.fencingToken + 1);
+  });
+  it("persists claim, terminal, recovery, and stale attempt history", async () => {
+    const requestId = await insertQueued("history");
+    const tokenA = (await db.tryMarkProcessing(requestId, "worker-history-a"))!;
+
+    const claimed = await pool.query(
+      "SELECT status, claim_source, fencing_token FROM hub_job_attempt WHERE request_id = $1",
+      [requestId]
+    );
+    expect(claimed.rows).toEqual([{ status: "PROCESSING", claim_source: "KAFKA", fencing_token: "1" }]);
+
+    await expect(pool.query(
+      [
+        "INSERT INTO hub_job_attempt (attempt_id, request_id, job_type, fencing_token, worker_id, claim_source, status, lease_until)",
+        "VALUES (gen_random_uuid(), $1, 'TEST_SLEEP', $2, 'duplicate-worker', 'KAFKA', 'PROCESSING', NOW() + INTERVAL '1 minute')"
+      ].join("\n"),
+      [requestId, tokenA.fencingToken]
+    )).rejects.toThrow();
+
+    await pool.query("UPDATE hub_job SET lease_until = NOW() - INTERVAL '1 second' WHERE request_id = $1", [requestId]);
+    const tokenB = (await db.claimZombieProcessingJobs("worker-history-b"))
+      .find((job) => job.requestId === requestId)!.executionToken;
+
+    expect(await db.succeedJob(tokenA)).toBe(false);
+    expect(await db.succeedJob(tokenB)).toBe(true);
+
+    const attempts = await pool.query(
+      "SELECT status, error_code, stale_rejected_at FROM hub_job_attempt WHERE request_id = $1 ORDER BY fencing_token",
+      [requestId]
+    );
+    expect(attempts.rows[0]).toMatchObject({ status: "EXPIRED", error_code: "LEASE_EXPIRED" });
+    expect(attempts.rows[0].stale_rejected_at).not.toBeNull();
+    expect(attempts.rows[1]).toMatchObject({ status: "SUCCESS" });
   });
 });

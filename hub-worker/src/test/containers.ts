@@ -127,6 +127,33 @@ async function initializePostgresBaseSchema(): Promise<void> {
     `);
 
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS hub_job_attempt (
+        id BIGSERIAL PRIMARY KEY,
+        attempt_id UUID NOT NULL UNIQUE,
+        request_id VARCHAR(100) NOT NULL REFERENCES hub_job(request_id) ON DELETE CASCADE,
+        job_type VARCHAR(100) NOT NULL,
+        fencing_token BIGINT NOT NULL,
+        worker_id VARCHAR(120) NOT NULL,
+        claim_source VARCHAR(20) NOT NULL,
+        status VARCHAR(20) NOT NULL,
+        claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        lease_until TIMESTAMPTZ NOT NULL,
+        completed_at TIMESTAMPTZ,
+        duration_ms BIGINT,
+        error_code VARCHAR(100),
+        error_message TEXT,
+        stale_rejected_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (request_id, fencing_token)
+      )
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_hub_job_attempt_request_claimed
+      ON hub_job_attempt(request_id, claimed_at DESC, id DESC)
+    `);
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS hub_job_lock (
         lock_key VARCHAR(200) PRIMARY KEY,
         request_id VARCHAR(100) NOT NULL,
