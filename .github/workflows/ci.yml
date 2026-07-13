@@ -50,5 +50,5 @@ jobs:
         run: npm ci
 
       - name: Run fast verification
-        shell: powershell
-        run: powershell -ExecutionPolicy Bypass -File scripts/test-fast.ps1
+        shell: pwsh
+        run: pwsh -ExecutionPolicy Bypass -File scripts/test-fast.ps1
