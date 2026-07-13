@@ -70,6 +70,9 @@ jobs:
 
           $COMPOSE config >/tmp/hub-compose-config.yml
           $COMPOSE up -d --build
+          # Nginx does not reload bind-mounted configuration automatically.
+          # Recreate it so each deployment uses the current config and API address.
+          $COMPOSE up -d --force-recreate --no-deps nginx
           $COMPOSE ps
 
           for attempt in $(seq 1 30); do
