@@ -53,24 +53,28 @@ function Assert-Prerequisites {
     }
 }
 
-function Get-GradleWrapper {
+function Invoke-Gradle {
+    param(
+        [string[]] $Arguments = @()
+    )
+
     $isWindowsHost = (Get-Variable IsWindows -ErrorAction SilentlyContinue) -and $IsWindows
     if ($isWindowsHost -or $env:OS -eq "Windows_NT") {
-        return ".\gradlew.bat"
+        Invoke-Native ".\gradlew.bat" $Arguments
+        return
     }
 
-    return "./gradlew"
+    # The wrapper is not marked executable in this repository, so invoke it through sh on Linux.
+    Invoke-Native "sh" (@("./gradlew") + $Arguments)
 }
 
 $apiDir = Join-Path $repoRoot "hub-api-erp"
 $workerDir = Join-Path $repoRoot "hub-worker"
 $frontendDir = Join-Path $apiDir "src/main/frontend"
-$gradlew = Get-GradleWrapper
-
 Assert-Prerequisites
 
 Invoke-Step "Java unit tests" $apiDir {
-    Invoke-Native $gradlew @("test")
+    Invoke-Gradle @("test")
 }
 
 Invoke-Step "Node type check" $workerDir {
