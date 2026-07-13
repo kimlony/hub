@@ -51,7 +51,9 @@ jobs:
 
           cd "$DEPLOY_PATH"
 
-          COMPOSE="docker compose -f docker-compose.server.yml -f docker-compose.dev.yml --env-file .env.dev"
+          # The dev override publishes local-only ports (3000, 5432, and 19092).
+          # EC2 uses Nginx as its only public entry point instead.
+          COMPOSE="docker compose -f docker-compose.server.yml -f docker-compose.nginx.yml --env-file .env.dev"
 
           print_api_logs() {
             echo "::group::hub-api logs"
@@ -71,7 +73,7 @@ jobs:
           $COMPOSE ps
 
           for attempt in $(seq 1 30); do
-            if curl -fsS http://localhost:3000/health; then
+            if curl -fsS http://localhost/health; then
               echo
               echo "hub-api health check passed"
               exit 0
