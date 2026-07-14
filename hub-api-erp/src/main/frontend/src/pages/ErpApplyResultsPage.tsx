@@ -18,12 +18,11 @@ const PAGE_SIZE = 20
 
 export default function ErpApplyResultsPage() {
   const authenticatedFetch = useAuthenticatedFetch()
-  const [corpId, setCorpId] = useState(() => localStorage.getItem('hub_erp_corp_id') ?? '')
   const [status, setStatus] = useState('')
   const [erpConnectionId, setErpConnectionId] = useState('')
   const [correlationId, setCorrelationId] = useState('')
   const [requestId, setRequestId] = useState('')
-  const [query, setQuery] = useState({ corpId: '', status: '', erpConnectionId: '', correlationId: '', requestId: '' })
+  const [query, setQuery] = useState({ status: '', erpConnectionId: '', correlationId: '', requestId: '' })
   const [page, setPage] = useState(1)
   const [results, setResults] = useState<ErpApplyResult[]>([])
   const [totalCount, setTotalCount] = useState(0)
@@ -33,7 +32,6 @@ export default function ErpApplyResultsPage() {
   const [pipelineRequestId, setPipelineRequestId] = useState<string | null>(null)
 
   const loadResults = useCallback(async () => {
-    if (!query.corpId) return
     setLoading(true)
     setError('')
     try {
@@ -51,19 +49,8 @@ export default function ErpApplyResultsPage() {
 
   function handleSearch(event: FormEvent) {
     event.preventDefault()
-    const normalizedCorpId = corpId.trim()
-    if (!normalizedCorpId) {
-      setError('corpId를 입력해 주세요.')
-      return
-    }
-    if (!/^\d+$/.test(normalizedCorpId)) {
-      setError('corpId는 숫자여야 합니다.')
-      return
-    }
-    localStorage.setItem('hub_erp_corp_id', normalizedCorpId)
     setPage(1)
     setQuery({
-      corpId: normalizedCorpId,
       status,
       erpConnectionId: erpConnectionId.trim(),
       correlationId: correlationId.trim(),
@@ -76,15 +63,14 @@ export default function ErpApplyResultsPage() {
   return (
     <>
       {detailId !== null && (
-        <ResultDetailModal id={detailId} corpId={query.corpId} onClose={() => setDetailId(null)} />
+        <ResultDetailModal id={detailId} onClose={() => setDetailId(null)} />
       )}
       {pipelineRequestId && (
-        <PipelineModal requestId={pipelineRequestId} corpId={query.corpId} onClose={() => setPipelineRequestId(null)} onRetrySuccess={loadResults} />
+        <PipelineModal requestId={pipelineRequestId} onClose={() => setPipelineRequestId(null)} onRetrySuccess={loadResults} />
       )}
       <Layout title="ERP 반영 결과">
         <form onSubmit={handleSearch} className="mb-5 rounded-lg bg-white p-4 shadow-sm">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-6">
-            <FilterInput label="corpId *" value={corpId} onChange={setCorpId} placeholder="예: 1" />
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
             <label className="text-[12px] font-bold text-[#4E5968]">
               상태
               <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputClass}>
@@ -106,12 +92,6 @@ export default function ErpApplyResultsPage() {
         </form>
 
         {error && <ErrorBox message={error} />}
-        {!query.corpId && !error && (
-          <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-[13px] text-blue-700">
-            고객사 범위를 지정하려면 corpId를 입력한 뒤 조회해 주세요.
-          </div>
-        )}
-
         <div className="overflow-hidden rounded-lg bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="min-w-[1900px] w-full">
@@ -123,7 +103,7 @@ export default function ErpApplyResultsPage() {
               </tr></thead>
               <tbody>
                 {loading ? <EmptyRow message="ERP 결과를 불러오는 중입니다..." />
-                  : results.length === 0 ? <EmptyRow message={query.corpId ? '조회된 ERP 반영 결과가 없습니다.' : '조회 조건을 입력해 주세요.'} />
+                  : results.length === 0 ? <EmptyRow message="조회된 ERP 반영 결과가 없습니다." />
                     : results.map((result) => (
                       <tr key={result.id} className={`border-t border-slate-50 hover:bg-slate-50 ${result.status === 'FAILED' ? 'bg-red-50/30' : ''}`}>
                         <Cell>{result.id}</Cell>
@@ -165,17 +145,17 @@ export default function ErpApplyResultsPage() {
   )
 }
 
-function ResultDetailModal({ id, corpId, onClose }: { id: number; corpId: string; onClose: () => void }) {
+function ResultDetailModal({ id, onClose }: { id: number; onClose: () => void }) {
   const authenticatedFetch = useAuthenticatedFetch()
   const [detail, setDetail] = useState<ErpApplyResultDetail | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
     let active = true
-    fetchErpApplyResultDetail(authenticatedFetch, id, corpId)
+    fetchErpApplyResultDetail(authenticatedFetch, id)
       .then((value) => { if (active) setDetail(value) })
       .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : '상세 조회에 실패했습니다.') })
     return () => { active = false }
-  }, [authenticatedFetch, corpId, id])
+  }, [authenticatedFetch, id])
 
   return <Modal title={`ERP 결과 상세 #${id}`} onClose={onClose}>
     {error ? <ErrorBox message={error} /> : !detail ? <Loading /> : <>
@@ -197,12 +177,10 @@ function ResultDetailModal({ id, corpId, onClose }: { id: number; corpId: string
 
 function PipelineModal({
   requestId,
-  corpId,
   onClose,
   onRetrySuccess,
 }: {
   requestId: string
-  corpId: string
   onClose: () => void
   onRetrySuccess: () => void | Promise<void>
 }) {
@@ -217,7 +195,7 @@ function PipelineModal({
   const loadPipeline = useCallback(async () => {
     setError('')
     try {
-      const nextPipeline = await fetchJobPipeline(authenticatedFetch, requestId, corpId)
+      const nextPipeline = await fetchJobPipeline(authenticatedFetch, requestId)
       setPipeline(nextPipeline)
       setLogsLoading(true)
       const logResponses = await Promise.all(
@@ -229,7 +207,7 @@ function PipelineModal({
     } finally {
       setLogsLoading(false)
     }
-  }, [authenticatedFetch, corpId, requestId])
+  }, [authenticatedFetch, requestId])
 
   useEffect(() => { void loadPipeline() }, [loadPipeline])
 

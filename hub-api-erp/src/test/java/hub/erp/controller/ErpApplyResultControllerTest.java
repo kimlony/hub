@@ -11,10 +11,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import hub.config.HubApiKeyInterceptor;
+import hub.auth.HubUserPrincipal;
 import hub.config.JwtAuthFilter;
 import hub.config.SecurityConfig;
-import hub.config.WebConfig;
 import hub.erp.ErpApplyResultNotFoundException;
 import hub.erp.dto.request.ErpApplyResultSearchCondition;
 import hub.erp.dto.response.ErpApplyResultDetailResponse;
@@ -27,6 +26,8 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -36,6 +37,10 @@ import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+
 /**
  * Security/API-key filter classes are excluded from this slice so the test only exercises
  * request binding, service delegation, and JSON serialization for the controller itself.
@@ -43,18 +48,29 @@ import org.springframework.test.web.servlet.MockMvc;
 @WebMvcTest(
         controllers = ErpApplyResultController.class,
         excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = {
-                SecurityConfig.class, WebConfig.class, JwtAuthFilter.class,
-                ExternalApiAuthFilter.class, HubApiKeyInterceptor.class
+                SecurityConfig.class, JwtAuthFilter.class, ExternalApiAuthFilter.class
         })
 )
 @AutoConfigureMockMvc(addFilters = false)
 class ErpApplyResultControllerTest {
+
+    private static final long CORP_ID = 100L;
 
     @Autowired
     private MockMvc mockMvc;
 
     @MockBean
     private ErpApplyResultService service;
+
+    @BeforeEach
+    void setAuthentication() {
+        SecurityContextHolder.getContext().setAuthentication(hubAuthentication());
+    }
+
+    @AfterEach
+    void clearAuthentication() {
+        SecurityContextHolder.clearContext();
+    }
 
     private ErpApplyResultItem sampleItem() {
         return new ErpApplyResultItem(1L, "erp-apply-1", "corr-1", 501L, "MOCK-1", "CREATE", "FAILED",
@@ -69,7 +85,7 @@ class ErpApplyResultControllerTest {
         when(service.getResults(any(), eq(2), eq(10))).thenReturn(response);
 
         mockMvc.perform(get("/api/hub/erp/apply-results")
-                        .param("corpId", "100")
+                        .with(authentication(hubAuthentication()))
                         .param("status", "FAILED")
                         .param("operation", "CREATE")
                         .param("requestId", "erp-apply-1")
@@ -116,7 +132,7 @@ class ErpApplyResultControllerTest {
         when(service.getResults(any(), eq(1), eq(20)))
                 .thenReturn(new ErpApplyResultListResponse(List.of(), 0, 1, 20));
 
-        mockMvc.perform(get("/api/hub/erp/apply-results").param("corpId", "1"))
+        mockMvc.perform(get("/api/hub/erp/apply-results").with(authentication(hubAuthentication())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.results").isArray())
                 .andExpect(jsonPath("$.totalCount").value(0))
@@ -126,38 +142,10 @@ class ErpApplyResultControllerTest {
         verify(service).getResults(any(), eq(1), eq(20));
     }
 
-    /**
-     * corpId is a required @RequestParam with no default, so a missing value throws
-     * MissingServletRequestParameterException, which GlobalExceptionHandler now maps to 400.
-     */
-    @Test
-    void missingRequiredCorpIdReturnsBadRequest() throws Exception {
-        mockMvc.perform(get("/api/hub/erp/apply-results"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.error").value("Bad Request"))
-                .andExpect(jsonPath("$.message").value("Required request parameter 'corpId' (Long) is missing"))
-                .andExpect(jsonPath("$.parameterName").value("corpId"))
-                .andExpect(jsonPath("$.requiredType").value("Long"));
-    }
-
-    @Test
-    void invalidCorpIdTypeReturnsBadRequest() throws Exception {
-        mockMvc.perform(get("/api/hub/erp/apply-results").param("corpId", "abc"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.error").value("Bad Request"))
-                .andExpect(jsonPath("$.parameterName").value("corpId"))
-                .andExpect(jsonPath("$.rejectedValue").value("abc"))
-                .andExpect(jsonPath("$.requiredType").value("Long"))
-                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("corpId")))
-                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("abc")));
-    }
-
     @Test
     void invalidNormalizedOrderIdTypeReturnsBadRequest() throws Exception {
         mockMvc.perform(get("/api/hub/erp/apply-results")
-                        .param("corpId", "1")
+                        .with(authentication(hubAuthentication()))
                         .param("normalizedOrderId", "abc"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
@@ -171,7 +159,7 @@ class ErpApplyResultControllerTest {
     @Test
     void invalidPageTypeReturnsBadRequest() throws Exception {
         mockMvc.perform(get("/api/hub/erp/apply-results")
-                        .param("corpId", "1")
+                        .with(authentication(hubAuthentication()))
                         .param("page", "abc"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
@@ -189,9 +177,9 @@ class ErpApplyResultControllerTest {
         JsonNode responsePayload = mapper.readTree("{\"errorCode\":\"ERP_500\"}");
         ErpApplyResultDetailResponse detail = new ErpApplyResultDetailResponse(sampleItem(),
                 new ErpApplyResultDetailResponse.PayloadSummary(42, 21), requestPayload, responsePayload);
-        when(service.getResult(1L, 100L)).thenReturn(detail);
+        when(service.getResult(CORP_ID, 1L)).thenReturn(detail);
 
-        mockMvc.perform(get("/api/hub/erp/apply-results/1").param("corpId", "100"))
+        mockMvc.perform(get("/api/hub/erp/apply-results/1").with(authentication(hubAuthentication())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.id").value(1))
                 .andExpect(jsonPath("$.result.requestId").value("erp-apply-1"))
@@ -201,17 +189,22 @@ class ErpApplyResultControllerTest {
                 .andExpect(jsonPath("$.payloadSummary.requestBytes").value(42))
                 .andExpect(jsonPath("$.payloadSummary.responseBytes").value(21));
 
-        verify(service).getResult(1L, 100L);
+        verify(service).getResult(CORP_ID, 1L);
     }
 
     @Test
     void detailReturns404WhenResultNotFound() throws Exception {
-        when(service.getResult(999L, 100L)).thenThrow(new ErpApplyResultNotFoundException(999L));
+        when(service.getResult(CORP_ID, 999L)).thenThrow(new ErpApplyResultNotFoundException(999L));
 
-        mockMvc.perform(get("/api/hub/erp/apply-results/999").param("corpId", "100"))
+        mockMvc.perform(get("/api/hub/erp/apply-results/999").with(authentication(hubAuthentication())))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.error").value("Not Found"))
                 .andExpect(jsonPath("$.message").value("ERP apply result not found for id: 999"));
+    }
+
+    private static UsernamePasswordAuthenticationToken hubAuthentication() {
+        return new UsernamePasswordAuthenticationToken(
+                new HubUserPrincipal(1L, CORP_ID, "user", "USER"), null, List.of());
     }
 }

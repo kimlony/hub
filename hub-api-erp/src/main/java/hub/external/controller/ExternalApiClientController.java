@@ -1,5 +1,6 @@
 package hub.external.controller;
 
+import hub.auth.HubUserPrincipal;
 import hub.external.dto.request.ExternalApiClientCreateRequest;
 import hub.external.dto.response.ExternalApiClientCreateResponse;
 import hub.external.dto.response.ExternalApiClientResponse;
@@ -23,15 +24,15 @@ public class ExternalApiClientController {
     private final ExternalApiClientService externalApiClientService;
 
     @GetMapping
-    public ResponseEntity<List<ExternalApiClientResponse>> getClients(@AuthenticationPrincipal String username) {
-        return ResponseEntity.ok(externalApiClientService.getClients(username));
+    public ResponseEntity<List<ExternalApiClientResponse>> getClients(@AuthenticationPrincipal HubUserPrincipal principal) {
+        return ResponseEntity.ok(externalApiClientService.getClients(principal.username()));
     }
 
     @PostMapping
     public ResponseEntity<ExternalApiClientCreateResponse> createClient(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @Valid @RequestBody ExternalApiClientCreateRequest request
     ) {
-        return ResponseEntity.ok(externalApiClientService.createClient(username, request));
+        return ResponseEntity.ok(externalApiClientService.createClient(principal.username(), request));
     }
 }

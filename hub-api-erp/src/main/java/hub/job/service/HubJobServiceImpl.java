@@ -100,8 +100,8 @@ public class HubJobServiceImpl implements HubJobService {
 
     @Transactional(readOnly = true)
     @Override
-    public HubJobDetailResponse getJob(String requestId) {
-        HubJob job = hubJobMapper.selectByRequestId(requestId);
+    public HubJobDetailResponse getJob(long corpId, String requestId) {
+        HubJob job = hubJobMapper.selectByRequestIdAndCorpId(requestId, corpId);
         if (job == null) {
             throw new HubJobNotFoundException(requestId);
         }
@@ -462,13 +462,13 @@ public class HubJobServiceImpl implements HubJobService {
 
     @Transactional(readOnly = true)
     @Override
-    public HubJobListResponse getJobs(String status, String channelCd, int page, int size) {
+    public HubJobListResponse getJobs(long corpId, String status, String channelCd, int page, int size) {
         int offset = (page - 1) * size;
         String statusParam = (status == null || status.isBlank()) ? null : status;
         String channelParam = (channelCd == null || channelCd.isBlank()) ? null : channelCd;
 
-        List<HubJob> jobs = hubJobMapper.selectJobList(statusParam, channelParam, size, offset);
-        int total = hubJobMapper.selectJobListCount(statusParam, channelParam);
+        List<HubJob> jobs = hubJobMapper.selectJobListByCorpId(corpId, statusParam, channelParam, size, offset);
+        int total = hubJobMapper.selectJobListCountByCorpId(corpId, statusParam, channelParam);
 
         List<HubJobListItem> items = jobs.stream()
                 .map(this::toListItem)
@@ -479,38 +479,38 @@ public class HubJobServiceImpl implements HubJobService {
 
     @Transactional(readOnly = true)
     @Override
-    public HubDashboardResponse getDashboard() {
+    public HubDashboardResponse getDashboard(long corpId) {
         return new HubDashboardResponse(
-                hubJobMapper.selectDashboardStats(),
-                hubJobMapper.selectDashboardRecentJobs(8),
-                hubJobMapper.selectDashboardChannelStats(),
-                buildPerformanceResponse(60),
-                selectWorkerPerformance(60),
-                selectRecentLoadTestRuns(8),
+                hubJobMapper.selectDashboardStatsByCorpId(corpId),
+                hubJobMapper.selectDashboardRecentJobsByCorpId(corpId, 8),
+                hubJobMapper.selectDashboardChannelStatsByCorpId(corpId),
+                buildPerformanceResponse(corpId, 60),
+                selectWorkerPerformance(corpId, 60),
+                List.of(),
                 LocalDateTime.now()
         );
     }
 
     @Transactional(readOnly = true)
     @Override
-    public JobPerformanceResponse getPerformance(int minutes) {
+    public JobPerformanceResponse getPerformance(long corpId, int minutes) {
         int safeMinutes = Math.max(1, Math.min(minutes, 24 * 60));
-        return buildPerformanceResponse(safeMinutes);
+        return buildPerformanceResponse(corpId, safeMinutes);
     }
 
-    private JobPerformanceResponse buildPerformanceResponse(int safeMinutes) {
+    private JobPerformanceResponse buildPerformanceResponse(long corpId, int safeMinutes) {
         return new JobPerformanceResponse(
                 safeMinutes,
-                selectPerformanceSummary(safeMinutes),
-                selectPerformancePoints(safeMinutes),
+                selectPerformanceSummary(corpId, safeMinutes),
+                selectPerformancePoints(corpId, safeMinutes),
                 LocalDateTime.now()
         );
     }
 
     @Transactional(readOnly = true)
     @Override
-    public HubJobLogResponse getJobLogs(String requestId) {
-        HubJob job = hubJobMapper.selectByRequestId(requestId);
+    public HubJobLogResponse getJobLogs(long corpId, String requestId) {
+        HubJob job = hubJobMapper.selectByRequestIdAndCorpId(requestId, corpId);
         if (job == null) {
             throw new HubJobNotFoundException(requestId);
         }
@@ -518,8 +518,8 @@ public class HubJobServiceImpl implements HubJobService {
     }
 
     @Override
-    public void retryJob(String requestId) {
-        HubJob job = hubJobMapper.selectByRequestId(requestId);
+    public void retryJob(long corpId, String requestId) {
+        HubJob job = hubJobMapper.selectByRequestIdAndCorpId(requestId, corpId);
         if (job == null) {
             throw new HubJobNotFoundException(requestId);
         }
@@ -530,14 +530,14 @@ public class HubJobServiceImpl implements HubJobService {
         String originalPayload = job.getPayload();
         String partitionKey = jobOutboxService.findLatestPartitionKey(job.getRequestId());
         job.setStatus(HubJobStatus.QUEUED);
-        int updated = hubJobMapper.resetFailedJobForRetry(job.getRequestKey(), originalPayload);
+        int updated = hubJobMapper.resetFailedJobForRetryByCorpId(job.getRequestKey(), originalPayload, corpId);
         if (updated != 1) {
             throw new IllegalStateException("Job retry skipped because current status is not FAILED");
         }
         publishEvent(job, partitionKey);
     }
 
-    private JobPerformanceSummary selectPerformanceSummary(int minutes) {
+    private JobPerformanceSummary selectPerformanceSummary(long corpId, int minutes) {
         return jdbcTemplate.queryForObject(
                 """
                         WITH target AS (
@@ -558,6 +558,7 @@ public class HubJobServiceImpl implements HubJobService {
                                 )) * 1000 AS duration_ms
                             FROM hub_job
                             WHERE created_at >= NOW() - (? * INTERVAL '1 minute')
+                              AND payload ->> 'corpId' = CAST(? AS varchar)
                         )
                         SELECT
                             COUNT(*)::bigint AS total_jobs,
@@ -581,11 +582,12 @@ public class HubJobServiceImpl implements HubJobService {
                         roundDouble(rs.getDouble("max_duration_ms")),
                         roundDouble(rs.getLong("completed_jobs") / (double) minutes)
                 ),
-                minutes
+                minutes,
+                corpId
         );
     }
 
-    private List<JobPerformancePoint> selectPerformancePoints(int minutes) {
+    private List<JobPerformancePoint> selectPerformancePoints(long corpId, int minutes) {
         int bucketMinutes = minutes <= 60 ? 5 : 15;
         return jdbcTemplate.query(
                 """
@@ -609,6 +611,7 @@ public class HubJobServiceImpl implements HubJobService {
                                     AS bucket_at
                             FROM hub_job
                             WHERE created_at >= NOW() - (? * INTERVAL '1 minute')
+                              AND payload ->> 'corpId' = CAST(? AS varchar)
                         )
                         SELECT
                             to_char(bucket_at, 'HH24:MI') AS bucket,
@@ -633,7 +636,8 @@ public class HubJobServiceImpl implements HubJobService {
                 ),
                 bucketMinutes,
                 bucketMinutes,
-                minutes
+                minutes,
+                corpId
         );
     }
 
@@ -689,7 +693,7 @@ public class HubJobServiceImpl implements HubJobService {
         );
     }
 
-    private List<WorkerPerformanceItem> selectWorkerPerformance(int minutes) {
+    private List<WorkerPerformanceItem> selectWorkerPerformance(long corpId, int minutes) {
         return jdbcTemplate.query(
                 """
                         WITH completed AS (
@@ -711,6 +715,7 @@ public class HubJobServiceImpl implements HubJobService {
                                 )) * 1000 AS duration_ms
                             FROM hub_job
                             WHERE created_at >= NOW() - (? * INTERVAL '1 minute')
+                              AND payload ->> 'corpId' = CAST(? AS varchar)
                               AND status IN ('SUCCESS', 'FAILED')
                         ),
                         assigned AS (
@@ -758,6 +763,7 @@ public class HubJobServiceImpl implements HubJobService {
                         rs.getString("last_completed_at")
                 ),
                 minutes,
+                corpId,
                 minutes + 60
         );
     }

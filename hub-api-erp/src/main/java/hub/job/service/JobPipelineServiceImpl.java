@@ -21,8 +21,8 @@ public class JobPipelineServiceImpl implements JobPipelineService {
     private final ErpApplyResultMapper erpApplyResultMapper;
 
     @Override
-    public JobPipelineResponse getPipeline(String requestId, long corpId) {
-        HubJob requested = hubJobMapper.selectByRequestId(requestId);
+    public JobPipelineResponse getPipeline(long corpId, String requestId) {
+        HubJob requested = hubJobMapper.selectByRequestIdAndCorpId(requestId, corpId);
         if (requested == null || requested.getCorrelationId() == null) {
             throw new HubJobNotFoundException(requestId);
         }

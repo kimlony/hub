@@ -1,5 +1,6 @@
 package hub.schedule.controller;
 
+import hub.auth.HubUserPrincipal;
 import hub.schedule.dto.request.OrderStatusSyncScheduleEnabledRequest;
 import hub.schedule.dto.request.OrderStatusSyncScheduleRequest;
 import hub.schedule.dto.response.OrderStatusSyncScheduleListResponse;
@@ -27,43 +28,43 @@ public class OrderStatusSyncScheduleController {
     private final OrderStatusSyncScheduleService orderStatusSyncScheduleService;
 
     @GetMapping
-    public ResponseEntity<OrderStatusSyncScheduleListResponse> getSchedules(@AuthenticationPrincipal String username) {
-        return ResponseEntity.ok(orderStatusSyncScheduleService.getSchedules(username));
+    public ResponseEntity<OrderStatusSyncScheduleListResponse> getSchedules(@AuthenticationPrincipal HubUserPrincipal principal) {
+        return ResponseEntity.ok(orderStatusSyncScheduleService.getSchedules(principal.username()));
     }
 
     @PostMapping
     public ResponseEntity<OrderStatusSyncScheduleResponse> createSchedule(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @Valid @RequestBody OrderStatusSyncScheduleRequest request
     ) {
-        return ResponseEntity.ok(orderStatusSyncScheduleService.createSchedule(username, request));
+        return ResponseEntity.ok(orderStatusSyncScheduleService.createSchedule(principal.username(), request));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<OrderStatusSyncScheduleResponse> updateSchedule(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @PathVariable Long id,
             @Valid @RequestBody OrderStatusSyncScheduleRequest request
     ) {
-        return ResponseEntity.ok(orderStatusSyncScheduleService.updateSchedule(username, id, request));
+        return ResponseEntity.ok(orderStatusSyncScheduleService.updateSchedule(principal.username(), id, request));
     }
 
     @PatchMapping("/{id}/enabled")
     public ResponseEntity<Void> updateEnabled(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @PathVariable Long id,
             @Valid @RequestBody OrderStatusSyncScheduleEnabledRequest request
     ) {
-        orderStatusSyncScheduleService.updateEnabled(username, id, request);
+        orderStatusSyncScheduleService.updateEnabled(principal.username(), id, request);
         return ResponseEntity.ok().build();
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteSchedule(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @PathVariable Long id
     ) {
-        orderStatusSyncScheduleService.deleteSchedule(username, id);
+        orderStatusSyncScheduleService.deleteSchedule(principal.username(), id);
         return ResponseEntity.ok().build();
     }
 }

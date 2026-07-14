@@ -41,7 +41,7 @@ public class ErpApplyResultServiceImpl implements ErpApplyResultService {
     }
 
     @Override
-    public ErpApplyResultDetailResponse getResult(long id, long corpId) {
+    public ErpApplyResultDetailResponse getResult(long corpId, long id) {
         ErpApplyResult result = mapper.selectByIdAndCorpId(id, corpId);
         if (result == null) {
             throw new ErpApplyResultNotFoundException(id);

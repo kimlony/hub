@@ -65,7 +65,6 @@ export type JobPipeline = {
 }
 
 export type ErpApplyResultParams = {
-  corpId: string
   status?: string
   erpConnectionId?: string
   correlationId?: string
@@ -90,7 +89,7 @@ export async function fetchErpApplyResults(
   authenticatedFetch: AuthenticatedFetch,
   params: ErpApplyResultParams,
 ): Promise<ErpApplyResultsResponse> {
-  const query = new URLSearchParams({ corpId: params.corpId, page: String(params.page), size: String(params.size) })
+  const query = new URLSearchParams({ page: String(params.page), size: String(params.size) })
   if (params.status) query.set('status', params.status)
   if (params.erpConnectionId) query.set('erpConnectionId', params.erpConnectionId)
   if (params.correlationId) query.set('correlationId', params.correlationId)
@@ -101,19 +100,15 @@ export async function fetchErpApplyResults(
 export async function fetchErpApplyResultDetail(
   authenticatedFetch: AuthenticatedFetch,
   id: number,
-  corpId: string,
 ): Promise<ErpApplyResultDetail> {
-  const query = new URLSearchParams({ corpId })
-  return parseResponse(await authenticatedFetch(`/api/hub/erp/apply-results/${id}?${query}`))
+  return parseResponse(await authenticatedFetch(`/api/hub/erp/apply-results/${id}`))
 }
 
 export async function fetchJobPipeline(
   authenticatedFetch: AuthenticatedFetch,
   requestId: string,
-  corpId: string,
 ): Promise<JobPipeline> {
-  const query = new URLSearchParams({ corpId })
-  return parseResponse(await authenticatedFetch(`/api/hub/jobs/${encodeURIComponent(requestId)}/pipeline?${query}`))
+  return parseResponse(await authenticatedFetch(`/api/hub/jobs/${encodeURIComponent(requestId)}/pipeline`))
 }
 export async function retryErpApplyJob(
   authenticatedFetch: AuthenticatedFetch,

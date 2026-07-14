@@ -238,6 +238,7 @@ docker compose up -d hub-worker-consumer hub-worker-recovery hub-worker-http
 - [Order Normalization Pipeline](docs/order-normalization-pipeline.md)
 - [Order Export Normalized Design](docs/order-export-normalized-design.md)
 - [Multi-tenant Order Model](docs/multi-tenant-order-model.md)
+- [Security and Tenant Isolation](docs/security-and-tenant-isolation.md)
 - [User Settings and Pipeline Branching](docs/user-settings.md)
 - [Outbox and Kafka Job Flow](docs/outbox-kafka-flow.md)
 - [Manual ERP Apply Design](docs/manual-erp-apply-design.md)

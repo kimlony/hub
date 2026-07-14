@@ -1,5 +1,6 @@
 package hub.setting.controller;
 
+import hub.auth.HubUserPrincipal;
 import hub.setting.dto.UpdateUserSettingRequest;
 import hub.setting.dto.UserSettingResponse;
 import hub.setting.service.UserSettingService;
@@ -20,15 +21,15 @@ public class UserSettingController {
     private final UserSettingService userSettingService;
 
     @GetMapping
-    public ResponseEntity<UserSettingResponse> getSetting(@AuthenticationPrincipal String username) {
-        return ResponseEntity.ok(userSettingService.getSetting(username));
+    public ResponseEntity<UserSettingResponse> getSetting(@AuthenticationPrincipal HubUserPrincipal principal) {
+        return ResponseEntity.ok(userSettingService.getSetting(principal.username()));
     }
 
     @PutMapping
     public ResponseEntity<UserSettingResponse> updateSetting(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @Valid @RequestBody UpdateUserSettingRequest request
     ) {
-        return ResponseEntity.ok(userSettingService.updateSetting(username, request));
+        return ResponseEntity.ok(userSettingService.updateSetting(principal.username(), request));
     }
 }

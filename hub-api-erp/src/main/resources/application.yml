@@ -43,13 +43,16 @@ hub:
   order:
     normalize-scan-ms: ${HUB_ORDER_NORMALIZE_SCAN_MS:60000}
     normalize-initial-delay-ms: ${HUB_ORDER_NORMALIZE_INITIAL_DELAY_MS:30000}
-  security:
-    enabled: ${HUB_SECURITY_ENABLED:true}
-    header-name: ${HUB_API_KEY_HEADER:X-Hub-Api-Key}
-    api-key: ${HUB_API_KEY}
   jwt:
-    secret: ${HUB_JWT_SECRET}
-    expiry-ms: ${HUB_JWT_EXPIRY_MS:86400000}
+    ui:
+      secret: ${HUB_UI_JWT_SECRET}
+      expiry-ms: ${HUB_UI_JWT_EXPIRY_MS:86400000}
+      issuer: ${HUB_UI_JWT_ISSUER:easy-hub-ui}
+      audience: ${HUB_UI_JWT_AUDIENCE:easy-hub-web}
+    external:
+      secret: ${HUB_EXTERNAL_JWT_SECRET}
+      issuer: ${HUB_EXTERNAL_JWT_ISSUER:easy-hub-external}
+      audience: ${HUB_EXTERNAL_JWT_AUDIENCE:easy-hub-external-api}
   aes:
     secret: ${HUB_AES_SECRET}
   outbox:

@@ -1,5 +1,6 @@
 package hub.auth.controller;
 
+import hub.auth.HubUserPrincipal;
 import hub.auth.dto.request.LoginRequest;
 import hub.auth.dto.response.LoginResponse;
 import hub.auth.service.AuthService;
@@ -22,7 +23,7 @@ public class AuthController {
     }
 
     @GetMapping("/me/malls")
-    public ResponseEntity<List<String>> myMalls(@AuthenticationPrincipal String username) {
-        return ResponseEntity.ok(authService.getMallKeys(username));
+    public ResponseEntity<List<String>> myMalls(@AuthenticationPrincipal HubUserPrincipal principal) {
+        return ResponseEntity.ok(authService.getMallKeys(principal.username()));
     }
 }

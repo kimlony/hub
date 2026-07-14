@@ -1,5 +1,6 @@
 package hub.order.export.controller;
 
+import hub.auth.HubUserPrincipal;
 import hub.order.export.dto.OrderExportFilter;
 import hub.order.export.dto.OrderExportHistoryItem;
 import hub.order.export.dto.OrderExportPreviewResponse;
@@ -29,7 +30,7 @@ public class OrderExcelExportController {
 
     @GetMapping("/preview")
     public ResponseEntity<OrderExportPreviewResponse> preview(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @RequestParam(defaultValue = "") String frDt,
             @RequestParam(defaultValue = "") String toDt,
             @RequestParam(defaultValue = "") String channelCd,
@@ -38,16 +39,16 @@ public class OrderExcelExportController {
             @RequestParam(defaultValue = "") String claimStatus,
             @RequestParam(defaultValue = "") String deliveryStatus
     ) {
-        return ResponseEntity.ok(service.preview(username,
+        return ResponseEntity.ok(service.preview(principal.username(),
                 filter(frDt, toDt, channelCd, mallKey, orderStatus, claimStatus, deliveryStatus)));
     }
 
     @PostMapping("/excel")
     public ResponseEntity<byte[]> excel(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @RequestBody OrderExportFilter filter
     ) {
-        OrderExcelExportService.ExportedFile file = service.export(username, filter);
+        OrderExcelExportService.ExportedFile file = service.export(principal.username(), filter);
         ContentDisposition disposition = ContentDisposition.attachment()
                 .filename(file.fileName(), StandardCharsets.UTF_8).build();
         return ResponseEntity.ok()
@@ -59,8 +60,8 @@ public class OrderExcelExportController {
     }
 
     @GetMapping("/history")
-    public ResponseEntity<List<OrderExportHistoryItem>> history(@AuthenticationPrincipal String username) {
-        return ResponseEntity.ok(service.history(username));
+    public ResponseEntity<List<OrderExportHistoryItem>> history(@AuthenticationPrincipal HubUserPrincipal principal) {
+        return ResponseEntity.ok(service.history(principal.username()));
     }
 
     private OrderExportFilter filter(String frDt, String toDt, String channelCd, String mallKey,

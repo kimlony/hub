@@ -6,10 +6,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import hub.config.HubApiKeyInterceptor;
+import hub.auth.HubUserPrincipal;
 import hub.config.JwtAuthFilter;
 import hub.config.SecurityConfig;
-import hub.config.WebConfig;
 import hub.exception.HubJobNotFoundException;
 import hub.external.ExternalApiAuthFilter;
 import hub.job.dto.response.JobPipelineResponse;
@@ -17,6 +16,8 @@ import hub.job.service.JobPipelineService;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -24,6 +25,10 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 
 /**
  * Security/API-key filter classes are excluded from this slice so the test only exercises
@@ -32,8 +37,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @WebMvcTest(
         controllers = JobPipelineController.class,
         excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = {
-                SecurityConfig.class, WebConfig.class, JwtAuthFilter.class,
-                ExternalApiAuthFilter.class, HubApiKeyInterceptor.class
+                SecurityConfig.class, JwtAuthFilter.class, ExternalApiAuthFilter.class
         })
 )
 @AutoConfigureMockMvc(addFilters = false)
@@ -44,6 +48,16 @@ class JobPipelineControllerTest {
 
     @MockBean
     private JobPipelineService service;
+
+    @BeforeEach
+    void setAuthentication() {
+        SecurityContextHolder.getContext().setAuthentication(hubAuthentication());
+    }
+
+    @AfterEach
+    void clearAuthentication() {
+        SecurityContextHolder.clearContext();
+    }
 
     private JobPipelineResponse failedErpApplyPipeline() {
         List<JobPipelineResponse.PipelineJobItem> jobs = List.of(
@@ -65,9 +79,9 @@ class JobPipelineControllerTest {
 
     @Test
     void returnsOrderedJobChainWithErpApplyFailedStage() throws Exception {
-        when(service.getPipeline("erp-apply-1", 100L)).thenReturn(failedErpApplyPipeline());
+        when(service.getPipeline(100L, "erp-apply-1")).thenReturn(failedErpApplyPipeline());
 
-        mockMvc.perform(get("/api/hub/jobs/erp-apply-1/pipeline").param("corpId", "100"))
+        mockMvc.perform(get("/api/hub/jobs/erp-apply-1/pipeline").with(authentication(hubAuthentication())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.correlationId").value("corr-1"))
                 .andExpect(jsonPath("$.rootJobId").value("collect-1"))
@@ -90,46 +104,23 @@ class JobPipelineControllerTest {
                 .andExpect(jsonPath("$.erpApplyResults[0].errorCode").value("ERP_500"))
                 .andExpect(jsonPath("$.erpApplyResults[0].errorMessage").value("Mock ERP apply failed"));
 
-        verify(service).getPipeline("erp-apply-1", 100L);
+        verify(service).getPipeline(100L, "erp-apply-1");
     }
 
     @Test
     void missingRequestIdReturns404ViaGlobalExceptionHandler() throws Exception {
-        when(service.getPipeline("missing-1", 100L)).thenThrow(new HubJobNotFoundException("missing-1"));
+        when(service.getPipeline(100L, "missing-1")).thenThrow(new HubJobNotFoundException("missing-1"));
 
-        mockMvc.perform(get("/api/hub/jobs/missing-1/pipeline").param("corpId", "100"))
+        mockMvc.perform(get("/api/hub/jobs/missing-1/pipeline").with(authentication(hubAuthentication())))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.error").value("Not Found"));
 
-        verify(service).getPipeline("missing-1", 100L);
+        verify(service).getPipeline(100L, "missing-1");
     }
 
-    /**
-     * corpId is a required @RequestParam with no default, so a missing value throws
-     * MissingServletRequestParameterException, which GlobalExceptionHandler now maps to 400.
-     */
-    @Test
-    void missingRequiredCorpIdReturnsBadRequest() throws Exception {
-        mockMvc.perform(get("/api/hub/jobs/erp-apply-1/pipeline"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.error").value("Bad Request"))
-                .andExpect(jsonPath("$.message").value("Required request parameter 'corpId' (long) is missing"))
-                .andExpect(jsonPath("$.parameterName").value("corpId"))
-                .andExpect(jsonPath("$.requiredType").value("long"));
-    }
-
-    @Test
-    void invalidCorpIdTypeReturnsBadRequest() throws Exception {
-        mockMvc.perform(get("/api/hub/jobs/erp-apply-1/pipeline").param("corpId", "abc"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.error").value("Bad Request"))
-                .andExpect(jsonPath("$.parameterName").value("corpId"))
-                .andExpect(jsonPath("$.rejectedValue").value("abc"))
-                .andExpect(jsonPath("$.requiredType").value("long"))
-                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("corpId")))
-                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("abc")));
+    private static UsernamePasswordAuthenticationToken hubAuthentication() {
+        return new UsernamePasswordAuthenticationToken(
+                new HubUserPrincipal(1L, 100L, "user", "USER"), null, List.of());
     }
 }

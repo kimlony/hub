@@ -1,6 +1,7 @@
 package hub.order.controller;
 
 import hub.auth.AuthException;
+import hub.auth.HubUserPrincipal;
 import hub.auth.domain.HubUser;
 import hub.auth.mapper.UserMapper;
 import hub.order.dto.response.OrderExportResponse;
@@ -23,7 +24,7 @@ public class OrderExportController {
 
     @GetMapping("/export")
     public ResponseEntity<OrderExportResponse> exportOrders(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @RequestParam(defaultValue = "") String channelCd,
             @RequestParam(defaultValue = "") String orderStatus,
             @RequestParam(defaultValue = "") String keyword,
@@ -32,7 +33,7 @@ public class OrderExportController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "50") int size
     ) {
-        HubUser user = userMapper.findByUsername(username)
+        HubUser user = userMapper.findByUsername(principal.username())
                 .orElseThrow(() -> new AuthException("user not found"));
         return ResponseEntity.ok(orderExportService.getOrdersForUser(
                 user.getId(),

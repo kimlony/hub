@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -48,13 +49,21 @@ class ErpApplyResultServiceImplTest {
         ErpApplyResult row = result();
         when(mapper.selectByIdAndCorpId(1L, 100L)).thenReturn(row);
 
-        var response = service.getResult(1L, 100L);
+        var response = service.getResult(100L, 1L);
 
         assertThat(response.result().requestId()).isEqualTo("erp-1");
         assertThat(response.requestPayload().get("orderId").asLong()).isEqualTo(11L);
         assertThat(response.responsePayload().get("accepted").asBoolean()).isTrue();
         assertThat(response.payloadSummary().requestBytes()).isPositive();
         verify(mapper).selectByIdAndCorpId(1L, 100L);
+    }
+
+    @Test
+    void crossTenantResultIsHiddenAsNotFound() {
+        when(mapper.selectByIdAndCorpId(1L, 100L)).thenReturn(null);
+
+        assertThatThrownBy(() -> service.getResult(100L, 1L))
+                .isInstanceOf(ErpApplyResultNotFoundException.class);
     }
 
     private ErpApplyResult result() {

@@ -1,5 +1,6 @@
 package hub.channel.controller;
 
+import hub.auth.HubUserPrincipal;
 import hub.channel.dto.request.ChannelRequest;
 import hub.channel.dto.response.ChannelResponse;
 import hub.channel.service.ChannelService;
@@ -18,41 +19,41 @@ public class ChannelController {
 
     @GetMapping
     public ResponseEntity<List<ChannelResponse>> getChannels(
-            @AuthenticationPrincipal String username) {
-        return ResponseEntity.ok(channelService.getChannels(username));
+            @AuthenticationPrincipal HubUserPrincipal principal) {
+        return ResponseEntity.ok(channelService.getChannels(principal.username()));
     }
 
     @PostMapping("/{mallKey}")
     public ResponseEntity<Void> register(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @PathVariable String mallKey,
             @RequestBody ChannelRequest request) {
-        channelService.register(username, mallKey, request);
+        channelService.register(principal.username(), mallKey, request);
         return ResponseEntity.ok().build();
     }
 
     @PutMapping("/accounts/{channelAccountId}")
     public ResponseEntity<Void> update(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @PathVariable Long channelAccountId,
             @RequestBody ChannelRequest request) {
-        channelService.update(username, channelAccountId, request);
+        channelService.update(principal.username(), channelAccountId, request);
         return ResponseEntity.ok().build();
     }
 
     @DeleteMapping("/accounts/{channelAccountId}")
     public ResponseEntity<Void> delete(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @PathVariable Long channelAccountId) {
-        channelService.delete(username, channelAccountId);
+        channelService.delete(principal.username(), channelAccountId);
         return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/accounts/{channelAccountId}/active")
     public ResponseEntity<Void> toggleUseYn(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @PathVariable Long channelAccountId) {
-        channelService.toggleUseYn(username, channelAccountId);
+        channelService.toggleUseYn(principal.username(), channelAccountId);
         return ResponseEntity.ok().build();
     }
 }

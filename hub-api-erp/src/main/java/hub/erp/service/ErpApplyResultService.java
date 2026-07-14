@@ -6,5 +6,5 @@ import hub.erp.dto.response.ErpApplyResultListResponse;
 
 public interface ErpApplyResultService {
     ErpApplyResultListResponse getResults(ErpApplyResultSearchCondition condition, int page, int size);
-    ErpApplyResultDetailResponse getResult(long id, long corpId);
+    ErpApplyResultDetailResponse getResult(long corpId, long id);
 }

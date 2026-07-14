@@ -2,7 +2,8 @@ package hub.external;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import hub.config.AesEncryptor;
-import hub.config.JwtProperties;
+import hub.config.ExternalJwtProperties;
+import hub.config.ExternalJwtProvider;
 import hub.external.domain.ExternalApiClientRow;
 import hub.external.dto.response.ExternalApiTokenResponse;
 import hub.external.mapper.ExternalApiClientMapper;
@@ -149,13 +150,14 @@ class ExternalApiAuthServiceImplTest {
     }
 
     private ExternalApiAuthServiceImpl service() {
-        JwtProperties jwtProperties = new JwtProperties();
-        jwtProperties.setSecret("test-only-jwt-secret-32-bytes!!!");
-        jwtProperties.setExpiryMs(86_400_000L);
+        ExternalJwtProperties jwtProperties = new ExternalJwtProperties();
+        jwtProperties.setSecret("test-only-external-jwt-secret-32-bytes!!!");
+        jwtProperties.setIssuer("easy-hub-external");
+        jwtProperties.setAudience("easy-hub-external-api");
         return new ExternalApiAuthServiceImpl(
                 externalApiClientMapper,
                 aesEncryptor,
-                jwtProperties,
+                new ExternalJwtProvider(jwtProperties),
                 new ObjectMapper()
         );
     }

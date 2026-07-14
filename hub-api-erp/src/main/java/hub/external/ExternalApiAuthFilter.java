@@ -1,15 +1,11 @@
 package hub.external;
 
-import hub.config.JwtProvider;
-import hub.external.service.ExternalApiAuthService;
-import io.jsonwebtoken.Claims;
+import hub.config.ExternalJwtProvider;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.ServletException;
 import java.io.IOException;
-import java.util.Collections;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -20,7 +16,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @RequiredArgsConstructor
 public class ExternalApiAuthFilter extends OncePerRequestFilter {
 
-    private final JwtProvider jwtProvider;
+    private final ExternalJwtProvider externalJwtProvider;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -38,43 +34,12 @@ public class ExternalApiAuthFilter extends OncePerRequestFilter {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
-            if (jwtProvider.isValid(token)) {
-                Claims claims = jwtProvider.extractClaims(token);
-                if ("EXTERNAL".equals(claims.get("type", String.class))) {
-                    // Keep external clients isolated from normal UI users by
-                    // exposing only userId, clientId, and scopes to controllers.
-                    ExternalApiPrincipal principal = new ExternalApiPrincipal(
-                            toLong(claims.get("userId")),
-                            claims.get("clientId", String.class),
-                            readScopes(claims.get("scopes"))
-                    );
+            externalJwtProvider.authenticate(token).ifPresent(principal -> {
                     UsernamePasswordAuthenticationToken auth =
-                            new UsernamePasswordAuthenticationToken(principal, null, Collections.emptyList());
+                            new UsernamePasswordAuthenticationToken(principal, null, java.util.Collections.emptyList());
                     SecurityContextHolder.getContext().setAuthentication(auth);
-                }
-            }
+            });
         }
         chain.doFilter(request, response);
-    }
-
-    private Long toLong(Object value) {
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        if (value instanceof String text && !text.isBlank()) {
-            return Long.parseLong(text);
-        }
-        return null;
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<String> readScopes(Object value) {
-        if (value instanceof List<?> list) {
-            return list.stream()
-                    .filter(String.class::isInstance)
-                    .map(String.class::cast)
-                    .toList();
-        }
-        return List.of();
     }
 }

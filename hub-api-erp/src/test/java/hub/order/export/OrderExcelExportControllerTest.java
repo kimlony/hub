@@ -1,5 +1,6 @@
 package hub.order.export;
 
+import hub.auth.HubUserPrincipal;
 import hub.order.export.controller.OrderExcelExportController;
 import hub.order.export.dto.OrderExportFilter;
 import hub.order.export.service.OrderExcelExportService;
@@ -19,7 +20,8 @@ class OrderExcelExportControllerTest {
         when(service.export("operator", filter)).thenReturn(
                 new OrderExcelExportService.ExportedFile("EXCEL-1", "easy-hub-orders-20260701120000.xlsx", content));
 
-        var response = new OrderExcelExportController(service).excel("operator", filter);
+        var principal = new HubUserPrincipal(1L, 100L, "operator", "USER");
+        var response = new OrderExcelExportController(service).excel(principal, filter);
 
         assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.parseMediaType(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));

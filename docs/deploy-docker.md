@@ -127,8 +127,8 @@ cp .env.dev.example .env.dev
 반드시 바꿔야 하는 값:
 
 - `POSTGRES_PASSWORD`
-- `HUB_API_KEY`
-- `HUB_JWT_SECRET`
+- `HUB_UI_JWT_SECRET`
+- `HUB_EXTERNAL_JWT_SECRET`
 - `HUB_AES_SECRET`
 - 외부 쇼핑몰 API 관련 key 또는 endpoint
 
@@ -189,8 +189,8 @@ docker compose -f docker-compose.server.yml -f docker-compose.dev.yml --env-file
 특히 다음 값이 필요합니다.
 
 - `POSTGRES_PASSWORD`
-- `HUB_API_KEY`
-- `HUB_JWT_SECRET`
+- `HUB_UI_JWT_SECRET`
+- `HUB_EXTERNAL_JWT_SECRET`
 - `HUB_AES_SECRET`
 
 ### `HUB_AES_SECRET` 오류

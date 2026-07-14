@@ -1,6 +1,7 @@
 package hub.order;
 
 import hub.auth.domain.HubUser;
+import hub.auth.HubUserPrincipal;
 import hub.auth.mapper.UserMapper;
 import hub.order.controller.OrderExportController;
 import hub.order.dto.response.OrderExportResponse;
@@ -42,7 +43,7 @@ class OrderExportControllerTest {
 
         OrderExportController controller = new OrderExportController(orderExportService, userMapper);
         OrderExportResponse response = controller.exportOrders(
-                "operator",
+                new HubUserPrincipal(7L, 100L, "operator", "USER"),
                 "ONRY",
                 "PAID",
                 "ORDER-1",

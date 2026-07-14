@@ -1,5 +1,6 @@
 package hub.schedule.controller;
 
+import hub.auth.HubUserPrincipal;
 import hub.schedule.dto.request.CollectScheduleEnabledRequest;
 import hub.schedule.dto.request.CollectScheduleRequest;
 import hub.schedule.dto.response.CollectScheduleListResponse;
@@ -27,43 +28,43 @@ public class CollectScheduleController {
     private final CollectScheduleService collectScheduleService;
 
     @GetMapping
-    public ResponseEntity<CollectScheduleListResponse> getSchedules(@AuthenticationPrincipal String username) {
-        return ResponseEntity.ok(collectScheduleService.getSchedules(username));
+    public ResponseEntity<CollectScheduleListResponse> getSchedules(@AuthenticationPrincipal HubUserPrincipal principal) {
+        return ResponseEntity.ok(collectScheduleService.getSchedules(principal.username()));
     }
 
     @PostMapping
     public ResponseEntity<CollectScheduleResponse> createSchedule(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @Valid @RequestBody CollectScheduleRequest request
     ) {
-        return ResponseEntity.ok(collectScheduleService.createSchedule(username, request));
+        return ResponseEntity.ok(collectScheduleService.createSchedule(principal.username(), request));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<CollectScheduleResponse> updateSchedule(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @PathVariable Long id,
             @Valid @RequestBody CollectScheduleRequest request
     ) {
-        return ResponseEntity.ok(collectScheduleService.updateSchedule(username, id, request));
+        return ResponseEntity.ok(collectScheduleService.updateSchedule(principal.username(), id, request));
     }
 
     @PatchMapping("/{id}/enabled")
     public ResponseEntity<Void> updateEnabled(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @PathVariable Long id,
             @Valid @RequestBody CollectScheduleEnabledRequest request
     ) {
-        collectScheduleService.updateEnabled(username, id, request);
+        collectScheduleService.updateEnabled(principal.username(), id, request);
         return ResponseEntity.ok().build();
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteSchedule(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @PathVariable Long id
     ) {
-        collectScheduleService.deleteSchedule(username, id);
+        collectScheduleService.deleteSchedule(principal.username(), id);
         return ResponseEntity.ok().build();
     }
 }

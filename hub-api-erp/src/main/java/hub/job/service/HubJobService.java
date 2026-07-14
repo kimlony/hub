@@ -17,15 +17,15 @@ public interface HubJobService {
 
     HubJobBatchResponse createScheduledBatchJobs(String username, Long scheduleRunId, HubJobBatchRequest request);
 
-    HubJobDetailResponse getJob(String requestId);
+    HubJobDetailResponse getJob(long corpId, String requestId);
 
-    HubJobListResponse getJobs(String status, String channelCd, int page, int size);
+    HubJobListResponse getJobs(long corpId, String status, String channelCd, int page, int size);
 
-    HubDashboardResponse getDashboard();
+    HubDashboardResponse getDashboard(long corpId);
 
-    JobPerformanceResponse getPerformance(int minutes);
+    JobPerformanceResponse getPerformance(long corpId, int minutes);
 
-    HubJobLogResponse getJobLogs(String requestId);
+    HubJobLogResponse getJobLogs(long corpId, String requestId);
 
-    void retryJob(String requestId);
+    void retryJob(long corpId, String requestId);
 }

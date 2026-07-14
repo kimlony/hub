@@ -131,16 +131,16 @@ DLQ replay는 DLQ 원본 메시지에서 Job payload를 추출해 `hub.jobs` top
 ### ERP apply results
 
 ```http
-GET /api/hub/erp/apply-results?corpId={corpId}&status=&operation=&requestId=&correlationId=&erpConnectionId=&normalizedOrderId=&fromDate=&toDate=&page=1&size=20
-GET /api/hub/erp/apply-results/{id}?corpId={corpId}
+GET /api/hub/erp/apply-results?status=&operation=&requestId=&correlationId=&erpConnectionId=&normalizedOrderId=&fromDate=&toDate=&page=1&size=20
+GET /api/hub/erp/apply-results/{id}
 ```
 
-목록 조회는 `corpId`가 필수이며 나머지 조건은 선택입니다. 단건 조회 응답은 목록 필드에 더해 `requestPayload`, `responsePayload` 원문과 `payloadSummary`(byte 크기 요약)를 포함합니다.
+목록과 단건 조회의 고객사 범위는 UI JWT의 `corpId`에서 자동으로 결정되며, 나머지 조회 조건은 선택입니다. 단건 조회 응답은 목록 필드에 더해 `requestPayload`, `responsePayload` 원문과 `payloadSummary`(byte 크기 요약)를 포함합니다.
 
 ### Job pipeline
 
 ```http
-GET /api/hub/jobs/{requestId}/pipeline?corpId={corpId}
+GET /api/hub/jobs/{requestId}/pipeline
 ```
 
 `requestId`가 속한 `correlationId` 기준으로 `ORDER_COLLECT -> ORDER_NORMALIZE -> ERP_APPLY` Job 흐름과 연결된 `hub_erp_apply_result`를 함께 보여줍니다. 응답에는 `currentStage`, `failedStage`, `retryable`, `retryFromJobType`이 계산되어 포함됩니다.

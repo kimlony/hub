@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -21,7 +22,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor
-@EnableConfigurationProperties({JwtProperties.class, AesProperties.class})
+@EnableConfigurationProperties({UiJwtProperties.class, ExternalJwtProperties.class, AesProperties.class})
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
@@ -36,24 +37,17 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/login").permitAll()
                 .requestMatchers("/api/external/auth/token").permitAll()
-                .requestMatchers("/api/external/orders/**").permitAll()
-                .requestMatchers("/api/external/**").authenticated()
-                .requestMatchers("/api/auth/me/**").authenticated()
-                .requestMatchers("/api/channels/**").authenticated()
-                .requestMatchers("/api/hub/jobs/**").authenticated()
-                .requestMatchers("/api/hub/erp/**").authenticated()
-                .requestMatchers("/api/hub/settings/**").authenticated()
-                .requestMatchers("/api/hub/schedules/**").authenticated()
-                .requestMatchers("/api/hub/status-sync-schedules/**").authenticated()
-                .requestMatchers("/api/hub/orders/**").authenticated()
-                .requestMatchers("/api/hub/external/**").authenticated()
-                .requestMatchers("/api/hub/notices/**").authenticated()
-                .requestMatchers("/api/hub/news/**").authenticated()
+                .requestMatchers("/api/external/orders/**").authenticated()
                 .requestMatchers("/api/hub/load-tests/**").hasRole("SYSTEM_ADMIN")
                 .requestMatchers("/api/hub/kafka/**").hasRole("SYSTEM_ADMIN")
                 .requestMatchers("/api/hub/workers/**").hasRole("SYSTEM_ADMIN")
                 .requestMatchers("/api/hub/outbox/**").hasRole("SYSTEM_ADMIN")
                 .requestMatchers("/api/admin/**").hasRole("SYSTEM_ADMIN")
+                .requestMatchers("/api/auth/me/**").authenticated()
+                .requestMatchers("/api/channels/**").authenticated()
+                .requestMatchers("/api/hub/**").authenticated()
+                .requestMatchers("/api/orders/export/**").authenticated()
+                .requestMatchers("/api/**").denyAll()
                 .anyRequest().permitAll()
             )
             .addFilterBefore(externalApiAuthFilter, UsernamePasswordAuthenticationFilter.class)
@@ -64,6 +58,18 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public InitializingBean jwtSecretsMustBeDistinct(
+            UiJwtProperties uiProperties,
+            ExternalJwtProperties externalProperties
+    ) {
+        return () -> {
+            if (uiProperties.getSecret().equals(externalProperties.getSecret())) {
+                throw new IllegalStateException("UI and external JWT secrets must be different");
+            }
+        };
     }
 
     @Bean

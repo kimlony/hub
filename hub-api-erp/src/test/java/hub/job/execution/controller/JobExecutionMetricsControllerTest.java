@@ -7,10 +7,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import hub.config.HubApiKeyInterceptor;
 import hub.config.JwtAuthFilter;
 import hub.config.SecurityConfig;
-import hub.config.WebConfig;
 import hub.external.ExternalApiAuthFilter;
 import hub.job.execution.domain.ClaimSource;
 import hub.job.execution.domain.JobAttemptStatus;
@@ -32,8 +30,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @WebMvcTest(
         controllers = JobExecutionMetricsController.class,
         excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = {
-                SecurityConfig.class, WebConfig.class, JwtAuthFilter.class,
-                ExternalApiAuthFilter.class, HubApiKeyInterceptor.class
+                SecurityConfig.class, JwtAuthFilter.class, ExternalApiAuthFilter.class
         })
 )
 @AutoConfigureMockMvc(addFilters = false)

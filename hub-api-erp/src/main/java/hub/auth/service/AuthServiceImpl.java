@@ -5,7 +5,7 @@ import hub.auth.domain.HubUser;
 import hub.auth.dto.request.LoginRequest;
 import hub.auth.dto.response.LoginResponse;
 import hub.auth.mapper.UserMapper;
-import hub.config.JwtProvider;
+import hub.config.UiJwtProvider;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthServiceImpl implements AuthService {
 
     private final UserMapper      userMapper;
-    private final JwtProvider     jwtProvider;
+    private final UiJwtProvider   uiJwtProvider;
     private final PasswordEncoder passwordEncoder;
 
     @Override
@@ -30,7 +30,7 @@ public class AuthServiceImpl implements AuthService {
             throw new AuthException("사용자를 찾을 수 없습니다.");
         }
 
-        String token = jwtProvider.generate(user.getUsername(), user.getRole());
+        String token = uiJwtProvider.generate(user);
         return new LoginResponse(token, user.getUsername(), user.getRole());
     }
 

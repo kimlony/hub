@@ -17,7 +17,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
 
-    private final JwtProvider jwtProvider;
+    private final UiJwtProvider uiJwtProvider;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -33,16 +33,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
-            if (jwtProvider.isValid(token)) {
-                String username = jwtProvider.extractUsername(token);
-                String role = jwtProvider.extractRole(token);
+            uiJwtProvider.authenticate(token).ifPresent(principal -> {
                 UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
-                        username,
+                        principal,
                         null,
-                        List.of(new SimpleGrantedAuthority("ROLE_" + role))
+                        List.of(new SimpleGrantedAuthority("ROLE_" + principal.role()))
                 );
                 SecurityContextHolder.getContext().setAuthentication(auth);
-            }
+            });
         }
         chain.doFilter(request, response);
     }

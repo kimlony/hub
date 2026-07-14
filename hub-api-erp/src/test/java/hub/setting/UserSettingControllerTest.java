@@ -1,5 +1,6 @@
 package hub.setting;
 
+import hub.auth.HubUserPrincipal;
 import hub.setting.controller.UserSettingController;
 import hub.setting.dto.UpdateUserSettingRequest;
 import hub.setting.dto.UserSettingResponse;
@@ -12,13 +13,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class UserSettingControllerTest {
+    private static final HubUserPrincipal PRINCIPAL = new HubUserPrincipal(1L, 100L, "admin", "SYSTEM_ADMIN");
     private final UserSettingService service = mock(UserSettingService.class);
     private final UserSettingController controller = new UserSettingController(service);
 
     @Test
     void getsCurrentUserSetting() {
         when(service.getSetting("admin")).thenReturn(new UserSettingResponse(false, false));
-        assertThat(controller.getSetting("admin").getBody())
+        assertThat(controller.getSetting(PRINCIPAL).getBody())
                 .isEqualTo(new UserSettingResponse(false, false));
     }
 
@@ -26,7 +28,7 @@ class UserSettingControllerTest {
     void updatesCurrentUserSetting() {
         var request = new UpdateUserSettingRequest(true, true);
         when(service.updateSetting("admin", request)).thenReturn(new UserSettingResponse(true, true));
-        assertThat(controller.updateSetting("admin", request).getBody())
+        assertThat(controller.updateSetting(PRINCIPAL, request).getBody())
                 .isEqualTo(new UserSettingResponse(true, true));
         verify(service).updateSetting("admin", request);
     }

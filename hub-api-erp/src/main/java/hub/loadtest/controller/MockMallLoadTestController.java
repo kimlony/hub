@@ -1,5 +1,6 @@
 package hub.loadtest.controller;
 
+import hub.auth.HubUserPrincipal;
 import hub.loadtest.dto.request.MockMallLoadTestRequest;
 import hub.loadtest.dto.response.MockMallLoadTestStartResponse;
 import hub.loadtest.dto.response.MockMallLoadTestStatusResponse;
@@ -24,10 +25,10 @@ public class MockMallLoadTestController {
 
     @PostMapping("/mock-mall")
     public ResponseEntity<MockMallLoadTestStartResponse> startMockMallLoadTest(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @RequestBody MockMallLoadTestRequest request
     ) {
-        return ResponseEntity.ok(mockMallLoadTestService.start(username, request));
+        return ResponseEntity.ok(mockMallLoadTestService.start(principal.username(), request));
     }
 
     @GetMapping

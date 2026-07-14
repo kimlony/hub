@@ -3,8 +3,8 @@ package hub.external;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import hub.config.AesEncryptor;
 import hub.config.AesProperties;
-import hub.config.JwtProperties;
-import hub.config.JwtProvider;
+import hub.config.ExternalJwtProperties;
+import hub.config.ExternalJwtProvider;
 import hub.external.dto.response.ExternalApiTokenResponse;
 import hub.external.mapper.ExternalApiClientMapper;
 import hub.external.service.ExternalApiAuthService;
@@ -62,14 +62,15 @@ class ExternalApiAuthIntegrationTest {
         externalApiClientMapper = mapper(dataSource);
         transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
         aesEncryptor = new AesEncryptor(aesProperties());
-        JwtProperties jwtProperties = jwtProperties();
+        ExternalJwtProperties jwtProperties = jwtProperties();
+        ExternalJwtProvider externalJwtProvider = new ExternalJwtProvider(jwtProperties);
         externalApiAuthService = new ExternalApiAuthServiceImpl(
                 externalApiClientMapper,
                 aesEncryptor,
-                jwtProperties,
+                externalJwtProvider,
                 new ObjectMapper()
         );
-        externalApiAuthFilter = new ExternalApiAuthFilter(new JwtProvider(jwtProperties));
+        externalApiAuthFilter = new ExternalApiAuthFilter(externalJwtProvider);
         userPrefix = "itusr-" + shortId();
         clientPrefix = "it-client-" + shortId();
     }
@@ -285,10 +286,11 @@ class ExternalApiAuthIntegrationTest {
         return properties;
     }
 
-    private JwtProperties jwtProperties() {
-        JwtProperties properties = new JwtProperties();
+    private ExternalJwtProperties jwtProperties() {
+        ExternalJwtProperties properties = new ExternalJwtProperties();
         properties.setSecret(JWT_SECRET);
-        properties.setExpiryMs(86_400_000L);
+        properties.setIssuer("easy-hub-external");
+        properties.setAudience("easy-hub-external-api");
         return properties;
     }
 

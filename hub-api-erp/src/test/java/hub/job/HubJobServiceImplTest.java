@@ -11,6 +11,7 @@ import hub.job.domain.HubJobStatus;
 import hub.job.dto.request.HubJobBatchRequest;
 import hub.job.dto.response.HubJobBatchResponse;
 import hub.job.event.HubJobEvent;
+import hub.exception.HubJobNotFoundException;
 import hub.job.mapper.HubJobMapper;
 import hub.job.service.HubJobServiceImpl;
 import hub.job.service.JobPayloadValidator;
@@ -26,10 +27,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -51,6 +54,42 @@ class HubJobServiceImplTest {
     private JdbcTemplate jdbcTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Test
+    void jobListAndCountAlwaysUseAuthenticatedCorpScope() {
+        when(hubJobMapper.selectJobListByCorpId(100L, null, null, 20, 0)).thenReturn(List.of());
+        when(hubJobMapper.selectJobListCountByCorpId(100L, null, null)).thenReturn(0);
+
+        var response = service().getJobs(100L, "", "", 1, 20);
+
+        assertThat(response.jobs()).isEmpty();
+        assertThat(response.totalCount()).isZero();
+        verify(hubJobMapper).selectJobListByCorpId(100L, null, null, 20, 0);
+        verify(hubJobMapper).selectJobListCountByCorpId(100L, null, null);
+    }
+
+    @Test
+    void crossTenantJobDetailAndLogsAreHiddenAsNotFound() {
+        when(hubJobMapper.selectByRequestIdAndCorpId("corp-2-job", 100L)).thenReturn(null);
+
+        assertThatThrownBy(() -> service().getJob(100L, "corp-2-job"))
+                .isInstanceOf(HubJobNotFoundException.class);
+        assertThatThrownBy(() -> service().getJobLogs(100L, "corp-2-job"))
+                .isInstanceOf(HubJobNotFoundException.class);
+
+        verify(hubJobMapper, never()).selectJobLogs("corp-2-job");
+    }
+
+    @Test
+    void crossTenantRetryNeverUpdatesOrPublishes() {
+        when(hubJobMapper.selectByRequestIdAndCorpId("corp-2-job", 100L)).thenReturn(null);
+
+        assertThatThrownBy(() -> service().retryJob(100L, "corp-2-job"))
+                .isInstanceOf(HubJobNotFoundException.class);
+
+        verify(hubJobMapper, never()).resetFailedJobForRetryByCorpId(any(), any(), anyLong());
+        verifyNoInteractions(jobOutboxService);
+    }
 
     /**
      * 동시 요청으로 이미 생성된 Job이 있으면 기존 Job을 반환하고 발행하지 않는지 검증한다.
@@ -375,13 +414,13 @@ class HubJobServiceImplTest {
                 .retryCount(3)
                 .build();
 
-        when(hubJobMapper.selectByRequestId("failed-request-id")).thenReturn(failedJob);
-        when(hubJobMapper.resetFailedJobForRetry(eq(failedJob.getRequestKey()), any(String.class))).thenReturn(1);
+        when(hubJobMapper.selectByRequestIdAndCorpId("failed-request-id", 100L)).thenReturn(failedJob);
+        when(hubJobMapper.resetFailedJobForRetryByCorpId(eq(failedJob.getRequestKey()), any(String.class), eq(100L))).thenReturn(1);
 
-        service.retryJob("failed-request-id");
+        service.retryJob(100L, "failed-request-id");
 
         ArgumentCaptor<HubJobEvent> eventCaptor = ArgumentCaptor.forClass(HubJobEvent.class);
-        verify(hubJobMapper).resetFailedJobForRetry(eq(failedJob.getRequestKey()), any(String.class));
+        verify(hubJobMapper).resetFailedJobForRetryByCorpId(eq(failedJob.getRequestKey()), any(String.class), eq(100L));
         verify(jobOutboxService).enqueue(eventCaptor.capture());
         assertThat(eventCaptor.getValue().requestId()).isEqualTo("failed-request-id");
         assertThat(eventCaptor.getValue().requestKey()).isEqualTo(failedJob.getRequestKey());
@@ -402,13 +441,13 @@ class HubJobServiceImplTest {
                 .status(HubJobStatus.PROCESSING)
                 .build();
 
-        when(hubJobMapper.selectByRequestId("processing-request-id")).thenReturn(processingJob);
+        when(hubJobMapper.selectByRequestIdAndCorpId("processing-request-id", 100L)).thenReturn(processingJob);
 
-        assertThatThrownBy(() -> service.retryJob("processing-request-id"))
+        assertThatThrownBy(() -> service.retryJob(100L, "processing-request-id"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Only FAILED jobs can be retried");
 
-        verify(hubJobMapper, never()).resetFailedJobForRetry(any(String.class), any(String.class));
+        verify(hubJobMapper, never()).resetFailedJobForRetryByCorpId(any(String.class), any(String.class), eq(100L));
         verify(jobOutboxService, never()).enqueue(any(HubJobEvent.class));
     }
 
@@ -429,10 +468,10 @@ class HubJobServiceImplTest {
                 .retryCount(3)
                 .build();
 
-        when(hubJobMapper.selectByRequestId("failed-request-id")).thenReturn(failedJob);
-        when(hubJobMapper.resetFailedJobForRetry(eq(failedJob.getRequestKey()), any(String.class))).thenReturn(0);
+        when(hubJobMapper.selectByRequestIdAndCorpId("failed-request-id", 100L)).thenReturn(failedJob);
+        when(hubJobMapper.resetFailedJobForRetryByCorpId(eq(failedJob.getRequestKey()), any(String.class), eq(100L))).thenReturn(0);
 
-        assertThatThrownBy(() -> service.retryJob("failed-request-id"))
+        assertThatThrownBy(() -> service.retryJob(100L, "failed-request-id"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Job retry skipped because current status is not FAILED");
 
@@ -447,13 +486,13 @@ class HubJobServiceImplTest {
                 .jobType("ORDER_COLLECT")
                 .status(HubJobStatus.QUEUED)
                 .build();
-        when(hubJobMapper.selectByRequestId("queued-request-id")).thenReturn(queuedJob);
+        when(hubJobMapper.selectByRequestIdAndCorpId("queued-request-id", 100L)).thenReturn(queuedJob);
 
-        assertThatThrownBy(() -> service().retryJob("queued-request-id"))
+        assertThatThrownBy(() -> service().retryJob(100L, "queued-request-id"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Only FAILED jobs can be retried");
 
-        verify(hubJobMapper, never()).resetFailedJobForRetry(any(String.class), any(String.class));
+        verify(hubJobMapper, never()).resetFailedJobForRetryByCorpId(any(String.class), any(String.class), eq(100L));
         verify(jobOutboxService, never()).findLatestPartitionKey(any(String.class));
         verify(jobOutboxService, never()).enqueue(any(HubJobEvent.class));
     }
@@ -474,13 +513,13 @@ class HubJobServiceImplTest {
                 .status(HubJobStatus.FAILED)
                 .payload("{\"channelCd\":\"GODO\"}")
                 .build();
-        when(hubJobMapper.selectByRequestId("invalid-normalize-request-id")).thenReturn(failedJob);
+        when(hubJobMapper.selectByRequestIdAndCorpId("invalid-normalize-request-id", 100L)).thenReturn(failedJob);
 
-        assertThatThrownBy(() -> service().retryJob("invalid-normalize-request-id"))
+        assertThatThrownBy(() -> service().retryJob(100L, "invalid-normalize-request-id"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("sourceRequestId is required for retry");
 
-        verify(hubJobMapper, never()).resetFailedJobForRetry(any(String.class), any(String.class));
+        verify(hubJobMapper, never()).resetFailedJobForRetryByCorpId(any(String.class), any(String.class), eq(100L));
         verify(jobOutboxService, never()).findLatestPartitionKey(any(String.class));
         verify(jobOutboxService, never()).enqueue(any(HubJobEvent.class));
     }
@@ -507,15 +546,15 @@ class HubJobServiceImplTest {
                 .retryCount(3)
                 .build();
 
-        when(hubJobMapper.selectByRequestId("normalize-001")).thenReturn(failedJob);
+        when(hubJobMapper.selectByRequestIdAndCorpId("normalize-001", 100L)).thenReturn(failedJob);
         when(jobOutboxService.findLatestPartitionKey("normalize-001")).thenReturn("collect-001");
-        when(hubJobMapper.resetFailedJobForRetry(failedJob.getRequestKey(), originalPayload)).thenReturn(1);
+        when(hubJobMapper.resetFailedJobForRetryByCorpId(failedJob.getRequestKey(), originalPayload, 100L)).thenReturn(1);
 
-        service.retryJob("normalize-001");
+        service.retryJob(100L, "normalize-001");
 
         ArgumentCaptor<HubJobEvent> eventCaptor = ArgumentCaptor.forClass(HubJobEvent.class);
         verify(jobOutboxService).enqueue(eventCaptor.capture(), eq("collect-001"));
-        verify(hubJobMapper).resetFailedJobForRetry(failedJob.getRequestKey(), originalPayload);
+        verify(hubJobMapper).resetFailedJobForRetryByCorpId(failedJob.getRequestKey(), originalPayload, 100L);
         HubJobEvent event = eventCaptor.getValue();
         assertThat(event.jobType()).isEqualTo("ORDER_NORMALIZE");
         assertThat(event.parentJobId()).isEqualTo("collect-001");
@@ -547,12 +586,12 @@ class HubJobServiceImplTest {
                 .payload(payload)
                 .retryCount(3)
                 .build();
-        when(hubJobMapper.selectByRequestId("erp-apply-001")).thenReturn(failedJob);
+        when(hubJobMapper.selectByRequestIdAndCorpId("erp-apply-001", 100L)).thenReturn(failedJob);
         when(jobOutboxService.findLatestPartitionKey("erp-apply-001"))
                 .thenReturn("erp-connection:100:MOCK-100");
-        when(hubJobMapper.resetFailedJobForRetry(failedJob.getRequestKey(), payload)).thenReturn(1);
+        when(hubJobMapper.resetFailedJobForRetryByCorpId(failedJob.getRequestKey(), payload, 100L)).thenReturn(1);
 
-        service.retryJob("erp-apply-001");
+        service.retryJob(100L, "erp-apply-001");
 
         ArgumentCaptor<HubJobEvent> eventCaptor = ArgumentCaptor.forClass(HubJobEvent.class);
         verify(jobOutboxService).enqueue(eventCaptor.capture(), eq("erp-connection:100:MOCK-100"));
@@ -567,7 +606,7 @@ class HubJobServiceImplTest {
         assertThat(event.payloadVersion()).isEqualTo("1.0");
         assertThat(event.payload()).containsEntry("idempotencyKey", "erp-key-001");
         assertThat(event.payload()).containsEntry("mockFail", true);
-        verify(hubJobMapper).resetFailedJobForRetry(failedJob.getRequestKey(), payload);
+        verify(hubJobMapper).resetFailedJobForRetryByCorpId(failedJob.getRequestKey(), payload, 100L);
     }
 
     @Test
@@ -577,9 +616,9 @@ class HubJobServiceImplTest {
                 .jobType("ERP_APPLY")
                 .status(HubJobStatus.SUCCESS)
                 .build();
-        when(hubJobMapper.selectByRequestId("erp-success-001")).thenReturn(successfulJob);
+        when(hubJobMapper.selectByRequestIdAndCorpId("erp-success-001", 100L)).thenReturn(successfulJob);
 
-        assertThatThrownBy(() -> service().retryJob("erp-success-001"))
+        assertThatThrownBy(() -> service().retryJob(100L, "erp-success-001"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Only FAILED jobs can be retried");
         verify(jobOutboxService, never()).enqueue(any(HubJobEvent.class));

@@ -4,13 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import hub.config.AesEncryptor;
-import hub.config.JwtProperties;
+import hub.config.ExternalJwtProvider;
 import hub.external.domain.ExternalApiClientRow;
 import hub.external.dto.response.ExternalApiTokenResponse;
 import hub.external.ExternalApiAuthException;
 import hub.external.mapper.ExternalApiClientMapper;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -19,11 +17,9 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
-import java.util.Date;
 import java.util.HexFormat;
 import java.util.List;
 import javax.crypto.Mac;
-import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -35,13 +31,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class ExternalApiAuthServiceImpl implements ExternalApiAuthService {
 
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
-    private static final String TOKEN_TYPE = "EXTERNAL";
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter COMPACT_KST_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final ExternalApiClientMapper externalApiClientMapper;
     private final AesEncryptor aesEncryptor;
-    private final JwtProperties jwtProperties;
+    private final ExternalJwtProvider externalJwtProvider;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -68,7 +63,8 @@ public class ExternalApiAuthServiceImpl implements ExternalApiAuthService {
 
         List<String> scopes = readStringList(client.getScopesJson());
         int expiresIn = client.getTokenTtlSeconds() == null ? 1800 : client.getTokenTtlSeconds();
-        String accessToken = generateExternalJwt(client, scopes, expiresIn);
+        String accessToken = externalJwtProvider.generate(
+                client.getClientId(), client.getUserId(), scopes, expiresIn);
 
         return ExternalApiTokenResponse.builder()
                 .accessToken(accessToken)
@@ -123,21 +119,6 @@ public class ExternalApiAuthServiceImpl implements ExternalApiAuthService {
         byte[] expectedBytes = expected.getBytes(StandardCharsets.UTF_8);
         byte[] actualBytes = actual.toLowerCase().getBytes(StandardCharsets.UTF_8);
         return MessageDigest.isEqual(expectedBytes, actualBytes);
-    }
-
-    private String generateExternalJwt(ExternalApiClientRow client, List<String> scopes, int expiresIn) {
-        long now = System.currentTimeMillis();
-        SecretKey key = Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8));
-        return Jwts.builder()
-                .subject(client.getClientId())
-                .claim("type", TOKEN_TYPE)
-                .claim("clientId", client.getClientId())
-                .claim("userId", client.getUserId())
-                .claim("scopes", scopes)
-                .issuedAt(new Date(now))
-                .expiration(new Date(now + expiresIn * 1000L))
-                .signWith(key)
-                .compact();
     }
 
     private List<String> readStringList(String json) {

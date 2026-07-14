@@ -11,7 +11,9 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -21,13 +23,23 @@ class JobPipelineServiceImplTest {
     private final JobPipelineServiceImpl service = new JobPipelineServiceImpl(jobMapper, resultMapper);
 
     @Test
+    void crossTenantRequestIdIsHiddenAsNotFound() {
+        when(jobMapper.selectByRequestIdAndCorpId("corp-2-job", 100L)).thenReturn(null);
+
+        assertThatThrownBy(() -> service.getPipeline(100L, "corp-2-job"))
+                .isInstanceOf(hub.exception.HubJobNotFoundException.class);
+
+        verify(jobMapper, never()).selectPipelineByCorrelationIdAndCorpId("corr-1", 100L);
+    }
+
+    @Test
     void returnsOrderedPipelineAndMarksErpApplyAsFailedStage() {
         HubJob collect = job("collect-1", "ORDER_COLLECT", HubJobStatus.SUCCESS, null, null, 1);
         HubJob normalize = job("normalize-1", "ORDER_NORMALIZE", HubJobStatus.SUCCESS,
                 "collect-1", "collect-1", 2);
         HubJob erp = job("erp-1", "ERP_APPLY", HubJobStatus.FAILED,
                 "normalize-1", "normalize-1", 3);
-        when(jobMapper.selectByRequestId("erp-1")).thenReturn(erp);
+        when(jobMapper.selectByRequestIdAndCorpId("erp-1", 100L)).thenReturn(erp);
         when(jobMapper.selectPipelineByCorrelationIdAndCorpId("corr-1", 100L))
                 .thenReturn(List.of(erp, collect, normalize));
         ErpApplyResult result = new ErpApplyResult();
@@ -38,7 +50,7 @@ class JobPipelineServiceImplTest {
         result.setErrorMessage("Mock ERP apply failed");
         when(resultMapper.selectByCorrelationIdAndCorpId("corr-1", 100L)).thenReturn(List.of(result));
 
-        var response = service.getPipeline("erp-1", 100L);
+        var response = service.getPipeline(100L, "erp-1");
 
         assertThat(response.rootJobId()).isEqualTo("collect-1");
         assertThat(response.jobs()).extracting(item -> item.jobType())
@@ -56,12 +68,12 @@ class JobPipelineServiceImplTest {
         HubJob collect = job("collect-2", "ORDER_COLLECT", HubJobStatus.SUCCESS, null, null, 1);
         HubJob normalize = job("normalize-2", "ORDER_NORMALIZE", HubJobStatus.SUCCESS,
                 "collect-2", "collect-2", 2);
-        when(jobMapper.selectByRequestId("normalize-2")).thenReturn(normalize);
+        when(jobMapper.selectByRequestIdAndCorpId("normalize-2", 100L)).thenReturn(normalize);
         when(jobMapper.selectPipelineByCorrelationIdAndCorpId("corr-1", 100L))
                 .thenReturn(List.of(collect, normalize));
         when(resultMapper.selectByCorrelationIdAndCorpId("corr-1", 100L)).thenReturn(List.of());
 
-        var response = service.getPipeline("normalize-2", 100L);
+        var response = service.getPipeline(100L, "normalize-2");
 
         assertThat(response.currentStage()).isEqualTo("ORDER_NORMALIZE");
         assertThat(response.failedStage()).isNull();

@@ -7,12 +7,15 @@ spring:
     bootstrap-servers: localhost:${KAFKA_HOST_PORT:19092}
 
 hub:
-  security:
-    enabled: true
-    header-name: X-Hub-Api-Key
-    api-key: ${HUB_API_KEY:change-me-local-api-key}
   jwt:
-    secret: ${HUB_JWT_SECRET:change-me-jwt-secret-local-256bits}
-    expiry-ms: 86400000
+    ui:
+      secret: ${HUB_UI_JWT_SECRET:change-me-ui-jwt-secret-local-32-bytes!!}
+      expiry-ms: 86400000
+      issuer: easy-hub-ui
+      audience: easy-hub-web
+    external:
+      secret: ${HUB_EXTERNAL_JWT_SECRET:change-me-external-jwt-secret-local-32-bytes!!}
+      issuer: easy-hub-external
+      audience: easy-hub-external-api
   aes:
     secret: ${HUB_AES_SECRET:change-me-32-byte-secret-local!!}

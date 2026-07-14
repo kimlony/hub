@@ -16,6 +16,8 @@ public interface HubJobMapper {
 
     HubJob selectByRequestId(String requestId);
 
+    HubJob selectByRequestIdAndCorpId(@Param("requestId") String requestId, @Param("corpId") long corpId);
+
     HubJob selectByRequestKey(String requestKey);
 
     List<HubJob> selectPipelineByCorrelationIdAndCorpId(
@@ -27,28 +29,37 @@ public interface HubJobMapper {
 
     List<HubJobLogItem> selectJobLogs(String requestId);
 
-    List<HubJob> selectJobList(
+    List<HubJob> selectJobListByCorpId(
+            @Param("corpId") long corpId,
             @Param("status") String status,
             @Param("channelCd") String channelCd,
             @Param("size") int size,
             @Param("offset") int offset
     );
 
-    int selectJobListCount(
+    int selectJobListCountByCorpId(
+            @Param("corpId") long corpId,
             @Param("status") String status,
             @Param("channelCd") String channelCd
     );
 
-    DashboardStats selectDashboardStats();
+    DashboardStats selectDashboardStatsByCorpId(@Param("corpId") long corpId);
 
-    List<DashboardRecentJob> selectDashboardRecentJobs(@Param("limit") int limit);
+    List<DashboardRecentJob> selectDashboardRecentJobsByCorpId(
+            @Param("corpId") long corpId, @Param("limit") int limit);
 
-    List<DashboardChannelStat> selectDashboardChannelStats();
+    List<DashboardChannelStat> selectDashboardChannelStatsByCorpId(@Param("corpId") long corpId);
 
     int updateStatusToReset(
             @Param("requestKey") String requestKey,
             @Param("payload") String payload
     );
+    int resetFailedJobForRetryByCorpId(
+            @Param("requestKey") String requestKey,
+            @Param("payload") String payload,
+            @Param("corpId") long corpId
+    );
+
     int resetFailedJobForRetry(
             @Param("requestKey") String requestKey,
             @Param("payload") String payload

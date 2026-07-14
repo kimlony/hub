@@ -1,5 +1,6 @@
 package hub.job.controller;
 
+import hub.auth.HubUserPrincipal;
 import hub.job.dto.request.HubJobBatchRequest;
 import hub.job.dto.request.OrderStatusSyncRequest;
 import hub.job.dto.response.HubDashboardResponse;
@@ -30,55 +31,63 @@ public class HubJobController {
 
     @PostMapping("/batch")
     public ResponseEntity<HubJobBatchResponse> createBatchJobs(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @Valid @RequestBody HubJobBatchRequest request
     ) {
-        return ResponseEntity.ok(hubJobService.createBatchJobs(username, request));
+        return ResponseEntity.ok(hubJobService.createBatchJobs(principal.username(), request));
     }
 
     @PostMapping("/status-sync")
     public ResponseEntity<HubJobBatchResponse> createStatusSyncJobs(
-            @AuthenticationPrincipal String username,
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @Valid @RequestBody OrderStatusSyncRequest request
     ) {
-        return ResponseEntity.ok(hubJobService.createStatusSyncJobs(username, request));
+        return ResponseEntity.ok(hubJobService.createStatusSyncJobs(principal.username(), request));
     }
 
     @GetMapping
     public ResponseEntity<HubJobListResponse> getJobs(
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @RequestParam(defaultValue = "") String status,
             @RequestParam(defaultValue = "") String channelCd,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        return ResponseEntity.ok(hubJobService.getJobs(status, channelCd, page, size));
+        return ResponseEntity.ok(hubJobService.getJobs(principal.corpId(), status, channelCd, page, size));
     }
 
     @GetMapping("/dashboard")
-    public ResponseEntity<HubDashboardResponse> getDashboard() {
-        return ResponseEntity.ok(hubJobService.getDashboard());
+    public ResponseEntity<HubDashboardResponse> getDashboard(@AuthenticationPrincipal HubUserPrincipal principal) {
+        return ResponseEntity.ok(hubJobService.getDashboard(principal.corpId()));
     }
 
     @GetMapping("/performance")
     public ResponseEntity<JobPerformanceResponse> getPerformance(
+            @AuthenticationPrincipal HubUserPrincipal principal,
             @RequestParam(defaultValue = "60") int minutes
     ) {
-        return ResponseEntity.ok(hubJobService.getPerformance(minutes));
+        return ResponseEntity.ok(hubJobService.getPerformance(principal.corpId(), minutes));
     }
 
     @GetMapping("/{requestId}")
-    public ResponseEntity<HubJobDetailResponse> getJob(@PathVariable String requestId) {
-        return ResponseEntity.ok(hubJobService.getJob(requestId));
+    public ResponseEntity<HubJobDetailResponse> getJob(
+            @AuthenticationPrincipal HubUserPrincipal principal,
+            @PathVariable String requestId) {
+        return ResponseEntity.ok(hubJobService.getJob(principal.corpId(), requestId));
     }
 
     @GetMapping("/{requestId}/logs")
-    public ResponseEntity<HubJobLogResponse> getJobLogs(@PathVariable String requestId) {
-        return ResponseEntity.ok(hubJobService.getJobLogs(requestId));
+    public ResponseEntity<HubJobLogResponse> getJobLogs(
+            @AuthenticationPrincipal HubUserPrincipal principal,
+            @PathVariable String requestId) {
+        return ResponseEntity.ok(hubJobService.getJobLogs(principal.corpId(), requestId));
     }
 
     @PostMapping("/{requestId}/retry")
-    public ResponseEntity<Void> retryJob(@PathVariable String requestId) {
-        hubJobService.retryJob(requestId);
+    public ResponseEntity<Void> retryJob(
+            @AuthenticationPrincipal HubUserPrincipal principal,
+            @PathVariable String requestId) {
+        hubJobService.retryJob(principal.corpId(), requestId);
         return ResponseEntity.ok().build();
     }
 }
