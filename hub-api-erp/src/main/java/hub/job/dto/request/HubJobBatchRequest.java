@@ -16,6 +16,7 @@ public record HubJobBatchRequest(
         Integer mockSize,
         Integer mockTotalCount,
         String mockSeed,
+        String mockFixtureFile,
         Integer mockDelayMs,
         Double mockErrorRate,
         Double mockTimeoutRate,
@@ -24,7 +25,26 @@ public record HubJobBatchRequest(
         List<Long> channelAccountIds
 ) {
     public HubJobBatchRequest(String frDt, String toDt, List<String> mallKeys) {
-        this(frDt, toDt, mallKeys, null, null, null, null, null, null, null, null, null, null);
+        this(frDt, toDt, mallKeys, null, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    public HubJobBatchRequest(
+            String frDt,
+            String toDt,
+            List<String> mallKeys,
+            Integer mockPage,
+            Integer mockSize,
+            Integer mockTotalCount,
+            String mockSeed,
+            String mockFixtureFile,
+            Integer mockDelayMs,
+            Double mockErrorRate,
+            Double mockTimeoutRate,
+            String loadTestRunId,
+            String scenario
+    ) {
+        this(frDt, toDt, mallKeys, mockPage, mockSize, mockTotalCount, mockSeed, mockFixtureFile,
+                mockDelayMs, mockErrorRate, mockTimeoutRate, loadTestRunId, scenario, null);
     }
 
     public HubJobBatchRequest(
@@ -41,7 +61,7 @@ public record HubJobBatchRequest(
             String loadTestRunId,
             String scenario
     ) {
-        this(frDt, toDt, mallKeys, mockPage, mockSize, mockTotalCount, mockSeed,
+        this(frDt, toDt, mallKeys, mockPage, mockSize, mockTotalCount, mockSeed, null,
                 mockDelayMs, mockErrorRate, mockTimeoutRate, loadTestRunId, scenario, null);
     }
 }

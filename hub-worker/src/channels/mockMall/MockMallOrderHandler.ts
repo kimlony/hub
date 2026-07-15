@@ -16,7 +16,8 @@ export class MockMallOrderHandler implements IJobHandler {
       mallKey: payload.mallKey,
       page: payload.page,
       size: payload.size,
-      totalCount: payload.totalCount
+      totalCount: payload.totalCount,
+      fixtureFile: payload.fixtureFile
     }, "Mock Mall order collection started");
 
     const result = await client.fetchOrders(payload);
@@ -37,7 +38,9 @@ export class MockMallOrderHandler implements IJobHandler {
         totalCount: result.totalCount,
         orderCount: result.orders.length,
         hasNext: result.hasNext,
-        seed: payload.seed
+        seed: payload.seed,
+        source: payload.fixtureFile ? "FIXTURE_JSON" : "GENERATED",
+        fixtureFile: payload.fixtureFile
       }
     });
 
@@ -48,6 +51,8 @@ export class MockMallOrderHandler implements IJobHandler {
       size: result.size,
       totalCount: result.totalCount,
       seed: result.seed,
+      source: payload.fixtureFile ? "FIXTURE_JSON" : "GENERATED",
+      fixtureFile: payload.fixtureFile,
       runId: optionalString(message.payload.runId),
       scenario: optionalString(message.payload.scenario),
       hasNext: result.hasNext,

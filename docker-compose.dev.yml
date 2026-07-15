@@ -16,3 +16,20 @@ services:
       - "${HUB_API_PORT:-3000}:3000"
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+  hub-worker-consumer:
+    environment:
+      MOCK_MALL_FIXTURE_DIR: /app/mock-fixtures
+    volumes:
+      - ./mock-fixtures:/app/mock-fixtures:ro
+
+  hub-worker-recovery:
+    environment:
+      MOCK_MALL_FIXTURE_DIR: /app/mock-fixtures
+    volumes:
+      - ./mock-fixtures:/app/mock-fixtures:ro
+
+  hub-worker-http:
+    environment:
+      MOCK_MALL_FIXTURE_DIR: /app/mock-fixtures
+    volumes:
+      - ./mock-fixtures:/app/mock-fixtures:ro

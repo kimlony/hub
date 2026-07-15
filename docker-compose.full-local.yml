@@ -3,7 +3,7 @@ services:
     ports:
       - "${HUB_API_PORT:-3000}:3000"
     environment:
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+      SPRING_PROFILES_ACTIVE: docker-local
 
   postgres:
     ports:
@@ -20,3 +20,18 @@ services:
   hub-worker-http:
     ports:
       - "${WORKER_HTTP_PUBLISHED_PORT:-4000}:4000"
+    environment:
+      MOCK_MALL_FIXTURE_DIR: /app/mock-fixtures
+    volumes:
+      - ./mock-fixtures:/app/mock-fixtures:ro
+  hub-worker-consumer:
+    environment:
+      MOCK_MALL_FIXTURE_DIR: /app/mock-fixtures
+    volumes:
+      - ./mock-fixtures:/app/mock-fixtures:ro
+
+  hub-worker-recovery:
+    environment:
+      MOCK_MALL_FIXTURE_DIR: /app/mock-fixtures
+    volumes:
+      - ./mock-fixtures:/app/mock-fixtures:ro

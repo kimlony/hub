@@ -13,6 +13,7 @@
     "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "test:integration": "cross-env RUN_INTEGRATION_TESTS=true NODE_OPTIONS=--experimental-vm-modules jest --runInBand --testMatch \"**/src/**/*.integration.test.ts\"",
     "load:test": "node scripts/load-test.mjs",
+    "mock:fixture": "tsx scripts/generate-mock-mall-fixture.ts",
     "pm2:start": "pm2 start ecosystem.config.cjs",
     "pm2:start:consumer": "pm2 start ecosystem.config.cjs --only hub-worker-consumer",
     "pm2:stop": "pm2 stop ecosystem.config.cjs",

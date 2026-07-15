@@ -6,6 +6,7 @@ import {
 } from "./db/postgres.js";
 import { processJobMessage } from "./consumer.js";
 import { logger } from "./logger.js";
+import { recordJobOperationalEvent } from "./observability/recordJobOperationalEvent.js";
 
 const RECOVERY_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -130,6 +131,23 @@ async function processZombieProcessingJob(job: HubJobRow): Promise<void> {
     requestId: job.requestId,
     status: "PROCESSING"
   }, "Zombie processing job claimed");
+
+  await recordJobOperationalEvent({
+    requestId: job.requestId,
+    eventType: "JOB_RECOVERED",
+    level: "WARN",
+    message: "Expired processing attempt reclaimed by recovery",
+    jobType: job.jobType,
+    sourceErp: job.sourceErp,
+    requestKey: job.requestKey,
+    source: "RECOVERY",
+    workerInstanceId: job.executionToken.workerId,
+    executionToken: job.executionToken,
+    correlationId: job.correlationId,
+    parentJobId: job.parentJobId,
+    causationId: job.causationId,
+    attributes: { recoveryReason: "lease_expired" }
+  });
 
   await processJobMessage({
     requestId: job.requestId,

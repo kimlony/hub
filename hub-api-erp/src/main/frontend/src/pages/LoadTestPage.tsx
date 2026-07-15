@@ -69,6 +69,7 @@ type FormState = {
   orders: string
   pageSize: string
   seed: string
+  fixtureFile: string
   scenario: string
   delayMs: string
   errorRate: string
@@ -79,6 +80,7 @@ const initialForm: FormState = {
   orders: '100000',
   pageSize: '100',
   seed: 'mock-load-test-ui-001',
+  fixtureFile: '',
   scenario: 'e2e-1p-1w',
   delayMs: '0',
   errorRate: '0',
@@ -165,6 +167,7 @@ export default function LoadTestPage() {
           orders: Number(form.orders),
           pageSize: Number(form.pageSize),
           seed: form.seed,
+          fixtureFile: form.fixtureFile || null,
           scenario: form.scenario,
           delayMs: Number(form.delayMs),
           errorRate: Number(form.errorRate),
@@ -201,6 +204,9 @@ export default function LoadTestPage() {
             </Field>
             <Field label="Seed">
               <input value={form.seed} onChange={(e) => updateForm('seed', e.target.value)} className={inputClass} />
+            </Field>
+            <Field label="Fixture JSON">
+              <input value={form.fixtureFile} onChange={(e) => updateForm('fixtureFile', e.target.value)} placeholder="demo-orders-10000.json" className={inputClass} />
             </Field>
             <Field label="Delay ms">
               <input value={form.delayMs} onChange={(e) => updateForm('delayMs', e.target.value)} className={inputClass} />

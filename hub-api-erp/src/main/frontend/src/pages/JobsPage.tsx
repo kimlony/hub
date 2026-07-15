@@ -6,6 +6,7 @@ import CollectRequestModal from '../components/CollectRequestModal'
 import JobAttemptPanel from '../components/JobAttemptPanel'
 import { useAuth } from '../context/AuthContext'
 import { useAuthenticatedFetch } from '../hooks/useAuthenticatedFetch'
+import { getJobOperationalEventPresentation } from '../utils/jobOperationalEvent'
 
 type Job = {
   requestId: string
@@ -458,6 +459,7 @@ function JobLogModal({ requestId, onClose, canViewAttempts }: { requestId: strin
             <div className="space-y-3">
               {logs.map((log) => {
                 const failure = parseFailureInfo(log.errorMessage)
+                const event = getJobOperationalEventPresentation(log.eventType, log.detail)
                 return (
                   <div key={log.id} className="rounded-lg border border-slate-100 p-4">
                     <div className="flex items-start justify-between gap-4">
@@ -466,7 +468,9 @@ function JobLogModal({ requestId, onClose, canViewAttempts }: { requestId: strin
                           <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${LOG_LEVEL_COLORS[log.level] ?? 'bg-slate-100 text-slate-600'}`}>
                             {log.level}
                           </span>
-                          <span className="font-mono text-[12px] font-bold text-[#191F28]">{log.eventType}</span>
+                          <span className="text-[12px] font-bold text-[#191F28]">{event.label}</span>
+                          <span className="font-mono text-[10px] text-[#8B95A1]">{log.eventType}</span>
+                          {event.category && <span className="rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">{event.category}</span>}
                           {failure && <FailureBadge info={failure} message={log.errorMessage} />}
                         </div>
                         <p className="mt-2 text-[13px] text-[#4E5968]">{log.message}</p>
@@ -483,6 +487,9 @@ function JobLogModal({ requestId, onClose, canViewAttempts }: { requestId: strin
                       {log.retryCount !== null && (
                         <span className="rounded-md bg-slate-50 px-2 py-1">retry: {log.retryCount}/{log.maxRetryCount ?? '-'}</span>
                       )}
+                      {event.execution?.attemptId && <span className="rounded-md bg-slate-50 px-2 py-1">attempt: {event.execution.attemptId}</span>}
+                      {event.execution?.workerId && <span className="rounded-md bg-slate-50 px-2 py-1">worker: {event.execution.workerId}</span>}
+                      {event.execution?.fencingToken !== undefined && <span className="rounded-md bg-slate-50 px-2 py-1">token: {event.execution.fencingToken}</span>}
                     </div>
 
                     {log.detail && log.detail !== '{}' && (

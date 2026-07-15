@@ -323,7 +323,7 @@ public class KafkaMonitorService {
                             STRING_AGG(DISTINCT COALESCE(detail ->> 'kafkaClientId', ''), ',') AS kafka_client_ids,
                             STRING_AGG(DISTINCT COALESCE(channel_cd, ''), ',') AS channels
                         FROM hub_job_log
-                        WHERE event_type = 'JOB_RECEIVED_FROM_KAFKA'
+                        WHERE (event_type = 'JOB_RECEIVED_FROM_KAFKA' OR (event_type = 'JOB_RECEIVED' AND detail ->> 'source' = 'KAFKA'))
                           AND created_at >= NOW() - (? * INTERVAL '1 minute')
                           AND detail #>> '{kafka,partition}' IS NOT NULL
                         GROUP BY partition_no
@@ -355,7 +355,7 @@ public class KafkaMonitorService {
                             detail ->> 'kafkaClientId' AS kafka_client_id,
                             to_char(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS') AS created_at
                         FROM hub_job_log
-                        WHERE event_type = 'JOB_RECEIVED_FROM_KAFKA'
+                        WHERE (event_type = 'JOB_RECEIVED_FROM_KAFKA' OR (event_type = 'JOB_RECEIVED' AND detail ->> 'source' = 'KAFKA'))
                           AND created_at >= NOW() - (? * INTERVAL '1 minute')
                           AND detail #>> '{kafka,partition}' IS NOT NULL
                         ORDER BY created_at DESC, id DESC
@@ -383,7 +383,7 @@ public class KafkaMonitorService {
                 """
                         SELECT COUNT(*)::bigint
                         FROM hub_job_log
-                        WHERE event_type = 'JOB_RECEIVED_FROM_KAFKA'
+                        WHERE (event_type = 'JOB_RECEIVED_FROM_KAFKA' OR (event_type = 'JOB_RECEIVED' AND detail ->> 'source' = 'KAFKA'))
                           AND created_at >= NOW() - (? * INTERVAL '1 minute')
                           AND detail #>> '{kafka,partition}' IS NOT NULL
                         """,

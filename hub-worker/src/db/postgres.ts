@@ -4,6 +4,7 @@ import { createDecipheriv, createHash, randomUUID } from "node:crypto";
 import pg from "pg";
 import { logger } from "../logger.js";
 import { resolveJobPartitionKey } from "../jobKeys.js";
+import { buildJobOperationalEventDetail } from "../observability/jobOperationalEvent.js";
 import { getWorkerId } from "../workerIdentity.js";
 
 type HubJobMessage = {
@@ -438,7 +439,7 @@ async function ensurePostgresSchemaUnlocked(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_hub_job_outbox_status_retry
     ON hub_job_outbox (status, next_retry_at)
   `);
-  // 기존 ?�이블에 컬럼???�을 경우 ?�전?�게 추�?
+  // 기존 ?�이블에 컬럼???�을 경우 ?�전?�게 추�?
   await pool.query(`
     ALTER TABLE hub_job_result
     ADD COLUMN IF NOT EXISTS request_key VARCHAR(200)
@@ -857,21 +858,6 @@ export async function tryMarkProcessing(
     leaseUntil: executionToken?.leaseUntil
   }, executionToken ? "Job marked as processing" : "Job was not marked as processing");
 
-  await saveJobLog({
-    requestId,
-    eventType: executionToken ? "JOB_STATUS_PROCESSING" : "JOB_STATUS_PROCESSING_SKIPPED",
-    level: "INFO",
-    message: executionToken ? "Job marked as processing" : "Job was not marked as processing",
-    detail: {
-      fromStatus: "QUEUED",
-      toStatus: "PROCESSING",
-      rowCount: result.rowCount,
-      attemptId: executionToken?.attemptId,
-      workerId: executionToken?.workerId,
-      fencingToken: executionToken?.fencingToken,
-      leaseUntil: executionToken?.leaseUntil.toISOString()
-    }
-  });
 
   return executionToken;
 }
@@ -2491,12 +2477,16 @@ async function logStaleAttempt(
     eventType: "STALE_JOB_ATTEMPT_REJECTED",
     level: "WARN",
     message: "Stale job attempt rejected",
-    detail: {
-      action,
-      attemptId: executionToken.attemptId,
-      workerId: executionToken.workerId,
-      fencingToken: executionToken.fencingToken
-    }
+    detail: buildJobOperationalEventDetail({
+      requestId: executionToken.requestId,
+      eventType: "STALE_JOB_ATTEMPT_REJECTED",
+      level: "WARN",
+      message: "Stale job attempt rejected",
+      source: "SYSTEM",
+      workerInstanceId: executionToken.workerId,
+      executionToken,
+      attributes: { action }
+    })
   });
 }
 export async function succeedJob(tokenOrRequestId: JobExecutionToken | string): Promise<boolean> {

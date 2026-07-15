@@ -14,6 +14,7 @@ type MockMallPayload = {
   delayMs: number;
   errorRate: number;
   timeoutRate: number;
+  fixtureFile?: string;
 };
 
 export class MockMallCollectHandler implements ICollectHandler {
@@ -62,7 +63,8 @@ function parsePayload(payload: Record<string, unknown>): MockMallPayload {
     seed: optionalString(payload.seed, "mock-mall-default"),
     delayMs: nonNegativeNumber(payload.delayMs, 0),
     errorRate: rate(payload.errorRate),
-    timeoutRate: rate(payload.timeoutRate)
+    timeoutRate: rate(payload.timeoutRate),
+    fixtureFile: optionalFixtureFile(payload.fixtureFile)
   };
 }
 
@@ -94,4 +96,13 @@ function nonNegativeNumber(value: unknown, fallback: number): number {
 
 function rate(value: unknown): number {
   return Math.max(0, Math.min(nonNegativeNumber(value, 0), 1));
+}
+function optionalFixtureFile(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.json$/.test(value)) {
+    throw new Error("fixtureFile must be a JSON filename without a path");
+  }
+  return value;
 }

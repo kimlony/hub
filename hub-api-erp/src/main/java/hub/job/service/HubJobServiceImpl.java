@@ -371,6 +371,7 @@ public class HubJobServiceImpl implements HubJobService {
             putIfNotNull(payload, "size", request.mockSize());
             putIfNotNull(payload, "totalCount", request.mockTotalCount());
             putIfNotBlank(payload, "seed", request.mockSeed());
+            putIfNotBlank(payload, "fixtureFile", request.mockFixtureFile());
             putIfNotNull(payload, "delayMs", request.mockDelayMs());
             putIfNotNull(payload, "errorRate", request.mockErrorRate());
             putIfNotNull(payload, "timeoutRate", request.mockTimeoutRate());
@@ -725,7 +726,7 @@ public class HubJobServiceImpl implements HubJobService {
                                 NULLIF(detail ->> 'kafkaClientId', '') AS kafka_client_id,
                                 NULLIF(detail ->> 'source', '') AS source
                             FROM hub_job_log
-                            WHERE event_type IN ('JOB_RECEIVED_FROM_KAFKA', 'JOB_RECEIVED_FROM_RECOVERY')
+                            WHERE event_type IN ('JOB_RECEIVED_FROM_KAFKA', 'JOB_RECEIVED_FROM_RECOVERY', 'JOB_RECEIVED')
                               AND created_at >= NOW() - (? * INTERVAL '1 minute')
                             ORDER BY request_id, created_at DESC, id DESC
                         )

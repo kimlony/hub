@@ -36,6 +36,7 @@ import { publishDlq } from "./dlq.js";
 import { classifyRetry } from "./errors/retryPolicy.js";
 import { logger } from "./logger.js";
 import { resolveJobLockKey } from "./jobKeys.js";
+import { recordJobOperationalEvent } from "./observability/recordJobOperationalEvent.js";
 import { HubJobMessageSchema } from "./schemas.js";
 import { getKafkaClientId, getWorkerId } from "./workerIdentity.js";
 
@@ -174,6 +175,7 @@ export async function processJobMessage(
   } = {}
 ): Promise<void> {
   const { requestId, jobType } = jobMessage;
+  const operationalSource = source === "recovery" ? "RECOVERY" : "KAFKA";
   let executionToken: JobExecutionToken | null = options.executionToken ?? null;
 
   try {
@@ -188,9 +190,9 @@ export async function processJobMessage(
       channelCd: getChannelCd(jobMessage),
       mallKey: getMallKey(jobMessage)
     }, "Job processing started");
-    await saveJobLog({
+    await recordJobOperationalEvent({
       requestId,
-      eventType: source === "recovery" ? "JOB_RECEIVED_FROM_RECOVERY" : "JOB_RECEIVED_FROM_KAFKA",
+      eventType: "JOB_RECEIVED",
       level: "INFO",
       message: "Job processing started",
       jobType,
@@ -198,12 +200,14 @@ export async function processJobMessage(
       requestKey: jobMessage.requestKey,
       channelCd: getChannelCd(jobMessage),
       mallKey: getMallKey(jobMessage),
-      detail: {
-        source,
-        workerInstanceId,
-        kafkaClientId,
-        kafka: options.kafka
-      }
+      source: operationalSource,
+      workerInstanceId,
+      kafkaClientId,
+      kafka: options.kafka,
+      executionToken,
+      correlationId: jobMessage.correlationId,
+      parentJobId: jobMessage.parentJobId,
+      causationId: jobMessage.causationId
     });
 
     executionToken = executionToken ?? await tryMarkProcessing(requestId);
@@ -215,9 +219,9 @@ export async function processJobMessage(
         source,
         reason: "status_not_queued"
       }, "Job processing skipped");
-      await saveJobLog({
+      await recordJobOperationalEvent({
         requestId,
-        eventType: "JOB_PROCESSING_SKIPPED",
+        eventType: "JOB_CLAIM_SKIPPED",
         level: "INFO",
         message: "Job processing skipped",
         jobType,
@@ -225,17 +229,37 @@ export async function processJobMessage(
         requestKey: jobMessage.requestKey,
         channelCd: getChannelCd(jobMessage),
         mallKey: getMallKey(jobMessage),
-        detail: {
-          source,
-          reason: "status_not_queued",
-          workerInstanceId,
-          kafkaClientId,
-          kafka: options.kafka
-        }
+        source: operationalSource,
+        workerInstanceId,
+        kafkaClientId,
+        kafka: options.kafka,
+        correlationId: jobMessage.correlationId,
+        parentJobId: jobMessage.parentJobId,
+        causationId: jobMessage.causationId,
+        attributes: { reason: "status_not_queued" }
       });
       return;
     }
 
+    await recordJobOperationalEvent({
+      requestId,
+      eventType: "JOB_CLAIMED",
+      level: "INFO",
+      message: "Job execution claimed",
+      jobType,
+      sourceErp: jobMessage.sourceErp,
+      requestKey: jobMessage.requestKey,
+      channelCd: getChannelCd(jobMessage),
+      mallKey: getMallKey(jobMessage),
+      source: operationalSource,
+      workerInstanceId,
+      kafkaClientId,
+      kafka: options.kafka,
+      executionToken,
+      correlationId: jobMessage.correlationId,
+      parentJobId: jobMessage.parentJobId,
+      causationId: jobMessage.causationId
+    });
     const handledMessage = await prepareJobMessage(jobMessage);
     const succeeded = await runWithJobExecutionToken(executionToken, () =>
       runRegisteredHandler(handledMessage, executionToken!)
@@ -253,7 +277,7 @@ export async function processJobMessage(
         source,
         reason: "success_status_update_skipped"
       }, "Job completion skipped");
-      await saveJobLog({
+      await recordJobOperationalEvent({
         requestId,
         eventType: "JOB_COMPLETION_SKIPPED",
         level: "WARN",
@@ -263,10 +287,14 @@ export async function processJobMessage(
         requestKey: handledMessage.requestKey,
         channelCd: getChannelCd(handledMessage),
         mallKey: getMallKey(handledMessage),
-        detail: {
-          source,
-          reason: "success_status_update_skipped"
-        }
+        source: operationalSource,
+        workerInstanceId,
+        kafkaClientId,
+        executionToken,
+        correlationId: handledMessage.correlationId,
+        parentJobId: handledMessage.parentJobId,
+        causationId: handledMessage.causationId,
+        attributes: { reason: "success_status_update_skipped" }
       });
       return;
     }
@@ -279,7 +307,7 @@ export async function processJobMessage(
       channelCd: getChannelCd(handledMessage),
       mallKey: getMallKey(handledMessage)
     }, "Job completed successfully");
-    await saveJobLog({
+    await recordJobOperationalEvent({
       requestId,
       eventType: "JOB_COMPLETED",
       level: "INFO",
@@ -289,11 +317,13 @@ export async function processJobMessage(
       requestKey: handledMessage.requestKey,
       channelCd: getChannelCd(handledMessage),
       mallKey: getMallKey(handledMessage),
-      detail: {
-        source,
-        workerInstanceId,
-        kafkaClientId
-      }
+      source: operationalSource,
+      workerInstanceId,
+      kafkaClientId,
+      executionToken,
+      correlationId: handledMessage.correlationId,
+      parentJobId: handledMessage.parentJobId,
+      causationId: handledMessage.causationId
     });
   } catch (error) {
     if (!executionToken) {
@@ -304,6 +334,25 @@ export async function processJobMessage(
         jobType,
         source
       }, "Job processing failed before claim");
+      await recordJobOperationalEvent({
+        requestId,
+        eventType: "JOB_PROCESSING_FAILED_BEFORE_CLAIM",
+        level: "ERROR",
+        message: "Job processing failed before claim",
+        jobType,
+        sourceErp: jobMessage.sourceErp,
+        requestKey: jobMessage.requestKey,
+        channelCd: getChannelCd(jobMessage),
+        mallKey: getMallKey(jobMessage),
+        errorMessage: error instanceof Error ? error.message : "Unknown processing error",
+        source: operationalSource,
+        workerInstanceId,
+        kafkaClientId,
+        kafka: options.kafka,
+        correlationId: jobMessage.correlationId,
+        parentJobId: jobMessage.parentJobId,
+        causationId: jobMessage.causationId
+      });
       return;
     }
     const retryClassification = classifyRetry(error);
@@ -321,7 +370,7 @@ export async function processJobMessage(
         source,
         errorMessage
       }, "Job failure update skipped");
-      await saveJobLog({
+      await recordJobOperationalEvent({
         requestId,
         eventType: "JOB_FAILURE_UPDATE_SKIPPED",
         level: "WARN",
@@ -332,12 +381,14 @@ export async function processJobMessage(
         channelCd: getChannelCd(jobMessage),
         mallKey: getMallKey(jobMessage),
         errorMessage,
-        detail: {
-          source,
-          workerInstanceId,
-          kafkaClientId,
-          retryClassification
-        }
+        source: operationalSource,
+        workerInstanceId,
+        kafkaClientId,
+        executionToken,
+        correlationId: jobMessage.correlationId,
+        parentJobId: jobMessage.parentJobId,
+        causationId: jobMessage.causationId,
+        attributes: { retryable: retryClassification.retryable }
       });
       return;
     }
@@ -353,9 +404,9 @@ export async function processJobMessage(
         maxRetryCount: decision.maxRetryCount,
         errorMessage
       }, "Job failed and will be retried");
-      await saveJobLog({
+      await recordJobOperationalEvent({
         requestId,
-        eventType: "JOB_FAILED_WILL_RETRY",
+        eventType: "JOB_RETRY_SCHEDULED",
         level: "WARN",
         message: "Job failed and will be retried",
         jobType,
@@ -366,12 +417,14 @@ export async function processJobMessage(
         retryCount: decision.retryCount,
         maxRetryCount: decision.maxRetryCount,
         errorMessage,
-        detail: {
-          source,
-          workerInstanceId,
-          kafkaClientId,
-          retryClassification
-        }
+        source: operationalSource,
+        workerInstanceId,
+        kafkaClientId,
+        executionToken,
+        correlationId: jobMessage.correlationId,
+        parentJobId: jobMessage.parentJobId,
+        causationId: jobMessage.causationId,
+        attributes: { retryable: true }
       });
       return;
     }
@@ -387,9 +440,9 @@ export async function processJobMessage(
       errorMessage,
       retryClassification
     }, "Job failed permanently");
-    await saveJobLog({
+    await recordJobOperationalEvent({
       requestId,
-      eventType: retryClassification.retryable ? "JOB_FAILED_PERMANENTLY" : "JOB_FAILED_NON_RETRYABLE",
+      eventType: "JOB_FAILED",
       level: "ERROR",
       message: retryClassification.retryable ? "Job failed permanently" : "Job failed without retry",
       jobType,
@@ -400,12 +453,14 @@ export async function processJobMessage(
       retryCount: decision.retryCount,
       maxRetryCount: decision.maxRetryCount,
       errorMessage,
-      detail: {
-        source,
-        workerInstanceId,
-        kafkaClientId,
-        retryClassification
-      }
+      source: operationalSource,
+      workerInstanceId,
+      kafkaClientId,
+      executionToken,
+      correlationId: jobMessage.correlationId,
+      parentJobId: jobMessage.parentJobId,
+      causationId: jobMessage.causationId,
+      attributes: { retryable: retryClassification.retryable }
     });
 
     const dlqPublished = await publishDlq({
@@ -416,10 +471,10 @@ export async function processJobMessage(
       source
     });
 
-    await saveJobLog({
+    await recordJobOperationalEvent({
       requestId,
       eventType: dlqPublished ? "JOB_DLQ_PUBLISHED" : "JOB_DLQ_PUBLISH_FAILED",
-      level: dlqPublished ? "INFO" : "ERROR",
+      level: "ERROR",
       message: dlqPublished ? "Job published to DLQ" : "Job DLQ publish failed",
       jobType,
       sourceErp: jobMessage.sourceErp,
@@ -429,12 +484,14 @@ export async function processJobMessage(
       retryCount: decision.retryCount,
       maxRetryCount: decision.maxRetryCount,
       errorMessage,
-      detail: {
-        source,
-        workerInstanceId,
-        kafkaClientId,
-        dlqTopic: process.env.KAFKA_DLQ_TOPIC ?? "hub.jobs.dlq"
-      }
+      source: operationalSource,
+      workerInstanceId,
+      kafkaClientId,
+      executionToken,
+      correlationId: jobMessage.correlationId,
+      parentJobId: jobMessage.parentJobId,
+      causationId: jobMessage.causationId,
+      attributes: { dlqTopic: process.env.KAFKA_DLQ_TOPIC ?? "hub.jobs.dlq" }
     });
   }
 }

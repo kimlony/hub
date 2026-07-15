@@ -39,6 +39,7 @@ public class MockMallLoadTestService {
         String runId = "ui-load-" + LocalDateTime.now(SEOUL).format(RUN_ID_FORMAT);
         String scenario = textOrDefault(request.scenario(), "ui-e2e-current-env");
         String seed = textOrDefault(request.seed(), "mock-load-test-ui-001");
+        String fixtureFile = normalizeFixtureFile(request.fixtureFile());
         int delayMs = nonNegative(request.delayMs(), 0);
         double errorRate = rate(request.errorRate());
         double timeoutRate = rate(request.timeoutRate());
@@ -57,6 +58,7 @@ public class MockMallLoadTestService {
                     pageSize,
                     orders,
                     seed,
+                    fixtureFile,
                     delayMs,
                     errorRate,
                     timeoutRate,
@@ -586,6 +588,16 @@ public class MockMallLoadTestService {
             return 0;
         }
         return Math.max(0, Math.min(value, 1));
+    }
+
+    private String normalizeFixtureFile(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        if (!value.matches("[A-Za-z0-9][A-Za-z0-9._-]*\\.json")) {
+            throw new IllegalArgumentException("fixtureFile must be a JSON filename without a path");
+        }
+        return value;
     }
 
     private String textOrDefault(String value, String fallback) {

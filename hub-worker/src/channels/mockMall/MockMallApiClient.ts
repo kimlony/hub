@@ -1,3 +1,4 @@
+import { MockMallFixtureStore } from "./MockMallFixtureStore.js";
 import { generateMockMallOrders, type GenerateMockMallOrdersResult } from "./MockMallOrderGenerator.js";
 
 export type MockMallFetchOrdersInput = {
@@ -9,7 +10,10 @@ export type MockMallFetchOrdersInput = {
   delayMs?: number;
   errorRate?: number;
   timeoutRate?: number;
+  fixtureFile?: string;
 };
+
+const fixtureStore = new MockMallFixtureStore();
 
 export class MockMallApiClient {
   async fetchOrders(input: MockMallFetchOrdersInput): Promise<GenerateMockMallOrdersResult> {
@@ -26,6 +30,11 @@ export class MockMallApiClient {
     const errorRoll = deterministicRoll(input.seed, input.page, "error");
     if (errorRoll < safeRate(input.errorRate)) {
       throw new Error("Mock Mall API error");
+    }
+
+    const fixtureFile = input.fixtureFile;
+    if (fixtureFile) {
+      return fixtureStore.fetchOrders({ ...input, fixtureFile });
     }
 
     return generateMockMallOrders(input);
