@@ -1,6 +1,25 @@
 server {
     listen 80;
-    server_name _;
+    server_name hub.rony.kr;
+
+    # Serve only the ACME challenge over HTTP; all other traffic uses HTTPS.
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name hub.rony.kr;
+
+    ssl_certificate /etc/letsencrypt/live/hub.rony.kr/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/hub.rony.kr/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
 
     # Docker DNS must be resolved again when the hub-api container is recreated.
     resolver 127.0.0.11 valid=10s ipv6=off;

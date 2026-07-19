@@ -21,6 +21,7 @@ logs/
 *.bak
 *.dump
 *.zip
+certbot/
 npm-debug.log*
 worker-codex.log
 load-test-results/
