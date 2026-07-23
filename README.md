@@ -232,6 +232,7 @@ docker compose up -d hub-worker-consumer hub-worker-recovery hub-worker-http
 
 ## 관련 문서
 
+- [Code Design Review Guide](docs/code-design-review-guide.md) - implementation and test entry points for Job ownership, Outbox delivery, pipeline progression, retry, and security boundaries
 - [Testing Guide](docs/testing.md)
 - [Load Test Plan](docs/load-test-plan.md)
 - [Mock Mall e2e Load Test](docs/mock-mall-e2e-load-test.md)

@@ -90,6 +90,8 @@ class JobOutboxPublisherTest {
 
     @Test
     void publishesOrderNormalizeOutboxUsingPersistedPartitionKey() throws Exception {
+        // Replay와 retry는 이전 계약 버전 payload로 순서를 다시 계산하지 않고,
+        // 저장된 key를 그대로 유지한다.
         JobOutboxPublisher publisher = publisher();
         String payload = """
                 {

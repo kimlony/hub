@@ -84,12 +84,16 @@ export class ErpApplyHandler implements IJobHandler {
       };
       let response;
       try {
+        // 외부 I/O 직전에 처리 권한을 다시 확인하여 lease를 잃고 reclaim된 attempt가
+        // 새 ERP 요청을 시작하지 않도록 한다.
         await this.store.assertCurrentExecution(message.requestId);
         response = await this.adapter.apply(connection, token, request, options);
       } catch (error) {
         if (!(error instanceof MockErpError) || !error.isAuthFailure || connection.authType !== "TOKEN") {
           throw error;
         }
+        // 인증 실패 시 이 attempt 안에서는 한 번만 토큰을 갱신한다. 이후 실패는 여기서
+        // 반복하지 않고 공통 Job retry 정책으로 넘긴다.
         const refreshedToken = await this.tokenProvider.forceRefreshToken(connection);
         await this.store.assertCurrentExecution(message.requestId);
         response = await this.adapter.apply(connection, refreshedToken, request, {

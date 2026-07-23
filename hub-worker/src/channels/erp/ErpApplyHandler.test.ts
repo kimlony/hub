@@ -49,6 +49,8 @@ function dependencies(current: ErpConnection | null = connection()) {
 
 describe("ErpApplyHandler token authentication", () => {
   it("passes the acquired token and DB connection to the adapter without putting secrets in payload", async () => {
+    // 연결 인증 정보는 Worker 내부에서 조회하며 Kafka envelope과 저장되는 ERP 요청에는
+    // 연결 식별자만 포함되어야 한다.
     const deps = dependencies();
     const job = message();
     await deps.handler.handle(job);
@@ -74,6 +76,8 @@ describe("ErpApplyHandler token authentication", () => {
   });
 
   it("refreshes once after a 401 and succeeds on the second call", async () => {
+    // 한 번의 갱신으로 만료된 토큰을 처리하고 하나의 Job attempt가 무한 인증 재시도로
+    // 이어지지 않도록 한다.
     const deps = dependencies();
     deps.adapter.apply
       .mockRejectedValueOnce(new MockErpError("ERP_401", "expired"))

@@ -29,6 +29,8 @@ public class JobOutboxServiceImpl implements JobOutboxService {
 
     @Override
     public void enqueue(HubJobEvent event, String partitionKey) {
+        // 호출한 서비스의 트랜잭션에서 Job 상태와 이 row를 함께 저장한다.
+        // Kafka I/O는 commit 이후 JobOutboxPublisher가 수행하도록 분리한다.
         JobOutbox outbox = JobOutbox.builder()
                 .requestId(event.requestId())
                 .eventType(event.jobType())

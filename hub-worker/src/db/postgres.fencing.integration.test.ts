@@ -64,6 +64,8 @@ describeIntegration("job processing attempt fencing", () => {
   });
 
   it("rejects worker A after recovery issues worker B a newer token", async () => {
+    // lease가 만료되면 Recovery가 Worker B에 더 새로운 token을 발급한다.
+    // 이후 Worker A는 처리 권한이 바뀐 Job을 완료할 수 없어야 한다.
     const requestId = await insertQueued("stale");
     const tokenA = await db.tryMarkProcessing(requestId, "worker-a");
     expect(tokenA).not.toBeNull();
@@ -110,6 +112,8 @@ describeIntegration("job processing attempt fencing", () => {
   });
 
   it("allows retry and failed transitions only for the current attempt", async () => {
+    // Retry와 FAILED도 상태 변경이므로 다른 attempt가 Job을 소유한 뒤에는
+    // stale Worker가 어느 결과도 변경할 수 없어야 한다.
     const retryId = await insertQueued("retry");
     const retryToken = (await db.tryMarkProcessing(retryId, "worker-retry"))!;
     const staleRetry = await db.retryOrFailJob({ ...retryToken, workerId: "worker-old" }, "stale");

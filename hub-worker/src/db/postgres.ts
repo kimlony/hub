@@ -816,6 +816,8 @@ export async function tryMarkProcessing(
   workerId = WORKER_ID
 ): Promise<JobExecutionToken | null> {
   const attemptId = randomUUID();
+  // Claim과 처리 시도 이력 생성은 하나의 SQL 문으로 수행한다. 이후 fenced write에
+  // 사용할 토큰은 QUEUED를 PROCESSING으로 바꾼 Worker만 받을 수 있다.
   const result = await pool.query<{
     processing_attempt_id: string;
     claimed_by: string;
@@ -961,6 +963,8 @@ export async function completeOrderCollectWithNormalize(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // Raw 결과, 부모 완료, 다음 단계 발행 요청을 함께 commit하여 수집 성공 뒤에
+    // child Outbox가 없는 상태가 남지 않도록 한다.
     const parentResult = await client.query<{
       request_id: string;
       request_key: string;
@@ -1085,6 +1089,8 @@ export async function completeOrderNormalizeWithErpApply(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // 정규화 row, 선택적인 ERP child/outbox, 부모 성공 처리를 같은 트랜잭션으로 묶어
+    // 부분 정규화 결과가 파이프라인을 다음 단계로 진행시키지 않도록 한다.
     const parentResult = await client.query<{
       request_id: string;
       request_key: string;
@@ -2537,6 +2543,8 @@ export async function retryOrFailJob(
 
   try {
     await client.query("BEGIN");
+    // Retry와 종료 상태 전환도 현재 attempt token으로 fencing한다. 따라서 만료된
+    // Worker는 Recovery가 새로 시작한 attempt의 결과를 덮어쓸 수 없다.
     const current = await client.query<{ retry_count: number }>(
       [
         "SELECT retry_count FROM hub_job",

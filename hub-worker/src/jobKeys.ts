@@ -32,6 +32,8 @@ export function resolveJobLockKey(job: JobKeyInput): string | null {
 }
 
 export function resolveJobResourceKey(payload: Record<string, unknown>): string | null {
+  // key는 Job Type이 아니라 공유하는 외부 자원을 식별한다. 따라서 파이프라인이
+  // 확장되어도 관련 작업은 같은 순서와 lock 경계를 사용한다.
   const tenant = value(payload.tenantId) ?? value(payload.corpId) ?? "legacy";
   const erpConnectionId = value(payload.erpConnectionId);
   if (erpConnectionId) {

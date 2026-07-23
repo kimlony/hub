@@ -439,6 +439,11 @@ public class HubJobServiceImpl implements HubJobService {
     private void publishEvent(HubJob job) {
         publishEvent(job, null);
     }
+
+    /**
+     * 현재 서비스 트랜잭션 안에서 PENDING 발행 요청을 저장한다.
+     * 이 요청 경로가 아닌 JobOutboxPublisher가 Kafka I/O를 수행한다.
+     */
     // 실제 kafka발행이 아님 -> hub_job_outbox에 PENDING 상태로 insert됨
     private void publishEvent(HubJob job, String partitionKey) {
         Map<String, Object> payloadMap = jobPayloadValidator.validate(job);

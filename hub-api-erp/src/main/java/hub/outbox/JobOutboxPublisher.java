@@ -30,6 +30,8 @@ public class JobOutboxPublisher {
     @Value("${hub.outbox.publishing-stale-seconds:300}")
     private int publishingStaleSeconds;
     // KAFKA 발행을 하기위해 out_box에 저장된 PENDING값을 가진 로우를 가져오는 스케쥴러
+    // 먼저 claim하여 여러 Publisher가 같은 pending row를 동시에 발행하지 못하게 한다.
+    // 오래된 PUBLISHING row는 다시 reclaim할 수 있다.
     @Scheduled(fixedDelayString = "${hub.outbox.publish-delay-ms:3000}")
     public void publishPendingEvents() {
         String lockedBy = buildLockedBy();

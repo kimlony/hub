@@ -517,6 +517,8 @@ async function runRegisteredHandler(jobMessage: HubJobMessage, executionToken: J
   if (!lockKey || (jobMessage.jobType === "ORDER_COLLECT" && getChannelCd(jobMessage) === "MOCK_MALL")) {
     return executeRegisteredHandler(jobMessage, executionToken);
   }
+  // execution token은 하나의 Job attempt를 보호하고, 별도 lock은 같은 외부 채널
+  // 계정 또는 ERP 연결 자원을 사용하는 호출을 직렬화한다.
   const lockAcquired = await tryAcquireJobLock(lockKey, executionToken.requestId);
 
   if (!lockAcquired) {
